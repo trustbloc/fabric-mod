@@ -19,6 +19,7 @@ package factory
 
 import (
 	"github.com/hyperledger/fabric/bccsp"
+	"github.com/hyperledger/fabric/bccsp/grep11"
 	"github.com/hyperledger/fabric/bccsp/pkcs11"
 	"github.com/pkg/errors"
 )
@@ -29,6 +30,7 @@ type FactoryOpts struct {
 	SwOpts       *SwOpts            `mapstructure:"SW,omitempty" json:"SW,omitempty" yaml:"SwOpts"`
 	PluginOpts   *PluginOpts        `mapstructure:"PLUGIN,omitempty" json:"PLUGIN,omitempty" yaml:"PluginOpts"`
 	Pkcs11Opts   *pkcs11.PKCS11Opts `mapstructure:"PKCS11,omitempty" json:"PKCS11,omitempty" yaml:"PKCS11"`
+	Grep11Opts   *grep11.GREP11Opts `mapstructure:"GREP11,omitempty" json:"GREP11,omitempty" yaml:"GREP11"`
 }
 
 // InitFactories must be called before using factory interfaces
@@ -87,6 +89,15 @@ func setFactories(config *FactoryOpts) error {
 		}
 	}
 
+	// GREP11-Based BCCSP
+	if config.Grep11Opts != nil {
+		f := &GREP11Factory{}
+		err := initBCCSP(f, config)
+		if err != nil {
+			factoriesInitError = errors.Errorf("Failed initializing GREP11.BCCSP %s\n[%s]", factoriesInitError, err)
+		}
+	}
+
 	var ok bool
 	defaultBCCSP, ok = bccspMap[config.ProviderName]
 	if !ok {
@@ -106,6 +117,8 @@ func GetBCCSPFromOpts(config *FactoryOpts) (bccsp.BCCSP, error) {
 		f = &PKCS11Factory{}
 	case "PLUGIN":
 		f = &PluginFactory{}
+	case "GREP11":
+		f = &GREP11Factory{}
 	default:
 		return nil, errors.Errorf("Could not find BCCSP, no '%s' provider", config.ProviderName)
 	}
