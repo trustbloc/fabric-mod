@@ -24,7 +24,6 @@
 #   - test-cmd - generates a "go test" string suitable for manual customization
 #   - gotools - installs go tools like golint
 #   - linter - runs all code checks
-#   - check-deps - check for vendored dependencies that are no longer used
 #   - license - checks go source files for Apache license header
 #   - native - ensures all native binaries are available
 #   - docker[-clean] - ensures all docker images are available[/cleaned]
@@ -218,21 +217,17 @@ docker: $(patsubst %,$(BUILD_DIR)/images/%/$(DUMMY), $(IMAGES))
 
 native: peer orderer configtxgen cryptogen idemixgen configtxlator discover
 
-linter: check-deps buildenv
+linter: buildenv
 	@echo "LINT: Running code checks.."
-	@$(DRUN) $(DOCKER_NS)/fabric-buildenv:$(DOCKER_TAG) ./scripts/golinter.sh
-
-check-deps: buildenv
-	@echo "DEP: Checking for dependency issues.."
-	@$(DRUN) $(DOCKER_NS)/fabric-buildenv:$(DOCKER_TAG) ./scripts/check_deps.sh
+	@$(DRUN) -e GO111MODULE=on -e GOPROXY=$(GOPROXY) $(DOCKER_NS)/fabric-buildenv:$(DOCKER_TAG) ./scripts/golinter.sh
 
 check-metrics-doc: buildenv
 	@echo "METRICS: Checking for outdated reference documentation.."
-	@$(DRUN) $(DOCKER_NS)/fabric-buildenv:$(DOCKER_TAG) ./scripts/metrics_doc.sh check
+	@$(DRUN) -e GO111MODULE=on -e GOPROXY=$(GOPROXY) $(DOCKER_NS)/fabric-buildenv:$(DOCKER_TAG) ./scripts/metrics_doc.sh check
 
 generate-metrics-doc: buildenv
 	@echo "Generating metrics reference documentation..."
-	@$(DRUN) $(DOCKER_NS)/fabric-buildenv:$(DOCKER_TAG) ./scripts/metrics_doc.sh generate
+	@$(DRUN) -e GO111MODULE=on -e GOPROXY=$(GOPROXY) $(DOCKER_NS)/fabric-buildenv:$(DOCKER_TAG) ./scripts/metrics_doc.sh generate
 
 changelog:
 	./scripts/changelog.sh v$(PREV_VERSION) v$(BASE_VERSION)
@@ -243,7 +238,7 @@ $(BUILD_DIR)/bin:
 $(BUILD_DIR)/bin/%: check-go-version $(PROJECT_FILES)
 	@mkdir -p $(@D)
 	@echo "$@"
-	$(CGO_FLAGS) GOBIN=$(abspath $(@D)) go install -tags "$(GO_TAGS)" -ldflags "$(GO_LDFLAGS)" $(pkgmap.$(@F))
+	$(CGO_FLAGS) GOBIN=$(abspath $(@D)) GO111MODULE=on go install -tags "$(GO_TAGS)" -ldflags "$(GO_LDFLAGS)" $(pkgmap.$(@F))
 	@echo "Binary available as $@"
 	@touch $@
 
@@ -260,6 +255,10 @@ $(BUILD_DIR)/images/baseos/$(DUMMY):
 	docker tag $(DOCKER_NS)/fabric-$(TARGET) \
 		$(DOCKER_NS)/fabric-$(TARGET):$(DOCKER_TAG)
 	@touch $@
+
+$(BUILD_DIR)/images/peer/$(DUMMY): BUILD_ARGS=--build-arg GO_TAGS=${GO_TAGS} --build-arg GOPROXY=${GOPROXY}
+
+$(BUILD_DIR)/images/orderer/$(DUMMY): BUILD_ARGS=--build-arg GO_TAGS=${GO_TAGS} --build-arg GOPROXY=${GOPROXY}
 
 $(BUILD_DIR)/images/ccenv/$(DUMMY): BUILD_ARGS=--build-arg CHAINTOOL_RELEASE=${CHAINTOOL_RELEASE} \
 	--build-arg JAVA_VER=${JAVA_VER} --build-arg NODE_VER=${NODE_VER}

@@ -44,3 +44,8 @@ bin/
 # vscode settings
 .vscode
 maven_data.xml
+
+# Intellij file
+.DS_Store
+.idea/
+vendor/

@@ -19,6 +19,7 @@ RUN apk add --no-cache \
 ADD . $GOPATH/src/github.com/hyperledger/fabric
 WORKDIR $GOPATH/src/github.com/hyperledger/fabric
 ENV EXECUTABLES go git curl
+RUN GO111MODULE=on go mod vendor
 RUN make gotool.protoc-gen-go \
 	&& go get -u github.com/kardianos/govendor \
 	&& mkdir $GOPATH/src/input \
@@ -59,3 +60,4 @@ COPY --from=golang /go/src/input/vendor $GOPATH/src
 RUN addgroup chaincode && adduser -D -h /home/chaincode -G chaincode chaincode
 RUN chown -R chaincode:chaincode /chaincode/output
 USER chaincode
+
