@@ -270,6 +270,7 @@ func (goPlatform *Platform) GetDeploymentPayload(path string) ([]byte, error) {
 	goroots := splitEnvPaths(env["GOROOT"])
 	gopaths[code.Gopath] = true
 	env["GOPATH"] = flattenEnvPaths(gopaths)
+	env["GO111MODULE"] = "off"
 
 	// --------------------------------------------------------------------------------------
 	// Retrieve the list of first-order imports referenced by the chaincode

@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-GOTOOLS = counterfeiter dep golint goimports protoc-gen-go ginkgo gocov gocov-xml misspell mockery manifest-tool
+GOTOOLS = counterfeiter golint goimports protoc-gen-go ginkgo gocov gocov-xml misspell mockery manifest-tool
 BUILD_DIR ?= .build
 GOTOOLS_GOPATH ?= $(BUILD_DIR)/gotools
 GOTOOLS_BINDIR ?= $(GOPATH)/bin
@@ -28,37 +28,37 @@ gotools-clean:
 # Special override for protoc-gen-go since we want to use the version vendored with the project
 gotool.protoc-gen-go:
 	@echo "Building github.com/golang/protobuf/protoc-gen-go -> protoc-gen-go"
-	GOBIN=$(abspath $(GOTOOLS_BINDIR)) go install ./vendor/github.com/golang/protobuf/protoc-gen-go
+	GO111MODULE=off go get -d -u github.com/golang/protobuf/protoc-gen-go
+	@git -C $(GOPATH)/src/github.com/golang/protobuf/protoc-gen-go checkout aa810b61a9c79d51363740d207bb46cf8e620ed5
+	GO111MODULE=off GOBIN=$(abspath $(GOTOOLS_BINDIR)) go install github.com/golang/protobuf/protoc-gen-go
 
 # Special override for ginkgo since we want to use the version vendored with the project
 gotool.ginkgo:
 	@echo "Building github.com/onsi/ginkgo/ginkgo -> ginkgo"
-	GOBIN=$(abspath $(GOTOOLS_BINDIR)) go install ./vendor/github.com/onsi/ginkgo/ginkgo
+	GO111MODULE=off go get -d -u github.com/onsi/ginkgo/ginkgo
+	@git -C $(GOPATH)/src/github.com/onsi/ginkgo/ginkgo checkout a3b6351eb1ff8e1bfa30b2f55d7e282186ed8fee
+	GO111MODULE=off GOBIN=$(abspath $(GOTOOLS_BINDIR)) go install github.com/onsi/ginkgo/ginkgo
 
 # Special override for goimports since we want to use the version vendored with the project
 gotool.goimports:
 	@echo "Building golang.org/x/tools/cmd/goimports -> goimports"
-	GOBIN=$(abspath $(GOTOOLS_BINDIR)) go install ./vendor/golang.org/x/tools/cmd/goimports
+	GO111MODULE=off go get -d -u golang.org/x/tools/cmd/goimports
+	@git -C $(GOPATH)/src/golang.org/x/tools/cmd/goimports checkout f60e5f99f0816fc2d9ecb338008ea420248d2943
+	GO111MODULE=off GOBIN=$(abspath $(GOTOOLS_BINDIR)) go install golang.org/x/tools/cmd/goimports
 
 # Special override for golint since we want to use the version vendored with the project
 gotool.golint:
 	@echo "Building golang.org/x/lint/golint -> golint"
-	GOBIN=$(abspath $(GOTOOLS_BINDIR)) go install ./vendor/golang.org/x/lint/golint
+	GO111MODULE=off go get -d -u golang.org/x/lint/golint
+	@git -C $(GOPATH)/src/golang.org/x/lint/golint checkout c67002cb31c3a748b7688c27f20d8358b4193582
+	GO111MODULE=off GOBIN=$(abspath $(GOTOOLS_BINDIR)) go install golang.org/x/lint/golint
 
-# Lock to a versioned dep
-gotool.dep: DEP_VERSION ?= "v0.5.0"
-gotool.dep:
-	@GOPATH=$(abspath $(GOTOOLS_GOPATH)) go get -d -u github.com/golang/dep
-	@git -C $(abspath $(GOTOOLS_GOPATH))/src/github.com/golang/dep checkout -q $(DEP_VERSION)
-	@echo "Building github.com/golang/dep $(DEP_VERSION) -> dep"
-	@GOPATH=$(abspath $(GOTOOLS_GOPATH)) GOBIN=$(abspath $(GOTOOLS_BINDIR)) go install -ldflags="-X main.version=$(DEP_VERSION) -X main.buildDate=$$(date '+%Y-%m-%d')" github.com/golang/dep/cmd/dep
-	@git -C $(abspath $(GOTOOLS_GOPATH))/src/github.com/golang/dep checkout -q master
 
 # Default rule for gotools uses the name->path map for a generic 'go get' style build
 gotool.%:
 	$(eval TOOL = ${subst gotool.,,${@}})
 	@echo "Building ${go.fqp.${TOOL}} -> $(TOOL)"
-	@GOPATH=$(abspath $(GOTOOLS_GOPATH)) GOBIN=$(abspath $(GOTOOLS_BINDIR)) go get ${go.fqp.${TOOL}}
+	@GO111MODULE=off GOPATH=$(abspath $(GOTOOLS_GOPATH)) GOBIN=$(abspath $(GOTOOLS_BINDIR)) go get ${go.fqp.${TOOL}}
 
 $(GOTOOLS_BINDIR)/%:
 	$(eval TOOL = ${subst $(GOTOOLS_BINDIR)/,,${@}})
