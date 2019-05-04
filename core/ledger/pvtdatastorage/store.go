@@ -86,6 +86,11 @@ type Store interface {
 	Shutdown()
 }
 
+// NewErrIllegalCall creates an illegal call error
+func NewErrIllegalCall(msg string) *ErrIllegalCall {
+	return &ErrIllegalCall{msg: msg}
+}
+
 // ErrIllegalCall is to be thrown by a store impl if the store does not expect a call to Prepare/Commit/Rollback/InitLastCommittedBlock
 type ErrIllegalCall struct {
 	msg string
@@ -95,6 +100,11 @@ func (err *ErrIllegalCall) Error() string {
 	return err.msg
 }
 
+// NewErrIllegalArgs creates an illegal args error
+func NewErrIllegalArgs(msg string) *ErrIllegalArgs {
+	return &ErrIllegalArgs{msg: msg}
+}
+
 // ErrIllegalArgs is to be thrown by a store impl if the args passed are not allowed
 type ErrIllegalArgs struct {
 	msg string
@@ -102,6 +112,11 @@ type ErrIllegalArgs struct {
 
 func (err *ErrIllegalArgs) Error() string {
 	return err.msg
+}
+
+// NewErrOutOfRange creates an out of range error
+func NewErrOutOfRange(msg string) *ErrOutOfRange {
+	return &ErrOutOfRange{msg: msg}
 }
 
 // ErrOutOfRange is to be thrown for the request for the data that is not yet committed
