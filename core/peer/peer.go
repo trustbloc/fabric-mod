@@ -37,6 +37,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/customtx"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
 	"github.com/hyperledger/fabric/core/transientstore"
+	transientstoreext "github.com/hyperledger/fabric/extensions/transientstore"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/service"
 	"github.com/hyperledger/fabric/msp"
@@ -108,7 +109,7 @@ func (sp *storeProvider) OpenStore(ledgerID string) (transientstore.Store, error
 	sp.Lock()
 	defer sp.Unlock()
 	if sp.StoreProvider == nil {
-		sp.StoreProvider = transientstore.NewStoreProvider()
+		sp.StoreProvider = transientstoreext.NewStoreProvider()
 	}
 	store, err := sp.StoreProvider.OpenStore(ledgerID)
 	if err == nil {
