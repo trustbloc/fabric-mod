@@ -28,6 +28,7 @@ require (
 	github.com/hashicorp/go-version v1.0.0
 	github.com/hyperledger/fabric-amcl v0.0.0-20180903120555-6b78f7a22d95
 	github.com/hyperledger/fabric-lib-go v1.0.0
+	github.com/hyperledger/fabric/extensions v0.0.0
 	github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515 // indirect
 	github.com/kr/pretty v0.1.0
 	github.com/magiconair/properties v1.8.0 // indirect
@@ -68,8 +69,11 @@ require (
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/cheggaaa/pb.v1 v1.0.25
 	gopkg.in/yaml.v2 v2.2.1
+
 )
 
 replace github.com/docker/libnetwork => github.com/docker/libnetwork v0.0.0-20180608203834-19279f049241
 
 replace github.com/docker/docker => github.com/docker/docker v0.0.0-20180827131323-0c5f8d2b9b23
+
+replace github.com/hyperledger/fabric/extensions => ./extensions

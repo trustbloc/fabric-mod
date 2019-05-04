@@ -16,6 +16,7 @@ import (
 	"time"
 
 	common_utils "github.com/hyperledger/fabric/common/util"
+	"github.com/hyperledger/fabric/extensions/roles"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/comm"
 	"github.com/hyperledger/fabric/gossip/common"
@@ -886,6 +887,7 @@ func (gc *gossipChannel) updateProperties(ledgerHeight uint64, chaincodes []*pro
 			LeftChannel:  leftChannel,
 			LedgerHeight: ledgerHeight,
 			Chaincodes:   chaincodes,
+			Roles:        roles.RolesAsString(),
 		},
 	}
 	m := &proto.GossipMessage{
