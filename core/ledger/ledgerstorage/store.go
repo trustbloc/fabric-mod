@@ -17,6 +17,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/pvtdatapolicy"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatastorage"
 	lutil "github.com/hyperledger/fabric/core/ledger/util"
+	pvtdatastorageext "github.com/hyperledger/fabric/extensions/pvtdatastorage"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/pkg/errors"
 )
@@ -52,7 +53,7 @@ func NewProvider() *Provider {
 		fsblkstorage.NewConf(ledgerconfig.GetBlockStorePath(), ledgerconfig.GetMaxBlockfileSize()),
 		indexConfig)
 
-	pvtStoreProvider := pvtdatastorage.NewProvider()
+	pvtStoreProvider := pvtdatastorageext.NewProvider()
 	return &Provider{blockStoreProvider, pvtStoreProvider}
 }
 
