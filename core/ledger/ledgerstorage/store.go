@@ -11,12 +11,12 @@ import (
 
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
-	"github.com/hyperledger/fabric/common/ledger/blkstorage/fsblkstorage"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatapolicy"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatastorage"
 	lutil "github.com/hyperledger/fabric/core/ledger/util"
+	blkstorageext "github.com/hyperledger/fabric/extensions/blkstorage"
 	pvtdatastorageext "github.com/hyperledger/fabric/extensions/pvtdatastorage"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/pkg/errors"
@@ -49,8 +49,8 @@ func NewProvider() *Provider {
 		blkstorage.IndexableAttrTxValidationCode,
 	}
 	indexConfig := &blkstorage.IndexConfig{AttrsToIndex: attrsToIndex}
-	blockStoreProvider := fsblkstorage.NewProvider(
-		fsblkstorage.NewConf(ledgerconfig.GetBlockStorePath(), ledgerconfig.GetMaxBlockfileSize()),
+	blockStoreProvider := blkstorageext.NewProvider(
+		blkstorageext.NewConf(ledgerconfig.GetBlockStorePath(), ledgerconfig.GetMaxBlockfileSize()),
 		indexConfig)
 
 	pvtStoreProvider := pvtdatastorageext.NewProvider()
