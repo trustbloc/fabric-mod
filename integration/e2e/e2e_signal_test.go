@@ -11,6 +11,8 @@ import (
 	"os"
 	"syscall"
 
+	"github.com/tedsuo/ifrit/grouper"
+
 	docker "github.com/fsouza/go-dockerclient"
 	"github.com/hyperledger/fabric/integration/nwo"
 	. "github.com/onsi/ginkgo"
@@ -27,6 +29,7 @@ var _ = Describe("SignalHandling", func() {
 		network *nwo.Network
 
 		peerRunner, ordererRunner   *ginkgomon.Runner
+		couchdDBRunner              ifrit.Runner
 		peerProcess, ordererProcess ifrit.Process
 	)
 
@@ -46,8 +49,14 @@ var _ = Describe("SignalHandling", func() {
 		ordererProcess = ifrit.Invoke(ordererRunner)
 		Eventually(ordererProcess.Ready(), network.EventuallyTimeout).Should(BeClosed())
 
-		peerRunner = network.PeerRunner(network.Peers[0])
-		peerProcess = ifrit.Invoke(peerRunner)
+		peerRunner = network.PeerNodeRunner(network.Peers[0])
+		couchdDBRunner = network.CouchDBRunner(network.Peers[0])
+		members := grouper.Members{
+			{Name: "couchdbs", Runner: couchdDBRunner},
+			{Name: "peers", Runner: peerRunner},
+		}
+		process := grouper.NewOrdered(syscall.SIGTERM, members)
+		peerProcess = ginkgomon.Invoke(process)
 		Eventually(peerProcess.Ready(), network.EventuallyTimeout).Should(BeClosed())
 	})
 
