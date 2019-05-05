@@ -23,12 +23,14 @@ import (
 	"strconv"
 	"testing"
 
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/spf13/viper"
 )
 
 type testEnv struct {
-	t    testing.TB
-	path string
+	t                 testing.TB
+	path              string
+	cleanupExtTestEnv func()
 }
 
 func newTestEnv(t testing.TB) *testEnv {
@@ -42,14 +44,21 @@ func newTestEnv(t testing.TB) *testEnv {
 }
 
 func createTestEnv(t testing.TB, path string) *testEnv {
+	//setup ext test env
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+
 	env := &testEnv{
-		t:    t,
-		path: path}
-	env.cleanup()
+		t:                 t,
+		path:              path,
+		cleanupExtTestEnv: destroy}
+	os.RemoveAll(env.path)
 	viper.Set("peer.fileSystemPath", env.path)
 	return env
 }
 
 func (env *testEnv) cleanup() {
 	os.RemoveAll(env.path)
+	if env.cleanupExtTestEnv != nil {
+		env.cleanupExtTestEnv()
+	}
 }

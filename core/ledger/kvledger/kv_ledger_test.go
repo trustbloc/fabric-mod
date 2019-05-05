@@ -28,6 +28,7 @@ import (
 
 func TestMain(m *testing.M) {
 	ledgertestutil.SetupCoreYAMLConfig()
+
 	flogging.ActivateSpec("lockbasedtxmgr,statevalidator,valimpl,confighistory,pvtstatepurgemgmt=debug")
 	viper.Set("peer.fileSystemPath", "/tmp/fabric/ledgertests/kvledger")
 	viper.Set("ledger.history.enableHistoryDatabase", true)
@@ -93,7 +94,7 @@ func TestKVLedgerBlockStorage(t *testing.T) {
 	assert.True(t, proto.Equal(b0, gb), "proto messages are not equal")
 
 	b1, _ = ledger.GetBlockByNumber(1)
-	assert.Equal(t, block1, b1)
+	assert.True(t, proto.Equal(block1, b1), "proto messages are not equal")
 
 	// get the tran id from the 2nd block, then use it to test GetTransactionByID()
 	txEnvBytes2 := block1.Data.Data[0]

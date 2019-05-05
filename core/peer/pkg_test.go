@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
+
 	"github.com/golang/protobuf/proto"
 	configtxtest "github.com/hyperledger/fabric/common/configtx/test"
 	"github.com/hyperledger/fabric/core/comm"
@@ -25,6 +27,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/mock"
 	"github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/hyperledger/fabric/core/peer"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/msp"
 	cb "github.com/hyperledger/fabric/protos/common"
 	mspproto "github.com/hyperledger/fabric/protos/msp"
@@ -281,6 +284,12 @@ func TestUpdateRootsFromConfigBlock(t *testing.T) {
 		},
 	}
 
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	ledgermgmt.InitializeTestEnv()
+
+	defer ledgermgmt.CleanupTestEnv()
+	defer destroy()
+
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
@@ -323,4 +332,5 @@ func TestUpdateRootsFromConfigBlock(t *testing.T) {
 			}
 		})
 	}
+
 }

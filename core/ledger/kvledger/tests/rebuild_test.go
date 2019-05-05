@@ -7,7 +7,10 @@ SPDX-License-Identifier: Apache-2.0
 package tests
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/hyperledger/fabric/common/ledger/util"
 )
 
 func TestRebuildComponents(t *testing.T) {
@@ -43,7 +46,15 @@ func TestRebuildComponents(t *testing.T) {
 
 	t.Run("rebuild statedb and block index",
 		func(t *testing.T) {
-			env.closeAllLedgersAndDrop(rebuildableStatedb + rebuildableBlockIndex)
+
+			flag := rebuildableStatedb + rebuildableBlockIndex
+			_, err := util.DirEmpty(getBlockIndexDBPath())
+			if err != nil && strings.Contains(err.Error(), "no such file or directory") {
+				//couch db index, no need to attempt to delete index file
+				flag = rebuildableStatedb
+			}
+
+			env.closeAllLedgersAndDrop(flag)
 			h1, h2 := newTestHelperOpenLgr("ledger1", t), newTestHelperOpenLgr("ledger2", t)
 			dataHelper.verifyLedgerContent(h1)
 			dataHelper.verifyLedgerContent(h2)

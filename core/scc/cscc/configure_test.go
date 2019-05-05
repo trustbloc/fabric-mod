@@ -33,21 +33,23 @@ import (
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/container"
 	"github.com/hyperledger/fabric/core/container/inproccontroller"
-	deliverclient "github.com/hyperledger/fabric/core/deliverservice"
+	"github.com/hyperledger/fabric/core/deliverservice"
 	"github.com/hyperledger/fabric/core/deliverservice/blocksprovider"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
 	ledgermock "github.com/hyperledger/fabric/core/ledger/mock"
+	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
 	"github.com/hyperledger/fabric/core/peer"
 	"github.com/hyperledger/fabric/core/policy"
 	policymocks "github.com/hyperledger/fabric/core/policy/mocks"
 	"github.com/hyperledger/fabric/core/scc/cscc/mock"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/service"
 	"github.com/hyperledger/fabric/internal/configtxgen/configtxgentest"
 	"github.com/hyperledger/fabric/internal/configtxgen/encoder"
 	genesisconfig "github.com/hyperledger/fabric/internal/configtxgen/localconfig"
 	"github.com/hyperledger/fabric/msp/mgmt"
-	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
+	"github.com/hyperledger/fabric/msp/mgmt/testtools"
 	peergossip "github.com/hyperledger/fabric/peer/gossip"
 	"github.com/hyperledger/fabric/peer/gossip/mocks"
 	cb "github.com/hyperledger/fabric/protos/common"
@@ -112,12 +114,20 @@ func (*mockDeliveryClientFactory) Service(g service.GossipService, endpoints []s
 var mockAclProvider *aclmocks.MockACLProvider
 
 func TestMain(m *testing.M) {
+	// Read the core.yaml file for default config.
+	ledgertestutil.SetupCoreYAMLConfig()
+
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+
 	msptesttools.LoadMSPSetupForTesting()
 
 	mockAclProvider = &aclmocks.MockACLProvider{}
 	mockAclProvider.Reset()
 
-	os.Exit(m.Run())
+	code := m.Run()
+	destroy()
+	os.Exit(code)
 }
 
 func TestConfigerInit(t *testing.T) {

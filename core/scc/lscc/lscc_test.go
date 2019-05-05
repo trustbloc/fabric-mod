@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/viper"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/common/cauthdsl"
 	"github.com/hyperledger/fabric/common/mocks/config"
@@ -29,10 +31,12 @@ import (
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	cutil "github.com/hyperledger/fabric/core/container/util"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
+	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
 	"github.com/hyperledger/fabric/core/mocks/scc/lscc"
 	"github.com/hyperledger/fabric/core/policy"
 	policymocks "github.com/hyperledger/fabric/core/policy/mocks"
 	"github.com/hyperledger/fabric/core/scc/lscc/mock"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/msp"
 	mspmgmt "github.com/hyperledger/fabric/msp/mgmt"
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
@@ -1151,6 +1155,13 @@ func NewMockProvider() *mscc.MocksccProviderImpl {
 }
 
 func TestMain(m *testing.M) {
+	// Read the core.yaml file for default config.
+	ledgertestutil.SetupCoreYAMLConfig()
+
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	viper.Set("peer.fileSystemPath", "/tmp/fabric/core/ledger")
+
 	var err error
 	msptesttools.LoadMSPSetupForTesting()
 	id, err = mspmgmt.GetLocalMSP().GetDefaultSigningIdentity()
@@ -1162,5 +1173,7 @@ func TestMain(m *testing.M) {
 	mockAclProvider = &mocks.MockACLProvider{}
 	mockAclProvider.Reset()
 
-	os.Exit(m.Run())
+	code := m.Run()
+	destroy()
+	os.Exit(code)
 }

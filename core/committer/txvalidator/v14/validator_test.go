@@ -30,17 +30,19 @@ import (
 	"github.com/hyperledger/fabric/core/committer/txvalidator/v14/mocks"
 	"github.com/hyperledger/fabric/core/committer/txvalidator/v14/testdata"
 	ccp "github.com/hyperledger/fabric/core/common/ccprovider"
-	validation "github.com/hyperledger/fabric/core/handlers/validation/api"
+	"github.com/hyperledger/fabric/core/handlers/validation/api"
 	"github.com/hyperledger/fabric/core/handlers/validation/builtin"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
+	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
 	lutils "github.com/hyperledger/fabric/core/ledger/util"
 	mocktxvalidator "github.com/hyperledger/fabric/core/mocks/txvalidator"
 	mocks2 "github.com/hyperledger/fabric/discovery/support/mocks"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/msp/mgmt"
-	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
+	"github.com/hyperledger/fabric/msp/mgmt/testtools"
 	"github.com/hyperledger/fabric/protos/common"
 	mb "github.com/hyperledger/fabric/protos/msp"
 	"github.com/hyperledger/fabric/protos/peer"
@@ -322,6 +324,10 @@ func assertValid(block *common.Block, t *testing.T) {
 
 func TestInvokeBadRWSet(t *testing.T) {
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -330,6 +336,10 @@ func TestInvokeBadRWSet(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -351,6 +361,10 @@ func testInvokeBadRWSet(t *testing.T, l ledger.PeerLedger, v txvalidator.Validat
 
 func TestInvokeNoPolicy(t *testing.T) {
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -359,6 +373,10 @@ func TestInvokeNoPolicy(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -382,6 +400,10 @@ func testInvokeNoPolicy(t *testing.T, l ledger.PeerLedger, v txvalidator.Validat
 
 func TestInvokeOK(t *testing.T) {
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -390,6 +412,10 @@ func TestInvokeOK(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -416,6 +442,10 @@ func TestInvokeNoRWSet(t *testing.T) {
 	plugin.On("Init", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	t.Run("Pre-1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorExplicit(t, preV12Capabilities(), plugin)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -444,6 +474,10 @@ func TestInvokeNoRWSet(t *testing.T) {
 	// No need to define validation behavior for the previous test case because pre 1.2 we don't validate transactions
 	// that have no write set.
 	t.Run("Post-1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorExplicitWithMSP(t, v12Capabilities(), &builtin.DefaultValidation{}, mspmgr)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -454,6 +488,10 @@ func TestInvokeNoRWSet(t *testing.T) {
 	// Here we test that if we have the 1.3 capability, we still reject a transaction that only contains
 	// reads if it doesn't comply with the endorsement policy
 	t.Run("Post-1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorExplicitWithMSP(t, v13Capabilities(), &builtin.DefaultValidation{}, mspmgr)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -618,6 +656,9 @@ func TestParallelValidation(t *testing.T) {
 
 	vpKey := pb.MetaDataKeys_VALIDATION_PARAMETER.String()
 
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	l, v := setupLedgerAndValidatorExplicitWithMSP(t, &mockconfig.MockApplicationCapabilities{V1_2ValidationRv: true, V1_3ValidationRv: true}, &builtin.DefaultValidation{}, mgr)
 	defer ledgermgmt.CleanupTestEnv()
 	defer l.Close()
@@ -735,6 +776,10 @@ func TestParallelValidation(t *testing.T) {
 func TestChaincodeEvent(t *testing.T) {
 	t.Run("PreV1.2", func(t *testing.T) {
 		t.Run("MisMatchedName", func(t *testing.T) {
+
+			_, _, destroy := xtestutil.SetupExtTestEnv()
+			defer destroy()
+
 			l, v := setupLedgerAndValidatorWithPreV12Capabilities(t)
 			defer ledgermgmt.CleanupTestEnv()
 			defer l.Close()
@@ -752,6 +797,10 @@ func TestChaincodeEvent(t *testing.T) {
 		})
 
 		t.Run("BadBytes", func(t *testing.T) {
+
+			_, _, destroy := xtestutil.SetupExtTestEnv()
+			defer destroy()
+
 			l, v := setupLedgerAndValidatorWithPreV12Capabilities(t)
 			defer ledgermgmt.CleanupTestEnv()
 			defer l.Close()
@@ -769,6 +818,10 @@ func TestChaincodeEvent(t *testing.T) {
 		})
 
 		t.Run("GoodPath", func(t *testing.T) {
+
+			_, _, destroy := xtestutil.SetupExtTestEnv()
+			defer destroy()
+
 			l, v := setupLedgerAndValidatorWithPreV12Capabilities(t)
 			defer ledgermgmt.CleanupTestEnv()
 			defer l.Close()
@@ -788,6 +841,10 @@ func TestChaincodeEvent(t *testing.T) {
 
 	t.Run("PostV1.2", func(t *testing.T) {
 		t.Run("MisMatchedName", func(t *testing.T) {
+
+			_, _, destroy := xtestutil.SetupExtTestEnv()
+			defer destroy()
+
 			l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 			defer ledgermgmt.CleanupTestEnv()
 			defer l.Close()
@@ -796,6 +853,10 @@ func TestChaincodeEvent(t *testing.T) {
 		})
 
 		t.Run("BadBytes", func(t *testing.T) {
+
+			_, _, destroy := xtestutil.SetupExtTestEnv()
+			defer destroy()
+
 			l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 			defer ledgermgmt.CleanupTestEnv()
 			defer l.Close()
@@ -804,6 +865,10 @@ func TestChaincodeEvent(t *testing.T) {
 		})
 
 		t.Run("GoodPath", func(t *testing.T) {
+
+			_, _, destroy := xtestutil.SetupExtTestEnv()
+			defer destroy()
+
 			l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 			defer ledgermgmt.CleanupTestEnv()
 			defer l.Close()
@@ -814,6 +879,10 @@ func TestChaincodeEvent(t *testing.T) {
 
 	t.Run("V1.3", func(t *testing.T) {
 		t.Run("MisMatchedName", func(t *testing.T) {
+
+			_, _, destroy := xtestutil.SetupExtTestEnv()
+			defer destroy()
+
 			l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 			defer ledgermgmt.CleanupTestEnv()
 			defer l.Close()
@@ -822,6 +891,10 @@ func TestChaincodeEvent(t *testing.T) {
 		})
 
 		t.Run("BadBytes", func(t *testing.T) {
+
+			_, _, destroy := xtestutil.SetupExtTestEnv()
+			defer destroy()
+
 			l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 			defer ledgermgmt.CleanupTestEnv()
 			defer l.Close()
@@ -830,6 +903,10 @@ func TestChaincodeEvent(t *testing.T) {
 		})
 
 		t.Run("GoodPath", func(t *testing.T) {
+
+			_, _, destroy := xtestutil.SetupExtTestEnv()
+			defer destroy()
+
 			l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 			defer ledgermgmt.CleanupTestEnv()
 			defer l.Close()
@@ -886,6 +963,10 @@ func TestInvokeOKPvtDataOnly(t *testing.T) {
 	mspmgr.DeserializeIdentityReturns(idThatSatisfiesPrincipal, nil)
 
 	t.Run("V1.2", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorExplicitWithMSP(t, v12Capabilities(), &builtin.DefaultValidation{}, mspmgr)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -894,6 +975,10 @@ func TestInvokeOKPvtDataOnly(t *testing.T) {
 	})
 
 	t.Run("V1.3", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorExplicitWithMSP(t, v13Capabilities(), &builtin.DefaultValidation{}, mspmgr)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -930,6 +1015,10 @@ func TestInvokeOKMetaUpdateOnly(t *testing.T) {
 	mspmgr.DeserializeIdentityReturns(idThatSatisfiesPrincipal, nil)
 
 	t.Run("V1.2", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorExplicitWithMSP(t, &mockconfig.MockApplicationCapabilities{V1_2ValidationRv: true, PrivateChannelDataRv: true}, &builtin.DefaultValidation{}, mspmgr)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -938,6 +1027,10 @@ func TestInvokeOKMetaUpdateOnly(t *testing.T) {
 	})
 
 	t.Run("V1.3", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorExplicitWithMSP(t, &mockconfig.MockApplicationCapabilities{V1_3ValidationRv: true, V1_2ValidationRv: true, PrivateChannelDataRv: true}, &builtin.DefaultValidation{}, mspmgr)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -974,6 +1067,10 @@ func TestInvokeOKPvtMetaUpdateOnly(t *testing.T) {
 	mspmgr.DeserializeIdentityReturns(idThatSatisfiesPrincipal, nil)
 
 	t.Run("V1.2", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorExplicitWithMSP(t, &mockconfig.MockApplicationCapabilities{V1_2ValidationRv: true, PrivateChannelDataRv: true}, &builtin.DefaultValidation{}, mspmgr)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -982,6 +1079,10 @@ func TestInvokeOKPvtMetaUpdateOnly(t *testing.T) {
 	})
 
 	t.Run("V1.3", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorExplicitWithMSP(t, &mockconfig.MockApplicationCapabilities{V1_3ValidationRv: true, V1_2ValidationRv: true, PrivateChannelDataRv: true}, &builtin.DefaultValidation{}, mspmgr)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1012,6 +1113,10 @@ func testInvokeOKPvtMetaUpdateOnly(t *testing.T, l ledger.PeerLedger, v txvalida
 
 func TestInvokeOKSCC(t *testing.T) {
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1020,6 +1125,10 @@ func TestInvokeOKSCC(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1063,6 +1172,10 @@ func testInvokeOKSCC(t *testing.T, l ledger.PeerLedger, v txvalidator.Validator)
 
 func TestInvokeNOKWritesToLSCC(t *testing.T) {
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1071,6 +1184,10 @@ func TestInvokeNOKWritesToLSCC(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1094,6 +1211,10 @@ func testInvokeNOKWritesToLSCC(t *testing.T, l ledger.PeerLedger, v txvalidator.
 
 func TestInvokeNOKWritesToESCC(t *testing.T) {
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1102,6 +1223,10 @@ func TestInvokeNOKWritesToESCC(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1128,6 +1253,10 @@ func testInvokeNOKWritesToESCC(t *testing.T, l ledger.PeerLedger, v txvalidator.
 
 func TestInvokeNOKWritesToNotExt(t *testing.T) {
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1136,6 +1265,10 @@ func TestInvokeNOKWritesToNotExt(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1162,6 +1295,10 @@ func testInvokeNOKWritesToNotExt(t *testing.T, l ledger.PeerLedger, v txvalidato
 
 func TestInvokeNOKInvokesNotExt(t *testing.T) {
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1170,6 +1307,10 @@ func TestInvokeNOKInvokesNotExt(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1196,6 +1337,10 @@ func testInvokeNOKInvokesNotExt(t *testing.T, l ledger.PeerLedger, v txvalidator
 
 func TestInvokeNOKInvokesEmptyCCName(t *testing.T) {
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1204,6 +1349,10 @@ func TestInvokeNOKInvokesEmptyCCName(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1230,6 +1379,10 @@ func testInvokeNOKInvokesEmptyCCName(t *testing.T, l ledger.PeerLedger, v txvali
 
 func TestInvokeNOKExpiredCC(t *testing.T) {
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1238,6 +1391,10 @@ func TestInvokeNOKExpiredCC(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1264,6 +1421,10 @@ func testInvokeNOKExpiredCC(t *testing.T, l ledger.PeerLedger, v txvalidator.Val
 
 func TestInvokeNOKBogusActions(t *testing.T) {
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1272,6 +1433,10 @@ func TestInvokeNOKBogusActions(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1298,6 +1463,10 @@ func testInvokeNOKBogusActions(t *testing.T, l ledger.PeerLedger, v txvalidator.
 
 func TestInvokeNOKCCDoesntExist(t *testing.T) {
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1306,6 +1475,10 @@ func TestInvokeNOKCCDoesntExist(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1330,6 +1503,10 @@ func testInvokeNOKCCDoesntExist(t *testing.T, l ledger.PeerLedger, v txvalidator
 
 func TestInvokeNOKVSCCUnspecified(t *testing.T) {
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1338,6 +1515,10 @@ func TestInvokeNOKVSCCUnspecified(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1364,6 +1545,10 @@ func testInvokeNOKVSCCUnspecified(t *testing.T, l ledger.PeerLedger, v txvalidat
 
 func TestInvokeNoBlock(t *testing.T) {
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1372,6 +1557,10 @@ func TestInvokeNoBlock(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1404,6 +1593,10 @@ func TestValidateTxWithStateBasedEndorsement(t *testing.T) {
 	// ignored by 1.2.
 
 	t.Run("1.2Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV12Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1415,6 +1608,10 @@ func TestValidateTxWithStateBasedEndorsement(t *testing.T) {
 	})
 
 	t.Run("1.3Capability", func(t *testing.T) {
+
+		_, _, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+
 		l, v := setupLedgerAndValidatorWithV13Capabilities(t)
 		defer ledgermgmt.CleanupTestEnv()
 		defer l.Close()
@@ -1441,6 +1638,10 @@ func validateTxWithStateBasedEndorsement(t *testing.T, l ledger.PeerLedger, v tx
 }
 
 func TestTokenValidTransaction(t *testing.T) {
+
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	l, v := setupLedgerAndValidatorWithFabTokenCapabilities(t)
 	defer ledgermgmt.CleanupTestEnv()
 	defer l.Close()
@@ -1454,6 +1655,10 @@ func TestTokenValidTransaction(t *testing.T) {
 }
 
 func TestTokenCapabilityNotEnabled(t *testing.T) {
+
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	l, v := setupLedgerAndValidatorWithPreV12Capabilities(t)
 	defer ledgermgmt.CleanupTestEnv()
 	defer l.Close()
@@ -1709,6 +1914,10 @@ func createCustomSupportAndLedger(t *testing.T) (*mocktxvalidator.Support, ledge
 }
 
 func TestDynamicCapabilitiesAndMSP(t *testing.T) {
+
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	factory := &mocks.PluginFactory{}
 	factory.On("New").Return(testdata.NewSampleValidationPlugin(t))
 	pm := &mocks.Mapper{}
@@ -1760,6 +1969,10 @@ func TestDynamicCapabilitiesAndMSP(t *testing.T) {
 // has to stop. There is suppose to be clear indication of the failure with error
 // returned from the function call.
 func TestLedgerIsNoAvailable(t *testing.T) {
+
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	theLedger := new(mockLedger)
 	mp := (&scc.MocksccProviderFactory{}).NewSystemChaincodeProvider()
 	pm := &mocks.Mapper{}
@@ -1795,6 +2008,10 @@ func TestLedgerIsNoAvailable(t *testing.T) {
 }
 
 func TestLedgerIsNotAvailableForCheckingTxidDuplicate(t *testing.T) {
+
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	theLedger := new(mockLedger)
 	mp := (&scc.MocksccProviderFactory{}).NewSystemChaincodeProvider()
 	pm := &mocks.Mapper{}
@@ -1824,6 +2041,10 @@ func TestLedgerIsNotAvailableForCheckingTxidDuplicate(t *testing.T) {
 }
 
 func TestDuplicateTxId(t *testing.T) {
+
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	theLedger := new(mockLedger)
 	mp := (&scc.MocksccProviderFactory{}).NewSystemChaincodeProvider()
 	pm := &mocks.Mapper{}
@@ -1858,6 +2079,10 @@ func TestDuplicateTxId(t *testing.T) {
 }
 
 func TestValidationInvalidEndorsing(t *testing.T) {
+
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	theLedger := new(mockLedger)
 	mp := (&scc.MocksccProviderFactory{}).NewSystemChaincodeProvider()
 	pm := &mocks.Mapper{}
@@ -1923,6 +2148,10 @@ func createMockLedger(t *testing.T, ccID string) *mockLedger {
 }
 
 func TestValidationPluginExecutionError(t *testing.T) {
+
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	plugin := &mocks.Plugin{}
 	plugin.On("Init", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
@@ -1949,6 +2178,10 @@ func TestValidationPluginExecutionError(t *testing.T) {
 }
 
 func TestValidationPluginNotFound(t *testing.T) {
+
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	ccID := "mycc"
 	tx := getEnv(ccID, nil, createRWset(t, ccID), t)
 	l := createMockLedger(t, ccID)
@@ -1978,6 +2211,13 @@ var signer msp.SigningIdentity
 var signerSerialized []byte
 
 func TestMain(m *testing.M) {
+
+	// Read the core.yaml file for default config.
+	ledgertestutil.SetupCoreYAMLConfig()
+
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+
 	msptesttools.LoadMSPSetupForTesting()
 
 	var err error
@@ -1995,7 +2235,11 @@ func TestMain(m *testing.M) {
 		return
 	}
 
-	os.Exit(m.Run())
+	code := m.Run()
+
+	destroy()
+
+	os.Exit(code)
 }
 
 func ToHex(q uint64) string {

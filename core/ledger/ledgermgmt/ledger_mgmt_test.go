@@ -28,13 +28,22 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/cceventmgmt"
 	"github.com/hyperledger/fabric/core/ledger/mock"
+	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestMain(m *testing.M) {
+	// Read the core.yaml file for default config.
+	ledgertestutil.SetupCoreYAMLConfig()
+
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
 	viper.Set("peer.fileSystemPath", "/tmp/fabric/ledgertests/ledgermgmt")
-	os.Exit(m.Run())
+	code := m.Run()
+	destroy()
+	os.Exit(code)
 }
 
 func TestLedgerMgmt(t *testing.T) {

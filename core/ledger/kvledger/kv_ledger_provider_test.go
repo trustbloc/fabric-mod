@@ -180,7 +180,9 @@ func TestLedgerBackup(t *testing.T) {
 	viper.Set("ledger.history.enableHistoryDatabase", true)
 
 	// create and populate a ledger in the original environment
-	env := createTestEnv(t, originalPath)
+	env1 := createTestEnv(t, originalPath)
+	defer env1.cleanup()
+
 	provider := testutilNewProvider(t)
 	bg, gb := testutil.NewBlockGenerator(t, ledgerid, false)
 	gbHash := protoutil.BlockHeaderHash(gb.Header)
@@ -212,7 +214,7 @@ func TestLedgerBackup(t *testing.T) {
 	provider.Close()
 
 	// Create restore environment
-	env = createTestEnv(t, restorePath)
+	env := createTestEnv(t, restorePath)
 
 	// remove the statedb, historydb, and block indexes (they are supposed to be auto created during opening of an existing ledger)
 	// and rename the originalPath to restorePath
