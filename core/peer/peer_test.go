@@ -18,15 +18,16 @@ import (
 	"github.com/hyperledger/fabric/core/chaincode/platforms"
 	"github.com/hyperledger/fabric/core/comm"
 	"github.com/hyperledger/fabric/core/committer/txvalidator/plugin"
-	deliverclient "github.com/hyperledger/fabric/core/deliverservice"
+	"github.com/hyperledger/fabric/core/deliverservice"
 	"github.com/hyperledger/fabric/core/deliverservice/blocksprovider"
-	validation "github.com/hyperledger/fabric/core/handlers/validation/api"
+	"github.com/hyperledger/fabric/core/handlers/validation/api"
 	"github.com/hyperledger/fabric/core/ledger/mock"
 	ledgermocks "github.com/hyperledger/fabric/core/ledger/mock"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/service"
 	"github.com/hyperledger/fabric/msp/mgmt"
-	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
+	"github.com/hyperledger/fabric/msp/mgmt/testtools"
 	peergossip "github.com/hyperledger/fabric/peer/gossip"
 	"github.com/hyperledger/fabric/peer/gossip/mocks"
 	"github.com/stretchr/testify/assert"
@@ -83,6 +84,9 @@ func TestInitChain(t *testing.T) {
 }
 
 func TestInitialize(t *testing.T) {
+
+	resetExtTestEnv()
+
 	cleanup := setupPeerFS(t)
 	defer cleanup()
 
@@ -99,6 +103,9 @@ func TestInitialize(t *testing.T) {
 }
 
 func TestCreateChainFromBlock(t *testing.T) {
+
+	resetExtTestEnv()
+
 	cleanup := setupPeerFS(t)
 	defer cleanup()
 
@@ -113,6 +120,7 @@ func TestCreateChainFromBlock(t *testing.T) {
 		nil, nil,
 	)
 	testChainID := fmt.Sprintf("mytestchainid-%d", rand.Int())
+	defer reset(testChainID)
 	block, err := configtxtest.MakeGenesisBlock(testChainID)
 	if err != nil {
 		fmt.Printf("Failed to create a config block, err %s\n", err)
@@ -223,6 +231,9 @@ func TestGetLocalIP(t *testing.T) {
 }
 
 func TestDeliverSupportManager(t *testing.T) {
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	// reset chains for testing
 	MockInitialize()
 

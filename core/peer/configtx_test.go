@@ -23,6 +23,8 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/customtx"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
+
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/internal/configtxgen/configtxgentest"
 	"github.com/hyperledger/fabric/internal/configtxgen/encoder"
 	genesisconfig "github.com/hyperledger/fabric/internal/configtxgen/localconfig"
@@ -34,6 +36,25 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var reset func(string)
+
+func TestMain(m *testing.M) {
+	//setup extension test environment
+	var destroy func()
+	_, reset, destroy = xtestutil.SetupExtTestEnv()
+
+	code := m.Run()
+
+	destroy()
+
+	os.Exit(code)
+}
+
+func resetExtTestEnv() {
+	reset("testchain1")
+	reset("testchain")
+}
 
 func setupPeerFS(t *testing.T) (cleanup func()) {
 	tempDir, err := ioutil.TempDir("", "peer-fs")
@@ -73,6 +94,10 @@ func TestConfigTxUpdateChanConfig(t *testing.T) {
 	cleanup := setupPeerFS(t)
 	defer cleanup()
 	chainid := "testchain1"
+
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	ledgermgmt.InitializeTestEnvWithInitializer(
 		&ledgermgmt.Initializer{
 			CustomTxProcessors: ConfigTxProcessors,
@@ -114,6 +139,8 @@ func TestGenesisBlockCreateLedger(t *testing.T) {
 
 	b, err := configtxtest.MakeGenesisBlock("testchain")
 	assert.NoError(t, err)
+
+	resetExtTestEnv()
 
 	ledgermgmt.InitializeTestEnvWithInitializer(
 		&ledgermgmt.Initializer{

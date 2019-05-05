@@ -23,6 +23,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
 	"github.com/hyperledger/fabric/core/peer"
 	"github.com/hyperledger/fabric/core/scc/lscc"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
@@ -44,18 +45,25 @@ var (
 )
 
 type env struct {
-	assert *assert.Assertions
+	assert            *assert.Assertions
+	cleanupExtTestEnv func()
 }
 
 func newEnv(conf config, t *testing.T) *env {
 	setupConfigs(conf)
-	env := &env{assert.New(t)}
+
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	env := &env{assert.New(t), destroy}
+
+	os.RemoveAll(getLedgerRootPath())
 	initLedgerMgmt()
 	return env
 }
 
 func (e *env) cleanup() {
 	closeLedgerMgmt()
+	e.cleanupExtTestEnv()
 	e.assert.NoError(os.RemoveAll(getLedgerRootPath()))
 }
 

@@ -21,19 +21,30 @@ import (
 	"testing"
 
 	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
+	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 )
 
 type testEnv struct {
-	t testing.TB
+	t                 testing.TB
+	cleanupExtTestEnv func()
 }
 
 func newTestEnv(t *testing.T) *testEnv {
-	testEnv := &testEnv{t}
-	testEnv.cleanup()
+	// Read the core.yaml file for default config.
+	ledgertestutil.SetupCoreYAMLConfig()
+
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+
+	testEnv := &testEnv{t, destroy}
+	path := ledgerconfig.GetRootPath()
+	os.RemoveAll(path)
 	return testEnv
 }
 
 func (env *testEnv) cleanup() {
 	path := ledgerconfig.GetRootPath()
 	os.RemoveAll(path)
+	env.cleanupExtTestEnv()
 }

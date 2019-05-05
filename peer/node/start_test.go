@@ -14,12 +14,27 @@ import (
 
 	"github.com/hyperledger/fabric/common/viperutil"
 	"github.com/hyperledger/fabric/core/handlers/library"
+	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/msp/mgmt/testtools"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 )
+
+func TestMain(m *testing.M) {
+	// Read the core.yaml file for default config.
+	ledgertestutil.SetupCoreYAMLConfig()
+
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+
+	code := m.Run()
+	destroy()
+	os.Exit(code)
+
+}
 
 func TestStartCmd(t *testing.T) {
 	defer viper.Reset()

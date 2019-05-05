@@ -22,6 +22,7 @@ import (
 	ledgerUtil "github.com/hyperledger/fabric/core/ledger/util"
 	mocktxvalidator "github.com/hyperledger/fabric/core/mocks/txvalidator"
 	"github.com/hyperledger/fabric/core/mocks/validator"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/msp"
 	mspmgmt "github.com/hyperledger/fabric/msp/mgmt"
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
@@ -161,6 +162,9 @@ func TestBlockValidationDuplicateTXId(t *testing.T) {
 }
 
 func TestBlockValidation(t *testing.T) {
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	viper.Set("peer.fileSystemPath", "/tmp/fabric/txvalidatortest")
 	ledgermgmt.InitializeTestEnv()
 	defer ledgermgmt.CleanupTestEnv()
@@ -175,6 +179,9 @@ func TestBlockValidation(t *testing.T) {
 }
 
 func TestParallelBlockValidation(t *testing.T) {
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	viper.Set("peer.fileSystemPath", "/tmp/fabric/txvalidatortest")
 	ledgermgmt.InitializeTestEnv()
 	defer ledgermgmt.CleanupTestEnv()
@@ -189,6 +196,9 @@ func TestParallelBlockValidation(t *testing.T) {
 }
 
 func TestVeryLargeParallelBlockValidation(t *testing.T) {
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	viper.Set("peer.fileSystemPath", "/tmp/fabric/txvalidatortest")
 	ledgermgmt.InitializeTestEnv()
 	defer ledgermgmt.CleanupTestEnv()
@@ -205,6 +215,9 @@ func TestVeryLargeParallelBlockValidation(t *testing.T) {
 }
 
 func TestTxValidationFailure_InvalidTxid(t *testing.T) {
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	viper.Set("peer.fileSystemPath", "/tmp/fabric/txvalidatortest")
 	ledgermgmt.InitializeTestEnv()
 	defer ledgermgmt.CleanupTestEnv()

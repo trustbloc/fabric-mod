@@ -13,8 +13,10 @@ import (
 
 	"github.com/hyperledger/fabric/core/container/inproccontroller"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
+	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
 	ccprovider2 "github.com/hyperledger/fabric/core/mocks/ccprovider"
 	"github.com/hyperledger/fabric/core/peer"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
@@ -22,6 +24,19 @@ import (
 func init() {
 	viper.Set("chaincode.system", map[string]string{"invokableExternalButNotCC2CC": "enable", "invokableCC2CCButNotExternal": "enable", "disabled": "enable"})
 	viper.Set("peer.fileSystemPath", os.TempDir())
+}
+
+func TestMain(m *testing.M) {
+	// Read the core.yaml file for default config.
+	ledgertestutil.SetupCoreYAMLConfig()
+
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+
+	code := m.Run()
+	destroy()
+	os.Exit(code)
+
 }
 
 func newTestProvider() *Provider {

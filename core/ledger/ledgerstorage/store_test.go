@@ -13,7 +13,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
-	"github.com/hyperledger/fabric/common/ledger/blkstorage/fsblkstorage"
 	"github.com/hyperledger/fabric/common/ledger/testutil"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
@@ -21,6 +20,7 @@ import (
 	btltestutil "github.com/hyperledger/fabric/core/ledger/pvtdatapolicy/testutil"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatastorage"
 	lutil "github.com/hyperledger/fabric/core/ledger/util"
+	blkstorageext "github.com/hyperledger/fabric/extensions/blkstorage"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/rwset"
 	pb "github.com/hyperledger/fabric/protos/peer"
@@ -88,7 +88,7 @@ func TestStore(t *testing.T) {
 	filter.Add("ns-1", "coll-1")
 	blockAndPvtdata, err = store.GetPvtDataAndBlockByNum(3, filter)
 	assert.NoError(t, err)
-	assert.Equal(t, sampleData[3].Block, blockAndPvtdata.Block)
+	assert.True(t, proto.Equal(sampleData[3].Block, blockAndPvtdata.Block))
 	// two transactions should be present
 	assert.Equal(t, 2, len(blockAndPvtdata.PvtData))
 	// both tran number 4 and 6 should have only one collection because of filter
@@ -122,8 +122,8 @@ func TestStoreWithExistingBlockchain(t *testing.T) {
 		blkstorage.IndexableAttrTxValidationCode,
 	}
 	indexConfig := &blkstorage.IndexConfig{AttrsToIndex: attrsToIndex}
-	blockStoreProvider := fsblkstorage.NewProvider(
-		fsblkstorage.NewConf(ledgerconfig.GetBlockStorePath(), ledgerconfig.GetMaxBlockfileSize()),
+	blockStoreProvider := blkstorageext.NewProvider(
+		blkstorageext.NewConf(ledgerconfig.GetBlockStorePath(), ledgerconfig.GetMaxBlockfileSize()),
 		indexConfig)
 
 	blkStore, err := blockStoreProvider.OpenBlockStore(testLedgerid)

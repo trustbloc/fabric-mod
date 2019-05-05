@@ -18,7 +18,9 @@ import (
 	"github.com/hyperledger/fabric/core/aclmgmt/resources"
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 	ledger2 "github.com/hyperledger/fabric/core/ledger"
+	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
 	"github.com/hyperledger/fabric/core/peer"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/protos/common"
 	peer2 "github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
@@ -351,8 +353,16 @@ func addBlockForTesting(t *testing.T, chainid string) *common.Block {
 var mockAclProvider *mocks.MockACLProvider
 
 func TestMain(m *testing.M) {
+	// Read the core.yaml file for default config.
+	ledgertestutil.SetupCoreYAMLConfig()
+
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+
 	mockAclProvider = &mocks.MockACLProvider{}
 	mockAclProvider.Reset()
 
-	os.Exit(m.Run())
+	code := m.Run()
+	destroy()
+	os.Exit(code)
 }

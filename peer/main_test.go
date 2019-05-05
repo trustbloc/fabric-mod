@@ -15,12 +15,16 @@ import (
 	"testing"
 	"time"
 
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 )
 
 func TestPluginLoadingFailure(t *testing.T) {
+	//setup extension test environment
+	addr, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 	gt := NewGomegaWithT(t)
 	peer, err := gexec.Build("github.com/hyperledger/fabric/peer")
 	gt.Expect(err).NotTo(HaveOccurred())
@@ -46,6 +50,11 @@ func TestPluginLoadingFailure(t *testing.T) {
 				fmt.Sprintf("CORE_PEER_MSPCONFIGPATH=%s", "msp"),
 				fmt.Sprintf("FABRIC_CFG_PATH=%s", filepath.Join(parentDir, "sampleconfig")),
 				"CORE_OPERATIONS_TLS_ENABLED=false",
+				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=%s", addr),
+				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=%s", ""),
+				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=%s", ""),
+				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_MAXRETRIES=%d", 3),
+				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_MAXRETRIESONSTARTUP=%v", 1),
 			}
 
 			sess, err := gexec.Start(cmd, nil, nil)

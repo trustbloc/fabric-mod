@@ -59,9 +59,10 @@ import (
 	"github.com/hyperledger/fabric/core/policy/mocks"
 	"github.com/hyperledger/fabric/core/scc"
 	"github.com/hyperledger/fabric/core/scc/lscc"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/msp"
 	mspmgmt "github.com/hyperledger/fabric/msp/mgmt"
-	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
+	"github.com/hyperledger/fabric/msp/mgmt/testtools"
 	"github.com/hyperledger/fabric/protos/common"
 	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
@@ -850,6 +851,10 @@ func stopChaincode(ctx context.Context, chaincodeCtx *ccprovider.CCContext, chai
 // Test the execution of a chaincode that invokes another chaincode with wrong parameters. Should receive error from
 // from the called chaincode
 func TestChaincodeInvokeChaincodeErrorCase(t *testing.T) {
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	chainID := util.GetTestChainID()
 
 	ml, _, chaincodeSupport, cleanup, err := initPeer(chainID)
@@ -951,6 +956,10 @@ func TestChaincodeInvokeChaincodeErrorCase(t *testing.T) {
 }
 
 func TestChaincodeInit(t *testing.T) {
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	chainID := util.GetTestChainID()
 
 	_, _, chaincodeSupport, cleanup, err := initPeer(chainID)
@@ -1018,6 +1027,10 @@ func TestChaincodeInit(t *testing.T) {
 func TestQueries(t *testing.T) {
 	// Allow queries test alone so that end to end test can be performed. It takes less than 5 seconds.
 	//testForSkip(t)
+
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 
 	chainID := util.GetTestChainID()
 
@@ -1440,6 +1453,8 @@ func TestQueries(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	var err error
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
 
 	msptesttools.LoadMSPSetupForTesting()
 	signer, err = mspmgmt.GetLocalMSP().GetDefaultSigningIdentity()
@@ -1451,7 +1466,11 @@ func TestMain(m *testing.M) {
 
 	setupTestConfig()
 	flogging.ActivateSpec("chaincode=debug")
-	os.Exit(m.Run())
+	code := m.Run()
+
+	destroy()
+
+	os.Exit(code)
 }
 
 func setupTestConfig() {
