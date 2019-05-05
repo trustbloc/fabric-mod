@@ -84,12 +84,12 @@ run_tests() {
     time {
         local serial=$(serial_test_packages "$@") # race is disabled as well
         if [ -n "${serial}" ]; then
-            go test ${flags} -tags "$GO_TAGS" ${serial[@]} -short -p 1 -timeout=20m
+            go test ${flags} -tags "$GO_TAGS" ${serial[@]} -short -p 1 -timeout=20m -failfast
         fi
 
         local parallel=$(parallel_test_packages "$@")
         if [ -n "${parallel}" ]; then
-            go test ${flags} ${race_flags} -tags "$GO_TAGS" ${parallel[@]} -short -timeout=20m
+            go test ${flags} ${race_flags} -tags "$GO_TAGS" ${parallel[@]} -short -timeout=20m -failfast ${PARALLEL_NUM}
         fi
     }
 }
@@ -135,12 +135,12 @@ main() {
         echo "Nothing to test!!!"
     elif [ "${JOB_TYPE}" = "PROFILE" ]; then
         echo "mode: set" > profile.cov
-        run_tests_with_coverage "${packages[@]}"
+        GO_TAGS="${GO_TAGS} testing" run_tests_with_coverage "${packages[@]}"
         GO_TAGS="${GO_TAGS} pluginsenabled" run_tests_with_coverage "${plugin_packages[@]}"
         GO_TAGS="${GO_TAGS} pkcs11" run_tests_with_coverage "${pkcs11_packages[@]}"
         gocov convert profile.cov | gocov-xml > report.xml
     else
-        run_tests "${packages[@]}"
+        GO_TAGS="${GO_TAGS} testing" run_tests "${packages[@]}"
         GO_TAGS="${GO_TAGS} pluginsenabled" run_tests "${plugin_packages[@]}"
         GO_TAGS="${GO_TAGS} pkcs11" run_tests "${pkcs11_packages[@]}"
     fi
