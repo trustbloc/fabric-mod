@@ -67,6 +67,8 @@ import (
 	ccsupport "github.com/hyperledger/fabric/discovery/support/chaincode"
 	"github.com/hyperledger/fabric/discovery/support/config"
 	"github.com/hyperledger/fabric/discovery/support/gossip"
+	supportapi "github.com/hyperledger/fabric/extensions/collections/api/support"
+	collretriever "github.com/hyperledger/fabric/extensions/collections/retriever"
 	gossipcommon "github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/service"
 	"github.com/hyperledger/fabric/msp"
@@ -193,6 +195,14 @@ func serve(args []string) error {
 
 	lifecycleCache := lifecycle.NewCache(lifecycleResources, mspID)
 
+	collDataProvider := collretriever.NewProvider(
+		peer.CollectionDataStoreFactory().StoreForChannel,
+		peer.GetLedger,
+		func() supportapi.GossipAdapter {
+			return service.GetGossipService()
+		},
+	)
+
 	//initialize resource management exit
 	ledgermgmt.Initialize(
 		&ledgermgmt.Initializer{
@@ -203,6 +213,7 @@ func serve(args []string) error {
 			MetricsProvider:               metricsProvider,
 			HealthCheckRegistry:           opsSystem,
 			StateListeners:                []ledger.StateListener{lifecycleCache},
+			CollDataProvider:              collDataProvider,
 		},
 	)
 
@@ -482,7 +493,7 @@ func serve(args []string) error {
 		}
 		cceventmgmt.GetMgr().Register(cid, sub)
 	}, sccp, plugin.MapBasedMapper(validationPluginsByName),
-		pr, lifecycleValidatorCommitter, membershipInfoProvider, metricsProvider, lsccInst, lifecycleValidatorCommitter)
+		pr, lifecycleValidatorCommitter, membershipInfoProvider, metricsProvider, lsccInst, lifecycleValidatorCommitter, collDataProvider)
 
 	if viper.GetBool("peer.discovery.enabled") {
 		registerDiscoveryService(peerServer, policyMgr, lifecycle)

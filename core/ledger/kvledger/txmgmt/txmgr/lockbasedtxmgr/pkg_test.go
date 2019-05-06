@@ -20,6 +20,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/pvtdatapolicy"
 	btltestutil "github.com/hyperledger/fabric/core/ledger/pvtdatapolicy/testutil"
 	"github.com/hyperledger/fabric/core/ledger/util"
+	"github.com/hyperledger/fabric/extensions/mocks"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/queryresult"
 	"github.com/hyperledger/fabric/protos/ledger/rwset"
@@ -84,7 +85,8 @@ func (env *lockBasedEnv) init(t *testing.T, testLedgerID string, btlPolicy pvtda
 	env.txmgr, err = NewLockBasedTxMgr(
 		testLedgerID, env.testDB, nil,
 		btlPolicy, env.testBookkeepingEnv.TestProvider,
-		&mock.DeployedChaincodeInfoProvider{})
+		&mock.DeployedChaincodeInfoProvider{},
+		&mocks.DataProvider{})
 	assert.NoError(t, err)
 
 }

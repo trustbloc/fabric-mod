@@ -58,7 +58,7 @@ func (v *collNameValidator) retrieveCollConfigFromStateDB(ns string) (*common.Co
 	return confPkg, nil
 }
 
-type collConfigCache map[collConfigkey]bool
+type collConfigCache map[collConfigkey]*common.CollectionConfig
 
 type collConfigkey struct {
 	ns, coll string
@@ -67,20 +67,23 @@ type collConfigkey struct {
 func (c collConfigCache) populate(ns string, pkg *common.CollectionConfigPackage) {
 	// an entry with an empty collection name to indicate that the cache is populated for the namespace 'ns'
 	// see function 'isPopulatedFor'
-	c[collConfigkey{ns, ""}] = true
+	c[collConfigkey{ns, ""}] = nil
 	for _, config := range pkg.Config {
 		sConfig := config.GetStaticCollectionConfig()
 		if sConfig == nil {
+			logger.Warningf("Error getting collection name in namespace [%s]", ns)
 			continue
 		}
-		c[collConfigkey{ns, sConfig.Name}] = true
+		c[collConfigkey{ns, sConfig.Name}] = config
 	}
 }
 
 func (c collConfigCache) isPopulatedFor(ns string) bool {
-	return c[collConfigkey{ns, ""}]
+	_, ok := c[collConfigkey{ns, ""}]
+	return ok
 }
 
 func (c collConfigCache) containsCollName(ns, coll string) bool {
-	return c[collConfigkey{ns, coll}]
+	_, ok := c[collConfigkey{ns, coll}]
+	return ok
 }

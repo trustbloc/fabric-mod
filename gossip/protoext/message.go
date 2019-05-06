@@ -182,5 +182,12 @@ func IsTagLegal(m *gossip.GossipMessage) error {
 		return nil
 	}
 
+	if m.GetCollDataReq() != nil || m.GetCollDataRes() != nil {
+		if m.Tag != gossip.GossipMessage_CHAN_ONLY {
+			return fmt.Errorf("Tag should be %s", gossip.GossipMessage_Tag_name[int32(gossip.GossipMessage_CHAN_ONLY)])
+		}
+		return nil
+	}
+
 	return fmt.Errorf("Unknown message type: %v", m)
 }

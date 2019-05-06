@@ -13,6 +13,7 @@ import (
 	"github.com/hyperledger/fabric-lib-go/healthz"
 	commonledger "github.com/hyperledger/fabric/common/ledger"
 	"github.com/hyperledger/fabric/common/metrics"
+	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/rwset"
 	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
@@ -26,6 +27,7 @@ type Initializer struct {
 	MembershipInfoProvider        MembershipInfoProvider
 	MetricsProvider               metrics.Provider
 	HealthCheckRegistry           HealthCheckRegistry
+	CollDataProvider              storeapi.Provider
 }
 
 // PeerLedgerProvider provides handle to ledger instances

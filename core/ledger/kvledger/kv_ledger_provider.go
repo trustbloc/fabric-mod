@@ -18,6 +18,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/privacyenabledstate"
 	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/core/ledger/ledgerstorage"
+	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	idstoreext "github.com/hyperledger/fabric/extensions/idstore"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protoutil"
@@ -43,6 +44,8 @@ type Provider struct {
 	initializer         *ledger.Initializer
 	collElgNotifier     *collElgNotifier
 	stats               *stats
+
+	collDataProvider storeapi.Provider
 }
 
 // NewProvider instantiates a new Provider.
@@ -56,7 +59,7 @@ func NewProvider() (ledger.PeerLedgerProvider, error) {
 	historydbProvider := historyleveldb.NewHistoryDBProvider()
 	logger.Info("ledger provider Initialized")
 	provider := &Provider{idStore, ledgerStoreProvider,
-		nil, historydbProvider, nil, nil, nil, nil, nil, nil}
+		nil, historydbProvider, nil, nil, nil, nil, nil, nil, nil}
 	return provider, nil
 }
 
@@ -84,6 +87,7 @@ func (provider *Provider) Initialize(initializer *ledger.Initializer) error {
 	}
 	provider.stats = newStats(initializer.MetricsProvider)
 	provider.recoverUnderConstructionLedger()
+	provider.collDataProvider = initializer.CollDataProvider
 	return nil
 }
 
@@ -165,6 +169,7 @@ func (provider *Provider) openInternal(ledgerID string) (ledger.PeerLedger, erro
 		provider.stateListeners, provider.bookkeepingProvider,
 		provider.initializer.DeployedChaincodeInfoProvider,
 		provider.stats.ledgerStats(ledgerID),
+		provider.collDataProvider,
 	)
 	if err != nil {
 		return nil, err

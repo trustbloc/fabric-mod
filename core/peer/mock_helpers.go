@@ -13,6 +13,7 @@ import (
 	mockpolicies "github.com/hyperledger/fabric/common/mocks/policies"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
+	"github.com/hyperledger/fabric/extensions/mocks"
 )
 
 //MockInitialize resets chains for test env
@@ -20,6 +21,7 @@ func MockInitialize() {
 	ledgermgmt.InitializeTestEnvWithInitializer(
 		&ledgermgmt.Initializer{
 			CustomTxProcessors: ConfigTxProcessors,
+			CollDataProvider:   &mocks.DataProvider{},
 		},
 	)
 	chains.list = make(map[string]*chain)

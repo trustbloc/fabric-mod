@@ -73,6 +73,12 @@ type GossipAdapter interface {
 	// PeersOfChannel returns the NetworkMembers considered alive
 	// and also subscribed to the channel given
 	PeersOfChannel(common2.ChainID) []discovery.NetworkMember
+
+	// SelfMembershipInfo returns the peer's membership information
+	SelfMembershipInfo() discovery.NetworkMember
+
+	// IdentityInfo returns information known peer identities
+	IdentityInfo() api.PeerIdentitySet
 }
 
 // MCSAdapter adapter of message crypto service interface to bound
@@ -119,6 +125,10 @@ type ServicesMediator struct {
 	MCSAdapter
 }
 
+type messageDispatcher interface {
+	Dispatch(msg protoext.ReceivedMessage) bool
+}
+
 // GossipStateProviderImpl the implementation of the GossipStateProvider interface
 // the struct to handle in memory sliding window of
 // new ledger block to be acquired by hyper ledger
@@ -155,6 +165,8 @@ type GossipStateProviderImpl struct {
 	requestValidator *stateRequestValidator
 
 	blockingMode bool
+
+	msgDispatcher messageDispatcher
 }
 
 var logger = util.GetLogger(util.StateLogger, "")
@@ -179,7 +191,7 @@ func (v *stateRequestValidator) validate(request *proto.RemoteStateRequest) erro
 // NewGossipStateProvider creates state provider with coordinator instance
 // to orchestrate arrival of private rwsets and blocks before committing them into the ledger.
 func NewGossipStateProvider(chainID string, services *ServicesMediator, ledger ledgerResources,
-	stateMetrics *metrics.StateMetrics, blockingMode bool) GossipStateProvider {
+	stateMetrics *metrics.StateMetrics, blockingMode bool, msgDispatcher messageDispatcher) GossipStateProvider {
 
 	gossipChan, _ := services.Accept(func(message interface{}) bool {
 		// Get only data messages
@@ -190,7 +202,8 @@ func NewGossipStateProvider(chainID string, services *ServicesMediator, ledger l
 	remoteStateMsgFilter := func(message interface{}) bool {
 		receivedMsg := message.(protoext.ReceivedMessage)
 		msg := receivedMsg.GetGossipMessage()
-		if !(protoext.IsRemoteStateMessage(msg.GossipMessage) || msg.GetPrivateData() != nil) {
+		if !(protoext.IsRemoteStateMessage(msg.GossipMessage) || msg.GetPrivateData() != nil ||
+			msg.GetCollDataReq() != nil || msg.GetCollDataRes() != nil) {
 			return false
 		}
 		// Ensure we deal only with messages that belong to this channel
@@ -260,6 +273,8 @@ func NewGossipStateProvider(chainID string, services *ServicesMediator, ledger l
 		requestValidator: &stateRequestValidator{},
 
 		blockingMode: blockingMode,
+
+		msgDispatcher: msgDispatcher,
 	}
 
 	logger.Infof("Updating metadata information, "+
@@ -309,6 +324,10 @@ func (s *GossipStateProviderImpl) dispatch(msg protoext.ReceivedMessage) {
 		logger.Debug("Handling private data collection message")
 		// Handling private data replication message
 		s.privateDataMessage(msg)
+	} else if s.msgDispatcher != nil {
+		if dispatched := s.msgDispatcher.Dispatch(msg); dispatched {
+			logger.Debug("Handled ext message")
+		}
 	}
 
 }

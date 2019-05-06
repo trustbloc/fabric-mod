@@ -23,7 +23,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/customtx"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
-
+	"github.com/hyperledger/fabric/extensions/mocks"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/internal/configtxgen/configtxgentest"
 	"github.com/hyperledger/fabric/internal/configtxgen/encoder"
@@ -73,6 +73,7 @@ func TestConfigTxCreateLedger(t *testing.T) {
 	ledgermgmt.InitializeTestEnvWithInitializer(
 		&ledgermgmt.Initializer{
 			CustomTxProcessors: ConfigTxProcessors,
+			CollDataProvider:   &mocks.DataProvider{},
 		},
 	)
 
@@ -101,6 +102,7 @@ func TestConfigTxUpdateChanConfig(t *testing.T) {
 	ledgermgmt.InitializeTestEnvWithInitializer(
 		&ledgermgmt.Initializer{
 			CustomTxProcessors: ConfigTxProcessors,
+			CollDataProvider:   &mocks.DataProvider{},
 		},
 	)
 
@@ -145,6 +147,7 @@ func TestGenesisBlockCreateLedger(t *testing.T) {
 	ledgermgmt.InitializeTestEnvWithInitializer(
 		&ledgermgmt.Initializer{
 			CustomTxProcessors: ConfigTxProcessors,
+			CollDataProvider:   &mocks.DataProvider{},
 		},
 	)
 
@@ -164,6 +167,7 @@ func TestCustomTxProcessors(t *testing.T) {
 
 	ledgermgmt.InitializeExistingTestEnvWithInitializer(&ledgermgmt.Initializer{
 		CustomTxProcessors: ConfigTxProcessors,
+		CollDataProvider:   &mocks.DataProvider{},
 	})
 	defer ledgermgmt.CleanupTestEnv()
 

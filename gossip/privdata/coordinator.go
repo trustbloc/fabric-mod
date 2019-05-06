@@ -21,6 +21,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
 	"github.com/hyperledger/fabric/core/transientstore"
+	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	"github.com/hyperledger/fabric/gossip/metrics"
 	privdatacommon "github.com/hyperledger/fabric/gossip/privdata/common"
 	"github.com/hyperledger/fabric/gossip/util"
@@ -113,6 +114,7 @@ type Support struct {
 	txvalidator.Validator
 	committer.Committer
 	TransientStore
+	CollDataStore storeapi.Store
 	Fetcher
 }
 
@@ -139,6 +141,12 @@ func NewCoordinator(support Support, selfSignedData protoutil.SignedData, metric
 
 // StorePvtData used to persist private date into transient store
 func (c *coordinator) StorePvtData(txID string, privData *transientstore2.TxPvtReadWriteSetWithConfigInfo, blkHeight uint64) error {
+	// Some of the write-sets may be transient and some not - need to invoke persist on both transient data and regular private data
+	err := c.CollDataStore.Persist(txID, privData)
+	if err != nil {
+		return err
+	}
+	// FIXME: Need to modify logic to only persist non-transient data
 	return c.TransientStore.PersistWithConfig(txID, blkHeight, privData)
 }
 

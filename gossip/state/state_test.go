@@ -409,7 +409,7 @@ func newPeerNodeWithGossipWithValidatorWithMetrics(id int, committer committer.C
 		TransientStore: &mockTransientStore{},
 		Committer:      committer,
 	}, protoutil.SignedData{}, gossipMetrics.PrivdataMetrics, coordConfig)
-	sp := NewGossipStateProvider(util.GetTestChainID(), servicesAdapater, coord, gossipMetrics.StateMetrics, blocking)
+	sp := NewGossipStateProvider(util.GetTestChainID(), servicesAdapater, coord, gossipMetrics.StateMetrics, blocking, nil)
 	if sp == nil {
 		gRPCServer.Stop()
 		return nil, port
@@ -1431,7 +1431,7 @@ func TestTransferOfPrivateRWSet(t *testing.T) {
 
 	servicesAdapater := &ServicesMediator{GossipAdapter: g, MCSAdapter: &cryptoServiceMock{acceptor: noopPeerIdentityAcceptor}}
 	stateMetrics := metrics.NewGossipMetrics(&disabled.Provider{}).StateMetrics
-	st := NewGossipStateProvider(chainID, servicesAdapater, coord1, stateMetrics, blocking)
+	st := NewGossipStateProvider(chainID, servicesAdapater, coord1, stateMetrics, blocking, nil)
 	defer st.Stop()
 
 	// Mocked state request message
@@ -1665,11 +1665,11 @@ func TestTransferOfPvtDataBetweenPeers(t *testing.T) {
 	stateMetrics := metrics.NewGossipMetrics(&disabled.Provider{}).StateMetrics
 
 	mediator := &ServicesMediator{GossipAdapter: peers["peer1"], MCSAdapter: cryptoService}
-	peer1State := NewGossipStateProvider(chainID, mediator, peers["peer1"].coord, stateMetrics, blocking)
+	peer1State := NewGossipStateProvider(chainID, mediator, peers["peer1"].coord, stateMetrics, blocking, nil)
 	defer peer1State.Stop()
 
 	mediator = &ServicesMediator{GossipAdapter: peers["peer2"], MCSAdapter: cryptoService}
-	peer2State := NewGossipStateProvider(chainID, mediator, peers["peer2"].coord, stateMetrics, blocking)
+	peer2State := NewGossipStateProvider(chainID, mediator, peers["peer2"].coord, stateMetrics, blocking, nil)
 	defer peer2State.Stop()
 
 	// Make sure state was replicated

@@ -23,6 +23,7 @@ import (
 	"github.com/hyperledger/fabric/core/handlers/validation/api"
 	"github.com/hyperledger/fabric/core/ledger/mock"
 	ledgermocks "github.com/hyperledger/fabric/core/ledger/mock"
+	extmocks "github.com/hyperledger/fabric/extensions/mocks"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/service"
@@ -99,6 +100,7 @@ func TestInitialize(t *testing.T) {
 		nil,
 		&disabled.Provider{},
 		nil, nil,
+		&extmocks.DataProvider{},
 	)
 }
 
@@ -118,6 +120,7 @@ func TestCreateChainFromBlock(t *testing.T) {
 		nil,
 		&disabled.Provider{},
 		nil, nil,
+		&extmocks.DataProvider{},
 	)
 	testChainID := fmt.Sprintf("mytestchainid-%d", rand.Int())
 	defer reset(testChainID)
