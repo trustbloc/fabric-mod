@@ -111,6 +111,10 @@ func (g *gossipMock) PeerFilter(channel gcommon.ChainID, messagePredicate api.Su
 	}, nil
 }
 
+func (g *gossipMock) SelfMembershipInfo() discovery.NetworkMember {
+	panic("not implemented")
+}
+
 func TestDistributor(t *testing.T) {
 	channelID := "test"
 

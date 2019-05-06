@@ -13,6 +13,13 @@ option java_package = "org.hyperledger.fabric.protos.common";
 
 package common;
 
+// CollectionType enumerates the various types of private data collections.
+enum CollectionType {
+    COL_UNKNOWN = 0;    // Unspecified type - will use PRIVATE as default.
+    COL_PRIVATE = 1;    // Persisted private data collection.
+    COL_TRANSIENT = 2;  // Transient private data collection.
+}
+
 // CollectionConfigPackage represents an array of CollectionConfig
 // messages; the extra struct is required because repeated oneof is
 // forbidden by the protobuf syntax
@@ -61,6 +68,14 @@ message StaticCollectionConfig {
     // write the data (if set to false, for example if you want to implement more granular
     // access logic in the chaincode)
     bool member_only_write = 7;
+    // The type of collection.
+    CollectionType type = 9900;
+    // The time after which the collection data expires. For example,
+    // if the value is set to "10m" then the data will be purged
+    // 10 minutes after it was stored. An empty value indicates that
+    // the data should never be purged.
+    // The format of this string must be parseable by time.ParseDuration
+    string time_to_live = 9901;
 }
 
 
@@ -75,7 +90,7 @@ message CollectionPolicyConfig {
         // Later, the SignaturePolicy will be replaced by a Policy.
         //        Policy policy = 1;
         // A reference to a Policy is planned to be added later.
-//        string reference = 2;
+        //        string reference = 2;
     }
 }
 

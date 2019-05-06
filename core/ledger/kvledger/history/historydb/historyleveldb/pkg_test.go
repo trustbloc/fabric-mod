@@ -60,7 +60,7 @@ func newTestHistoryEnv(t *testing.T) *levelDBLockBasedHistoryEnv {
 	testDB := testDBEnv.GetDBHandle(testLedgerID)
 	testBookkeepingEnv := bookkeeping.NewTestEnv(t)
 
-	txMgr, err := lockbasedtxmgr.NewLockBasedTxMgr(testLedgerID, testDB, nil, nil, testBookkeepingEnv.TestProvider, &mock.DeployedChaincodeInfoProvider{})
+	txMgr, err := lockbasedtxmgr.NewLockBasedTxMgr(testLedgerID, testDB, nil, nil, testBookkeepingEnv.TestProvider, &mock.DeployedChaincodeInfoProvider{}, nil)
 	assert.NoError(t, err)
 	testHistoryDBProvider := NewHistoryDBProvider()
 	testHistoryDB, err := testHistoryDBProvider.GetDBHandle("TestHistoryDB")

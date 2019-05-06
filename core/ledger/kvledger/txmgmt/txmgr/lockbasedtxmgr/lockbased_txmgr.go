@@ -22,6 +22,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatapolicy"
 	"github.com/hyperledger/fabric/core/ledger/util"
+	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/rwset"
 	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
@@ -41,6 +42,8 @@ type LockBasedTxMgr struct {
 	commitRWLock    sync.RWMutex
 	oldBlockCommit  sync.Mutex
 	current         *current
+
+	collDataProvider storeapi.Provider
 }
 
 type current struct {
@@ -59,7 +62,8 @@ func (c *current) maxTxNumber() uint64 {
 
 // NewLockBasedTxMgr constructs a new instance of NewLockBasedTxMgr
 func NewLockBasedTxMgr(ledgerid string, db privacyenabledstate.DB, stateListeners []ledger.StateListener,
-	btlPolicy pvtdatapolicy.BTLPolicy, bookkeepingProvider bookkeeping.Provider, ccInfoProvider ledger.DeployedChaincodeInfoProvider) (*LockBasedTxMgr, error) {
+	btlPolicy pvtdatapolicy.BTLPolicy, bookkeepingProvider bookkeeping.Provider, ccInfoProvider ledger.DeployedChaincodeInfoProvider,
+	collDataProvider storeapi.Provider) (*LockBasedTxMgr, error) {
 	db.Open()
 	txmgr := &LockBasedTxMgr{
 		ledgerid:       ledgerid,
@@ -67,6 +71,8 @@ func NewLockBasedTxMgr(ledgerid string, db privacyenabledstate.DB, stateListener
 		stateListeners: stateListeners,
 		ccInfoProvider: ccInfoProvider,
 	}
+	txmgr.collDataProvider = collDataProvider
+
 	pvtstatePurgeMgr, err := pvtstatepurgemgmt.InstantiatePurgeMgr(ledgerid, db, btlPolicy, bookkeepingProvider)
 	if err != nil {
 		return nil, err
@@ -113,7 +119,7 @@ func (txmgr *LockBasedTxMgr) ValidateAndPrepare(blockAndPvtdata *ledger.BlockAnd
 	// interleave and nullify the optimization provided by the bulk read API.
 	// Once the ledger cache (FAB-103) is introduced and existing
 	// LoadCommittedVersions() is refactored to return a map, we can allow
-	// these three functions to execute parallely.
+	// these three functions to execute parallelly.
 	logger.Debugf("Waiting for purge mgr to finish the background job of computing expirying keys for the block")
 	txmgr.pvtdataPurgeMgr.WaitForPrepareToFinish()
 	txmgr.oldBlockCommit.Lock()
@@ -165,7 +171,7 @@ func (txmgr *LockBasedTxMgr) RemoveStaleAndCommitPvtDataOfOldBlocks(blocksPvtDat
 	// interleave and nullify the optimization provided by the bulk read API.
 	// Once the ledger cache (FAB-103) is introduced and existing
 	// LoadCommittedVersions() is refactored to return a map, we can allow
-	// these three functions to execute parallely. However, we cannot remove
+	// these three functions to execute parallelly. However, we cannot remove
 	// the lock on oldBlockCommit as it is also used to avoid interleaving
 	// between Commit() and execution of this function for the correctness.
 	logger.Debug("Waiting for purge mgr to finish the background job of computing expirying keys for the block")
@@ -495,7 +501,7 @@ func (txmgr *LockBasedTxMgr) Commit() error {
 	if err := txmgr.pvtdataPurgeMgr.BlockCommitDone(); err != nil {
 		return err
 	}
-	// In the case of error state listeners will not recieve this call - instead a peer panic is caused by the ledger upon receiveing
+	// In the case of error state listeners will not receive this call - instead a peer panic is caused by the ledger upon receiving
 	// an error from this function
 	txmgr.updateStateListeners()
 	return nil

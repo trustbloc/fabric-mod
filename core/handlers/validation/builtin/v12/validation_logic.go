@@ -28,6 +28,7 @@ import (
 	. "github.com/hyperledger/fabric/core/handlers/validation/api/state"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
 	"github.com/hyperledger/fabric/core/scc/lscc"
+	"github.com/hyperledger/fabric/extensions/collections/policy"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
 	"github.com/hyperledger/fabric/protos/msp"
@@ -210,6 +211,11 @@ func validateNewCollectionConfigs(newCollectionConfigs []*common.CollectionConfi
 		if err != nil {
 			return errors.WithMessage(err, fmt.Sprintf("collection-name: %s -- error in member org policy", collectionName))
 		}
+
+		err = policy.NewValidator().Validate(newCollectionConfig)
+		if err != nil {
+			return errors.WithMessage(err, fmt.Sprintf("collection-name: %s -- error in member org policy", collectionName))
+		}
 	}
 	return nil
 }
@@ -296,7 +302,6 @@ func checkForModifiedCollectionsBTL(newCollectionsMap map[string]*common.StaticC
 func validateNewCollectionConfigsAgainstOld(newCollectionConfigs []*common.CollectionConfig, oldCollectionConfigs []*common.CollectionConfig,
 ) error {
 	newCollectionsMap := make(map[string]*common.StaticCollectionConfig, len(newCollectionConfigs))
-
 	for _, newCollectionConfig := range newCollectionConfigs {
 		newCollection := newCollectionConfig.GetStaticCollectionConfig()
 		// Collection object itself is stored as value so that we can
@@ -309,6 +314,10 @@ func validateNewCollectionConfigsAgainstOld(newCollectionConfigs []*common.Colle
 	}
 
 	if err := checkForModifiedCollectionsBTL(newCollectionsMap, oldCollectionConfigs); err != nil {
+		return err
+	}
+
+	if err := policy.NewValidator().ValidateNewCollectionConfigsAgainstOld(newCollectionConfigs, oldCollectionConfigs); err != nil {
 		return err
 	}
 

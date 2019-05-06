@@ -19,7 +19,7 @@ import (
 	"github.com/hyperledger/fabric/common/flogging"
 	commonledger "github.com/hyperledger/fabric/common/ledger"
 	"github.com/hyperledger/fabric/common/ledger/blockledger"
-	fileledger "github.com/hyperledger/fabric/common/ledger/blockledger/file"
+	"github.com/hyperledger/fabric/common/ledger/blockledger/file"
 	"github.com/hyperledger/fabric/common/metrics"
 	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/common/semaphore"
@@ -32,11 +32,13 @@ import (
 	vir "github.com/hyperledger/fabric/core/committer/txvalidator/v20/valinforetriever"
 	"github.com/hyperledger/fabric/core/common/privdata"
 	"github.com/hyperledger/fabric/core/common/sysccprovider"
-	validation "github.com/hyperledger/fabric/core/handlers/validation/api/state"
+	"github.com/hyperledger/fabric/core/handlers/validation/api/state"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/customtx"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
 	"github.com/hyperledger/fabric/core/transientstore"
+	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
+	"github.com/hyperledger/fabric/extensions/collections/storeprovider"
 	transientstoreext "github.com/hyperledger/fabric/extensions/transientstore"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/service"
@@ -92,6 +94,17 @@ type chainSupport struct {
 }
 
 var TransientStoreFactory = &storeProvider{stores: make(map[string]transientstore.Store)}
+
+var collectionDataStoreFactory *storeprovider.StoreProvider
+var initCollDataStoreFactoryOnce sync.Once
+
+// CollectionDataStoreFactory returns transient data stores by channel ID
+func CollectionDataStoreFactory() *storeprovider.StoreProvider {
+	initCollDataStoreFactoryOnce.Do(func() {
+		collectionDataStoreFactory = storeprovider.NewProviderFactory()
+	})
+	return collectionDataStoreFactory
+}
 
 type storeProvider struct {
 	stores map[string]transientstore.Store
@@ -221,7 +234,8 @@ func Initialize(init func(string), sccp sysccprovider.SystemChaincodeProvider,
 	pm plugin.Mapper, pr *platforms.Registry, deployedCCInfoProvider ledger.DeployedChaincodeInfoProvider,
 	membershipProvider ledger.MembershipInfoProvider, metricsProvider metrics.Provider,
 	legacyLifecycleValidation plugindispatcher.LifecycleResources,
-	newLifecycleValidation plugindispatcher.CollectionAndLifecycleResources) {
+	newLifecycleValidation plugindispatcher.CollectionAndLifecycleResources,
+	collDataProvider storeapi.Provider) {
 	nWorkers := viper.GetInt("peer.validatorPoolSize")
 	if nWorkers <= 0 {
 		nWorkers = runtime.NumCPU()
@@ -239,6 +253,7 @@ func Initialize(init func(string), sccp sysccprovider.SystemChaincodeProvider,
 		DeployedChaincodeInfoProvider: deployedCCInfoProvider,
 		MembershipInfoProvider:        membershipProvider,
 		MetricsProvider:               metricsProvider,
+		CollDataProvider:              collDataProvider,
 	})
 	ledgerIds, err := ledgermgmt.GetLedgerIDs()
 	if err != nil {
@@ -427,6 +442,10 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 	if err != nil {
 		return errors.Wrapf(err, "[channel %s] failed opening transient store", bundle.ConfigtxValidator().ChainID())
 	}
+	collDataStore, err := CollectionDataStoreFactory().OpenStore(bundle.ConfigtxValidator().ChainID())
+	if err != nil {
+		return errors.Wrapf(err, "[channel %s] failed opening transient data store", bundle.ConfigtxValidator().ChainID())
+	}
 	csStoreSupport := &CollectionSupport{
 		PeerLedger:             ledger,
 		DeployedCCInfoProvider: deployedCCInfoProvider,
@@ -437,8 +456,10 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 		Validator:            validator,
 		Committer:            c,
 		Store:                store,
+		CollDataStore:        collDataStore,
 		Cs:                   simpleCollectionStore,
 		IdDeserializeFactory: csStoreSupport,
+		Ledger:               ledger,
 	})
 
 	chains.Lock()

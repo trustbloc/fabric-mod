@@ -17,10 +17,17 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
 	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/core/ledger/util"
+	"github.com/hyperledger/fabric/extensions/collections/pvtdatahandler"
+	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/queryresult"
 	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
 	"github.com/pkg/errors"
 )
+
+type pvtDataHandler interface {
+	HandleGetPrivateData(txID, ns string, config *common.StaticCollectionConfig, key string) ([]byte, bool, error)
+	HandleGetPrivateDataMultipleKeys(txID, ns string, config *common.StaticCollectionConfig, keys []string) ([][]byte, bool, error)
+}
 
 type queryHelper struct {
 	txmgr             *LockBasedTxMgr
@@ -29,12 +36,14 @@ type queryHelper struct {
 	itrs              []*resultsItr
 	err               error
 	doneInvoked       bool
+	pvtDataHandler    pvtDataHandler
 }
 
 func newQueryHelper(txmgr *LockBasedTxMgr, rwsetBuilder *rwsetutil.RWSetBuilder) *queryHelper {
 	helper := &queryHelper{txmgr: txmgr, rwsetBuilder: rwsetBuilder}
 	validator := newCollNameValidator(txmgr.ledgerid, txmgr.ccInfoProvider, &lockBasedQueryExecutor{helper: helper})
 	helper.collNameValidator = validator
+	helper.pvtDataHandler = pvtdatahandler.New(txmgr.ledgerid, txmgr.collDataProvider)
 	return helper
 }
 

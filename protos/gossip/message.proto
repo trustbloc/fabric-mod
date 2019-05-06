@@ -9,6 +9,7 @@ option go_package = "github.com/hyperledger/fabric/protos/gossip" ;
 package gossip;
 
 import "common/collection.proto";
+import "google/protobuf/timestamp.proto";
 
 // Gossip
 service Gossip {
@@ -130,6 +131,12 @@ message GossipMessage {
         // Encapsulates private data used to distribute
         // private rwset after the endorsement
         PrivateDataMessage private_data = 25;
+
+        // Used to request collection data
+        RemoteCollDataRequest collDataReq = 90;
+
+        // Used to respond to collection data requests
+        RemoteCollDataResponse collDataRes = 91;
     }
 }
 
@@ -370,4 +377,33 @@ message Chaincode {
     string name = 1;
     string version = 2;
     bytes metadata = 3;
+}
+
+// RemoteCollDataRequest message used to request
+// collection data
+message RemoteCollDataRequest {
+    uint64 nonce = 1;
+    repeated CollDataDigest digests = 2;
+}
+
+// CollDataDigest defines a digest of collection data
+message CollDataDigest {
+    string namespace = 1;
+    string collection = 2;
+    string key = 3;
+    string endorsedAtTxID = 4;
+}
+
+// RemoteCollDataResponse message used to respond to
+// collection data request
+message RemoteCollDataResponse {
+    uint64 nonce = 1;
+    repeated CollDataElement elements = 2;
+}
+
+// CollDataElement contains the collection data digest and value
+message CollDataElement {
+    CollDataDigest digest = 1;
+    bytes value = 2;
+    google.protobuf.Timestamp expiryTime = 3;
 }
