@@ -18,6 +18,7 @@ enum CollectionType {
     COL_UNKNOWN = 0;    // Unspecified type - will use PRIVATE as default.
     COL_PRIVATE = 1;    // Persisted private data collection.
     COL_TRANSIENT = 2;  // Transient private data collection.
+    COL_DCAS = 3;       // Distributed Content Addressable Store (CAS) private data collection.
 }
 
 // CollectionConfigPackage represents an array of CollectionConfig
