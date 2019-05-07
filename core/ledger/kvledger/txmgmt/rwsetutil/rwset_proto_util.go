@@ -128,7 +128,7 @@ func (txRwSet *TxRwSet) FromProtoBytes(protoBytes []byte) error {
 func (txPvtRwSet *TxPvtRwSet) ToProtoBytes() ([]byte, error) {
 	var protoMsg *rwset.TxPvtReadWriteSet
 	var err error
-	if protoMsg, err = txPvtRwSet.toProtoMsg(); err != nil {
+	if protoMsg, err = txPvtRwSet.ToProtoMsg(); err != nil {
 		return nil, err
 	}
 	return proto.Marshal(protoMsg)
@@ -249,7 +249,8 @@ func (txRwSet *TxRwSet) NumCollections() int {
 // functions for private read-write set
 ///////////////////////////////////////////////////////////////////////////////
 
-func (txPvtRwSet *TxPvtRwSet) toProtoMsg() (*rwset.TxPvtReadWriteSet, error) {
+// ToProtoMsg returns a TxPvtReadWriteSet from the current TxPvtRwSet
+func (txPvtRwSet *TxPvtRwSet) ToProtoMsg() (*rwset.TxPvtReadWriteSet, error) {
 	protoMsg := &rwset.TxPvtReadWriteSet{DataModel: rwset.TxReadWriteSet_KV}
 	var nsProtoMsg *rwset.NsPvtReadWriteSet
 	var err error

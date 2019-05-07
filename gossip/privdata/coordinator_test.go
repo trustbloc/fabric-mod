@@ -23,6 +23,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
 	"github.com/hyperledger/fabric/core/transientstore"
+	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	extmocks "github.com/hyperledger/fabric/extensions/mocks"
 	"github.com/hyperledger/fabric/gossip/metrics"
 	gmetricsmocks "github.com/hyperledger/fabric/gossip/metrics/mocks"
@@ -35,6 +36,7 @@ import (
 	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
 	"github.com/hyperledger/fabric/protos/msp"
 	"github.com/hyperledger/fabric/protos/peer"
+	tp "github.com/hyperledger/fabric/protos/transientstore"
 	transientstore2 "github.com/hyperledger/fabric/protos/transientstore"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
@@ -415,6 +417,15 @@ func (cap *collectionAccessPolicy) AccessFilter() privdata.Filter {
 		_, exists := cap.cs.policies[*cap]
 		return exists
 	}
+}
+
+type mockPvtDataStore struct {
+	transientStore TransientStore
+}
+
+// StorePvtData redirects the call to the transient store
+func (m *mockPvtDataStore) StorePvtData(txID string, privData *tp.TxPvtReadWriteSetWithConfigInfo, blkHeight uint64) error {
+	return m.transientStore.PersistWithConfig(txID, blkHeight, privData)
 }
 
 func TestPvtDataCollections_FailOnEmptyPayload(t *testing.T) {
@@ -1351,6 +1362,10 @@ func TestPurgeByHeight(t *testing.T) {
 }
 
 func TestCoordinatorStorePvtData(t *testing.T) {
+	getPvtDataStore = func(channelID string, transientStore TransientStore, collDataStore storeapi.Store) pvtDataStore {
+		return &mockPvtDataStore{transientStore: transientStore}
+	}
+
 	metrics := metrics.NewGossipMetrics(&disabled.Provider{}).PrivdataMetrics
 	cs := createcollectionStore(protoutil.SignedData{}).thatAcceptsAll()
 	committer := &mocks.Committer{}
