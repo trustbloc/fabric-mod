@@ -56,6 +56,15 @@ func createTestEnv(t testing.TB, path string) *testEnv {
 	return env
 }
 
+func createTestEnvWithoutSetupExtTestEnv(t testing.TB, path string) *testEnv {
+	env := &testEnv{
+		t:    t,
+		path: path}
+	os.RemoveAll(env.path)
+	viper.Set("peer.fileSystemPath", env.path)
+	return env
+}
+
 func (env *testEnv) cleanup() {
 	os.RemoveAll(env.path)
 	if env.cleanupExtTestEnv != nil {
