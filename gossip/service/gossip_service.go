@@ -17,6 +17,7 @@ import (
 	"github.com/hyperledger/fabric/core/deliverservice/blocksprovider"
 	"github.com/hyperledger/fabric/core/ledger"
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
+	extgossipapi "github.com/hyperledger/fabric/extensions/gossip/api"
 	"github.com/hyperledger/fabric/extensions/gossip/dispatcher"
 	"github.com/hyperledger/fabric/gossip/api"
 	gossipCommon "github.com/hyperledger/fabric/gossip/common"
@@ -219,6 +220,7 @@ type Support struct {
 	IdDeserializeFactory privdata2.IdentityDeserializerFactory
 	CollDataStore        storeapi.Store
 	Ledger               ledger.PeerLedger
+	BlockPublisher       extgossipapi.BlockPublisher
 }
 
 // DataStoreSupport aggregates interfaces capable
@@ -285,7 +287,7 @@ func (g *gossipServiceImpl) InitializeChannel(chainID string, endpoints []string
 	blockingMode := !viper.GetBool("peer.gossip.nonBlockingCommitMode")
 	g.chains[chainID] = state.NewGossipStateProvider(chainID, servicesAdapter, coordinator,
 		g.metrics.StateMetrics, blockingMode,
-		dispatcher.New(chainID, support.CollDataStore, servicesAdapter, support.Ledger))
+		dispatcher.New(chainID, support.CollDataStore, servicesAdapter, support.Ledger, support.BlockPublisher))
 	if g.deliveryService[chainID] == nil {
 		var err error
 		g.deliveryService[chainID], err = g.deliveryFactory.Service(g, endpoints, g.mcs)
