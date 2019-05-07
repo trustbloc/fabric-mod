@@ -22,7 +22,7 @@ ENV GO111MODULE on
 FROM golang as orderer
 ARG GO_TAGS
 ARG GOPROXY
-RUN make orderer GO_TAGS=${GO_TAGS} GOPROXY=${GOPROXY}
+RUN GO_TAGS=${GO_TAGS} GOPROXY=${GOPROXY} make orderer
 
 FROM base
 ENV FABRIC_CFG_PATH /etc/hyperledger/fabric
