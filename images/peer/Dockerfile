@@ -29,7 +29,7 @@ ENV GO111MODULE on
 FROM golang as peer
 ARG GO_TAGS
 ARG GOPROXY
-RUN make peer GO_TAGS=${GO_TAGS} GOPROXY=${GOPROXY}
+RUN GO_TAGS=${GO_TAGS} GOPROXY=${GOPROXY} make peer
 
 FROM peer-base
 ENV FABRIC_CFG_PATH /etc/hyperledger/fabric
