@@ -214,7 +214,7 @@ func TestLedgerBackup(t *testing.T) {
 	provider.Close()
 
 	// Create restore environment
-	env := createTestEnv(t, restorePath)
+	env := createTestEnvWithoutSetupExtTestEnv(t, restorePath)
 
 	// remove the statedb, historydb, and block indexes (they are supposed to be auto created during opening of an existing ledger)
 	// and rename the originalPath to restorePath
