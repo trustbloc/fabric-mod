@@ -14,7 +14,7 @@ import (
 )
 
 func TestProvider(t *testing.T) {
-	p := New("testchannel", nil, nil, nil)
+	p := New("testchannel", nil, nil, nil, nil)
 	require.NotNil(t, p)
 	assert.Falsef(t, p.Dispatch(nil), "should always return false since this is a noop dispatcher")
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/hyperledger/fabric/core/deliverservice/blocksprovider"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/transientstore"
+	extmocks "github.com/hyperledger/fabric/extensions/gossip/mocks"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/util"
 	"github.com/hyperledger/fabric/protos/ledger/rwset"
@@ -137,8 +138,9 @@ func TestLeaderYield(t *testing.T) {
 		gs.deliveryFactory = &embeddingDeliveryServiceFactory{&deliveryFactoryImpl{}}
 		gossipServiceInstance = gs
 		gs.InitializeChannel(channelName, []string{endpoint}, Support{
-			Committer: &mockLedgerInfo{1},
-			Store:     &transientStoreMock{},
+			Committer:      &mockLedgerInfo{1},
+			Store:          &transientStoreMock{},
+			BlockPublisher: extmocks.NewBlockPublisher(),
 		})
 		return gs
 	}

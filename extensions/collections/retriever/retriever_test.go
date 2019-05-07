@@ -14,7 +14,7 @@ import (
 )
 
 func TestNewProvider(t *testing.T) {
-	p := NewProvider(nil, nil, nil)
+	p := NewProvider(nil, nil, nil, nil)
 	require.NotNil(t, p)
 
 	assert.PanicsWithValue(t, "not implemented", func() {

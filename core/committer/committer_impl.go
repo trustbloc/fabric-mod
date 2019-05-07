@@ -10,7 +10,6 @@ import (
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 )
 
@@ -48,12 +47,12 @@ type PeerLedgerSupport interface {
 // chain information
 type LedgerCommitter struct {
 	PeerLedgerSupport
-	eventer ConfigBlockEventer
+	eventer BlockEventer
 }
 
-// ConfigBlockEventer callback function proto type to define action
-// upon arrival on new configuaration update block
-type ConfigBlockEventer func(block *common.Block) error
+// BlockEventer callback function proto type to define action
+// upon arrival of a new block
+type BlockEventer func(block *common.Block) error
 
 // NewLedgerCommitter is a factory function to create an instance of the committer
 // which passes incoming blocks via validation and commits them into the ledger.
@@ -63,20 +62,17 @@ func NewLedgerCommitter(ledger PeerLedgerSupport) *LedgerCommitter {
 
 // NewLedgerCommitterReactive is a factory function to create an instance of the committer
 // same as way as NewLedgerCommitter, while also provides an option to specify callback to
-// be called upon new configuration block arrival and commit event
-func NewLedgerCommitterReactive(ledger PeerLedgerSupport, eventer ConfigBlockEventer) *LedgerCommitter {
+// be called upon new block arrival and commit event
+func NewLedgerCommitterReactive(ledger PeerLedgerSupport, eventer BlockEventer) *LedgerCommitter {
 	return &LedgerCommitter{PeerLedgerSupport: ledger, eventer: eventer}
 }
 
 // preCommit takes care to validate the block and update based on its
 // content
 func (lc *LedgerCommitter) preCommit(block *common.Block) error {
-	// Updating CSCC with new configuration block
-	if protoutil.IsConfigBlock(block) {
-		logger.Debug("Received configuration update, calling CSCC ConfigUpdate")
-		if err := lc.eventer(block); err != nil {
-			return errors.WithMessage(err, "could not update CSCC with new configuration update")
-		}
+	logger.Debug("Received block, calling eventer")
+	if err := lc.eventer(block); err != nil {
+		return errors.WithMessage(err, "error returned from block eventer")
 	}
 	return nil
 }

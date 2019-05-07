@@ -39,6 +39,7 @@ import (
 	"github.com/hyperledger/fabric/core/transientstore"
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	"github.com/hyperledger/fabric/extensions/collections/storeprovider"
+	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
 	transientstoreext "github.com/hyperledger/fabric/extensions/transientstore"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/service"
@@ -105,6 +106,9 @@ func CollectionDataStoreFactory() *storeprovider.StoreProvider {
 	})
 	return collectionDataStoreFactory
 }
+
+// publisher manages the block publishers for all channels
+var BlockPublisher = blockpublisher.NewProvider()
 
 type storeProvider struct {
 	stores map[string]transientstore.Store
@@ -424,12 +428,19 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 		ChannelID:                       bundle.ConfigtxValidator().ChainID(),
 	}, sccp, pm, NewChannelPolicyManagerGetter())
 
+	blockPublisher := BlockPublisher.ForChannel(cid)
 	c := committer.NewLedgerCommitterReactive(ledger, func(block *common.Block) error {
-		chainID, err := protoutil.GetChainIDFromBlock(block)
-		if err != nil {
-			return err
+		// Updating CSCC with new configuration block
+		if protoutil.IsConfigBlock(block) {
+			logger.Debug("Received configuration update, calling CSCC ConfigUpdate")
+			err := SetCurrConfigBlock(block, cid)
+			if err != nil {
+				return err
+			}
 		}
-		return SetCurrConfigBlock(block, chainID)
+		// Inform applicable registered handlers of the new block
+		blockPublisher.Publish(block)
+		return nil
 	})
 
 	ordererAddresses := bundle.ChannelConfig().OrdererAddresses()
@@ -460,6 +471,7 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 		Cs:                   simpleCollectionStore,
 		IdDeserializeFactory: csStoreSupport,
 		Ledger:               ledger,
+		BlockPublisher:       blockPublisher,
 	})
 
 	chains.Lock()

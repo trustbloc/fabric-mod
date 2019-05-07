@@ -201,6 +201,7 @@ func serve(args []string) error {
 		func() supportapi.GossipAdapter {
 			return service.GetGossipService()
 		},
+		peer.BlockPublisher.ForChannel,
 	)
 
 	//initialize resource management exit

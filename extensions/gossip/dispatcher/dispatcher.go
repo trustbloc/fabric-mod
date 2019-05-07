@@ -9,6 +9,7 @@ package dispatcher
 import (
 	"github.com/hyperledger/fabric/core/ledger"
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
+	gossipapi "github.com/hyperledger/fabric/extensions/gossip/api"
 	gossip "github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/discovery"
@@ -21,12 +22,17 @@ type gossipAdapter interface {
 	IdentityInfo() gossip.PeerIdentitySet
 }
 
+type blockPublisher interface {
+	AddCCUpgradeHandler(handler gossipapi.ChaincodeUpgradeHandler)
+}
+
 // New returns a new Gossip message dispatcher
 func New(
 	channelID string,
 	dataStore storeapi.Store,
 	gossipAdapter gossipAdapter,
-	ledger ledger.PeerLedger) *Dispatcher {
+	ledger ledger.PeerLedger,
+	blockPublisher blockPublisher) *Dispatcher {
 	return &Dispatcher{}
 }
 
