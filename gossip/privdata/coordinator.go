@@ -22,6 +22,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
 	"github.com/hyperledger/fabric/core/transientstore"
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
+	extcoord "github.com/hyperledger/fabric/extensions/gossip/coordinator"
 	"github.com/hyperledger/fabric/gossip/metrics"
 	privdatacommon "github.com/hyperledger/fabric/gossip/privdata/common"
 	"github.com/hyperledger/fabric/gossip/util"
@@ -118,12 +119,17 @@ type Support struct {
 	Fetcher
 }
 
+type pvtDataStore interface {
+	StorePvtData(txID string, privData *transientstore2.TxPvtReadWriteSetWithConfigInfo, blkHeight uint64) error
+}
+
 type coordinator struct {
 	selfSignedData protoutil.SignedData
 	Support
 	transientBlockRetention uint64
 	metrics                 *metrics.PrivdataMetrics
 	pullRetryThreshold      time.Duration
+	pvtDataStore            pvtDataStore
 }
 
 type CoordinatorConfig struct {
@@ -131,23 +137,24 @@ type CoordinatorConfig struct {
 	PullRetryThreshold      time.Duration
 }
 
+// getPvtDataStore may be overridden by unit tests
+var getPvtDataStore = func(channelID string, transientStore TransientStore, collDataStore storeapi.Store) pvtDataStore {
+	return extcoord.New(channelID, transientStore, collDataStore)
+}
+
 // NewCoordinator creates a new instance of coordinator
 func NewCoordinator(support Support, selfSignedData protoutil.SignedData, metrics *metrics.PrivdataMetrics,
 	config CoordinatorConfig) Coordinator {
 	return &coordinator{Support: support, selfSignedData: selfSignedData,
 		transientBlockRetention: config.TransientBlockRetention, metrics: metrics,
-		pullRetryThreshold: config.PullRetryThreshold}
+		pullRetryThreshold: config.PullRetryThreshold,
+		pvtDataStore:       getPvtDataStore(support.ChainID, support.TransientStore, support.CollDataStore),
+	}
 }
 
 // StorePvtData used to persist private date into transient store
 func (c *coordinator) StorePvtData(txID string, privData *transientstore2.TxPvtReadWriteSetWithConfigInfo, blkHeight uint64) error {
-	// Some of the write-sets may be transient and some not - need to invoke persist on both transient data and regular private data
-	err := c.CollDataStore.Persist(txID, privData)
-	if err != nil {
-		return err
-	}
-	// FIXME: Need to modify logic to only persist non-transient data
-	return c.TransientStore.PersistWithConfig(txID, blkHeight, privData)
+	return c.pvtDataStore.StorePvtData(txID, privData, blkHeight)
 }
 
 // StoreBlock stores block with private data into the ledger
