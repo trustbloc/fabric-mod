@@ -261,7 +261,11 @@ $(BUILD_DIR)/images/peer/$(DUMMY): BUILD_ARGS=--build-arg GO_TAGS=${GO_TAGS} --b
 $(BUILD_DIR)/images/orderer/$(DUMMY): BUILD_ARGS=--build-arg GO_TAGS=${GO_TAGS} --build-arg GOPROXY=${GOPROXY}
 
 $(BUILD_DIR)/images/ccenv/$(DUMMY): BUILD_ARGS=--build-arg CHAINTOOL_RELEASE=${CHAINTOOL_RELEASE} \
-	--build-arg JAVA_VER=${JAVA_VER} --build-arg NODE_VER=${NODE_VER}
+	--build-arg JAVA_VER=${JAVA_VER} --build-arg NODE_VER=${NODE_VER} --build-arg GOPROXY=${GOPROXY}
+
+$(BUILD_DIR)/images/tools/$(DUMMY): BUILD_ARGS=--build-arg GOPROXY=${GOPROXY}
+
+$(BUILD_DIR)/images/buildenv/$(DUMMY): BUILD_ARGS=--build-arg GOPROXY=${GOPROXY}
 
 $(BUILD_DIR)/images/%/$(DUMMY):
 	@mkdir -p $(@D)
