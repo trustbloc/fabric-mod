@@ -15,7 +15,8 @@ RUN apk add --no-cache \
 ADD . $GOPATH/src/github.com/hyperledger/fabric
 WORKDIR $GOPATH/src/github.com/hyperledger/fabric
 ENV EXECUTABLES go git curl
-RUN make gotools
+ARG GOPROXY
+RUN GOPROXY=${GOPROXY} make gotools
 
 FROM golang:${GO_VER}-alpine
 RUN apk add --no-cache \
