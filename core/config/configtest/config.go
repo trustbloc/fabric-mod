@@ -49,8 +49,13 @@ func GetDevConfigDir() (string, error) {
 		return "", fmt.Errorf("GOPATH not set")
 	}
 
+	sampleConfigPath := os.Getenv("FABRIC_SAMPLECONFIG_PATH")
+	if sampleConfigPath == "" {
+		sampleConfigPath = "src/github.com/hyperledger/fabric/sampleconfig"
+	}
+
 	for _, p := range filepath.SplitList(gopath) {
-		devPath := filepath.Join(p, "src/github.com/hyperledger/fabric/sampleconfig")
+		devPath := filepath.Join(p, sampleConfigPath)
 		if !dirExists(devPath) {
 			continue
 		}
