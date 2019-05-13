@@ -8,6 +8,7 @@ package privacyenabledstate
 
 import (
 	"encoding/base64"
+	privacyenabledstate "github.com/hyperledger/fabric/extensions/statedb"
 	"strings"
 
 	"github.com/hyperledger/fabric-lib-go/healthz"
@@ -53,7 +54,7 @@ func NewCommonStorageDBProvider(bookkeeperProvider bookkeeping.Provider, metrics
 		vdbProvider = stateleveldb.NewVersionedDBProvider()
 	}
 
-	dbProvider := &CommonStorageDBProvider{vdbProvider, healthCheckRegistry, bookkeeperProvider}
+	dbProvider := &CommonStorageDBProvider{privacyenabledstate.NewVersionedDBProvider(vdbProvider), healthCheckRegistry, bookkeeperProvider}
 
 	err = dbProvider.RegisterHealthChecker()
 	if err != nil {
