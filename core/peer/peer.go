@@ -99,8 +99,13 @@ var TransientStoreFactory = &storeProvider{stores: make(map[string]transientstor
 var collectionDataStoreFactory *storeprovider.StoreProvider
 var initCollDataStoreFactoryOnce sync.Once
 
+type CollStoreProvider interface {
+	StoreForChannel(channel string) storeapi.Store
+	OpenStore(ledgerID string) (storeapi.Store, error)
+}
+
 // CollectionDataStoreFactory returns transient data stores by channel ID
-func CollectionDataStoreFactory() *storeprovider.StoreProvider {
+func CollectionDataStoreFactory() CollStoreProvider {
 	initCollDataStoreFactoryOnce.Do(func() {
 		collectionDataStoreFactory = storeprovider.NewProviderFactory()
 	})
