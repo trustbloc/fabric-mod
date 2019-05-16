@@ -30,6 +30,7 @@ modularity and versatility for a broad set of industry use cases.
    releases
    questions
    status
+   gobackextension
 
 .. note:: If you have questions not addressed by this documentation, or run into
           issues with any of the tutorials, please visit the :doc:`questions`

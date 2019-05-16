@@ -13,11 +13,10 @@ make all
 
 ## Motivation
 
-TODO
+ Hyperledger Fabric does perform and scale nicely, given the right compute and networking infrastructure. However, it can also yields results that are inadequate for individual application needs. Therefore, Fabric-mod came into existence to enhance the code performance by introducing extensions. Hyperledger Fabric enhancements can be located under extensions folder in the source code.
 
 ## Contributing
-
-TODO
+Thank you for your interest in contributing. Please see our [community contribution guidelines](https://github.com/trustbloc/community/blob/master/CONTRIBUTING.md) for more information.
 
 ## License
 
