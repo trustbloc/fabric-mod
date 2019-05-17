@@ -96,11 +96,17 @@ type chainSupport struct {
 
 var TransientStoreFactory = &storeProvider{stores: make(map[string]transientstore.Store)}
 
-var collectionDataStoreFactory *storeprovider.StoreProvider
+var collectionDataStoreFactory CollStoreProvider
 var initCollDataStoreFactoryOnce sync.Once
 
+// CollStoreProvider manages the collection stores for multiple channels
+type CollStoreProvider interface {
+	StoreForChannel(channelID string) storeapi.Store
+	OpenStore(channelID string) (storeapi.Store, error)
+}
+
 // CollectionDataStoreFactory returns transient data stores by channel ID
-func CollectionDataStoreFactory() *storeprovider.StoreProvider {
+func CollectionDataStoreFactory() CollStoreProvider {
 	initCollDataStoreFactoryOnce.Do(func() {
 		collectionDataStoreFactory = storeprovider.NewProviderFactory()
 	})
