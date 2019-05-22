@@ -12,6 +12,7 @@ import (
 	"github.com/hyperledger/fabric/common/metrics/disabled"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
+	"github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -48,6 +49,10 @@ func (env *TestVDBEnv) Cleanup() {
 }
 
 func CleanupDB(t testing.TB, dbProvider statedb.VersionedDBProvider) {
+	if extDbProvider := testutil.GetExtStateDBProvider(t, dbProvider); extDbProvider != nil {
+		dbProvider = extDbProvider
+	}
+
 	couchdbProvider, _ := dbProvider.(*VersionedDBProvider)
 	for _, v := range couchdbProvider.databases {
 		if _, err := v.metadataDB.DropDatabase(); err != nil {
