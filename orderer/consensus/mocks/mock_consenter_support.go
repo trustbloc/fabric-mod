@@ -2,17 +2,28 @@
 package mocks
 
 import (
-	sync "sync"
+	"sync"
 
-	channelconfig "github.com/hyperledger/fabric/common/channelconfig"
-	blockcutter "github.com/hyperledger/fabric/orderer/common/blockcutter"
-	msgprocessor "github.com/hyperledger/fabric/orderer/common/msgprocessor"
-	consensus "github.com/hyperledger/fabric/orderer/consensus"
-	common "github.com/hyperledger/fabric/protos/common"
-	protoutil "github.com/hyperledger/fabric/protoutil"
+	"github.com/hyperledger/fabric/common/channelconfig"
+	"github.com/hyperledger/fabric/orderer/common/blockcutter"
+	"github.com/hyperledger/fabric/orderer/common/msgprocessor"
+	"github.com/hyperledger/fabric/orderer/consensus"
+	"github.com/hyperledger/fabric/protos/common"
+	"github.com/hyperledger/fabric/protoutil"
 )
 
 type FakeConsenterSupport struct {
+	AppendStub        func(*common.Block) error
+	appendMutex       sync.RWMutex
+	appendArgsForCall []struct {
+		arg1 *common.Block
+	}
+	appendReturns struct {
+		result1 error
+	}
+	appendReturnsOnCall map[int]struct {
+		result1 error
+	}
 	BlockStub        func(uint64) *common.Block
 	blockMutex       sync.RWMutex
 	blockArgsForCall []struct {
@@ -44,6 +55,16 @@ type FakeConsenterSupport struct {
 	chainIDReturnsOnCall map[int]struct {
 		result1 string
 	}
+	ChannelConfigStub        func() channelconfig.Channel
+	channelConfigMutex       sync.RWMutex
+	channelConfigArgsForCall []struct {
+	}
+	channelConfigReturns struct {
+		result1 channelconfig.Channel
+	}
+	channelConfigReturnsOnCall map[int]struct {
+		result1 channelconfig.Channel
+	}
 	ClassifyMsgStub        func(*common.ChannelHeader) msgprocessor.Classification
 	classifyMsgMutex       sync.RWMutex
 	classifyMsgArgsForCall []struct {
@@ -66,6 +87,16 @@ type FakeConsenterSupport struct {
 	createNextBlockReturnsOnCall map[int]struct {
 		result1 *common.Block
 	}
+	DetectConsensusMigrationStub        func() bool
+	detectConsensusMigrationMutex       sync.RWMutex
+	detectConsensusMigrationArgsForCall []struct {
+	}
+	detectConsensusMigrationReturns struct {
+		result1 bool
+	}
+	detectConsensusMigrationReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	HeightStub        func() uint64
 	heightMutex       sync.RWMutex
 	heightArgsForCall []struct {
@@ -75,16 +106,6 @@ type FakeConsenterSupport struct {
 	}
 	heightReturnsOnCall map[int]struct {
 		result1 uint64
-	}
-	IsSystemChannelStub        func() bool
-	isSystemChannelMutex       sync.RWMutex
-	isSystemChannelArgsForCall []struct {
-	}
-	isSystemChannelReturns struct {
-		result1 bool
-	}
-	isSystemChannelReturnsOnCall map[int]struct {
-		result1 bool
 	}
 	ProcessConfigMsgStub        func(*common.Envelope) (*common.Envelope, uint64, error)
 	processConfigMsgMutex       sync.RWMutex
@@ -200,6 +221,66 @@ type FakeConsenterSupport struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeConsenterSupport) Append(arg1 *common.Block) error {
+	fake.appendMutex.Lock()
+	ret, specificReturn := fake.appendReturnsOnCall[len(fake.appendArgsForCall)]
+	fake.appendArgsForCall = append(fake.appendArgsForCall, struct {
+		arg1 *common.Block
+	}{arg1})
+	fake.recordInvocation("Append", []interface{}{arg1})
+	fake.appendMutex.Unlock()
+	if fake.AppendStub != nil {
+		return fake.AppendStub(arg1)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	fakeReturns := fake.appendReturns
+	return fakeReturns.result1
+}
+
+func (fake *FakeConsenterSupport) AppendCallCount() int {
+	fake.appendMutex.RLock()
+	defer fake.appendMutex.RUnlock()
+	return len(fake.appendArgsForCall)
+}
+
+func (fake *FakeConsenterSupport) AppendCalls(stub func(*common.Block) error) {
+	fake.appendMutex.Lock()
+	defer fake.appendMutex.Unlock()
+	fake.AppendStub = stub
+}
+
+func (fake *FakeConsenterSupport) AppendArgsForCall(i int) *common.Block {
+	fake.appendMutex.RLock()
+	defer fake.appendMutex.RUnlock()
+	argsForCall := fake.appendArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeConsenterSupport) AppendReturns(result1 error) {
+	fake.appendMutex.Lock()
+	defer fake.appendMutex.Unlock()
+	fake.AppendStub = nil
+	fake.appendReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeConsenterSupport) AppendReturnsOnCall(i int, result1 error) {
+	fake.appendMutex.Lock()
+	defer fake.appendMutex.Unlock()
+	fake.AppendStub = nil
+	if fake.appendReturnsOnCall == nil {
+		fake.appendReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.appendReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeConsenterSupport) Block(arg1 uint64) *common.Block {
@@ -366,6 +447,58 @@ func (fake *FakeConsenterSupport) ChainIDReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
+func (fake *FakeConsenterSupport) ChannelConfig() channelconfig.Channel {
+	fake.channelConfigMutex.Lock()
+	ret, specificReturn := fake.channelConfigReturnsOnCall[len(fake.channelConfigArgsForCall)]
+	fake.channelConfigArgsForCall = append(fake.channelConfigArgsForCall, struct {
+	}{})
+	fake.recordInvocation("ChannelConfig", []interface{}{})
+	fake.channelConfigMutex.Unlock()
+	if fake.ChannelConfigStub != nil {
+		return fake.ChannelConfigStub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	fakeReturns := fake.channelConfigReturns
+	return fakeReturns.result1
+}
+
+func (fake *FakeConsenterSupport) ChannelConfigCallCount() int {
+	fake.channelConfigMutex.RLock()
+	defer fake.channelConfigMutex.RUnlock()
+	return len(fake.channelConfigArgsForCall)
+}
+
+func (fake *FakeConsenterSupport) ChannelConfigCalls(stub func() channelconfig.Channel) {
+	fake.channelConfigMutex.Lock()
+	defer fake.channelConfigMutex.Unlock()
+	fake.ChannelConfigStub = stub
+}
+
+func (fake *FakeConsenterSupport) ChannelConfigReturns(result1 channelconfig.Channel) {
+	fake.channelConfigMutex.Lock()
+	defer fake.channelConfigMutex.Unlock()
+	fake.ChannelConfigStub = nil
+	fake.channelConfigReturns = struct {
+		result1 channelconfig.Channel
+	}{result1}
+}
+
+func (fake *FakeConsenterSupport) ChannelConfigReturnsOnCall(i int, result1 channelconfig.Channel) {
+	fake.channelConfigMutex.Lock()
+	defer fake.channelConfigMutex.Unlock()
+	fake.ChannelConfigStub = nil
+	if fake.channelConfigReturnsOnCall == nil {
+		fake.channelConfigReturnsOnCall = make(map[int]struct {
+			result1 channelconfig.Channel
+		})
+	}
+	fake.channelConfigReturnsOnCall[i] = struct {
+		result1 channelconfig.Channel
+	}{result1}
+}
+
 func (fake *FakeConsenterSupport) ClassifyMsg(arg1 *common.ChannelHeader) msgprocessor.Classification {
 	fake.classifyMsgMutex.Lock()
 	ret, specificReturn := fake.classifyMsgReturnsOnCall[len(fake.classifyMsgArgsForCall)]
@@ -491,6 +624,58 @@ func (fake *FakeConsenterSupport) CreateNextBlockReturnsOnCall(i int, result1 *c
 	}{result1}
 }
 
+func (fake *FakeConsenterSupport) DetectConsensusMigration() bool {
+	fake.detectConsensusMigrationMutex.Lock()
+	ret, specificReturn := fake.detectConsensusMigrationReturnsOnCall[len(fake.detectConsensusMigrationArgsForCall)]
+	fake.detectConsensusMigrationArgsForCall = append(fake.detectConsensusMigrationArgsForCall, struct {
+	}{})
+	fake.recordInvocation("DetectConsensusMigration", []interface{}{})
+	fake.detectConsensusMigrationMutex.Unlock()
+	if fake.DetectConsensusMigrationStub != nil {
+		return fake.DetectConsensusMigrationStub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	fakeReturns := fake.detectConsensusMigrationReturns
+	return fakeReturns.result1
+}
+
+func (fake *FakeConsenterSupport) DetectConsensusMigrationCallCount() int {
+	fake.detectConsensusMigrationMutex.RLock()
+	defer fake.detectConsensusMigrationMutex.RUnlock()
+	return len(fake.detectConsensusMigrationArgsForCall)
+}
+
+func (fake *FakeConsenterSupport) DetectConsensusMigrationCalls(stub func() bool) {
+	fake.detectConsensusMigrationMutex.Lock()
+	defer fake.detectConsensusMigrationMutex.Unlock()
+	fake.DetectConsensusMigrationStub = stub
+}
+
+func (fake *FakeConsenterSupport) DetectConsensusMigrationReturns(result1 bool) {
+	fake.detectConsensusMigrationMutex.Lock()
+	defer fake.detectConsensusMigrationMutex.Unlock()
+	fake.DetectConsensusMigrationStub = nil
+	fake.detectConsensusMigrationReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeConsenterSupport) DetectConsensusMigrationReturnsOnCall(i int, result1 bool) {
+	fake.detectConsensusMigrationMutex.Lock()
+	defer fake.detectConsensusMigrationMutex.Unlock()
+	fake.DetectConsensusMigrationStub = nil
+	if fake.detectConsensusMigrationReturnsOnCall == nil {
+		fake.detectConsensusMigrationReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.detectConsensusMigrationReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeConsenterSupport) Height() uint64 {
 	fake.heightMutex.Lock()
 	ret, specificReturn := fake.heightReturnsOnCall[len(fake.heightArgsForCall)]
@@ -540,58 +725,6 @@ func (fake *FakeConsenterSupport) HeightReturnsOnCall(i int, result1 uint64) {
 	}
 	fake.heightReturnsOnCall[i] = struct {
 		result1 uint64
-	}{result1}
-}
-
-func (fake *FakeConsenterSupport) IsSystemChannel() bool {
-	fake.isSystemChannelMutex.Lock()
-	ret, specificReturn := fake.isSystemChannelReturnsOnCall[len(fake.isSystemChannelArgsForCall)]
-	fake.isSystemChannelArgsForCall = append(fake.isSystemChannelArgsForCall, struct {
-	}{})
-	fake.recordInvocation("IsSystemChannel", []interface{}{})
-	fake.isSystemChannelMutex.Unlock()
-	if fake.IsSystemChannelStub != nil {
-		return fake.IsSystemChannelStub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	fakeReturns := fake.isSystemChannelReturns
-	return fakeReturns.result1
-}
-
-func (fake *FakeConsenterSupport) IsSystemChannelCallCount() int {
-	fake.isSystemChannelMutex.RLock()
-	defer fake.isSystemChannelMutex.RUnlock()
-	return len(fake.isSystemChannelArgsForCall)
-}
-
-func (fake *FakeConsenterSupport) IsSystemChannelCalls(stub func() bool) {
-	fake.isSystemChannelMutex.Lock()
-	defer fake.isSystemChannelMutex.Unlock()
-	fake.IsSystemChannelStub = stub
-}
-
-func (fake *FakeConsenterSupport) IsSystemChannelReturns(result1 bool) {
-	fake.isSystemChannelMutex.Lock()
-	defer fake.isSystemChannelMutex.Unlock()
-	fake.IsSystemChannelStub = nil
-	fake.isSystemChannelReturns = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeConsenterSupport) IsSystemChannelReturnsOnCall(i int, result1 bool) {
-	fake.isSystemChannelMutex.Lock()
-	defer fake.isSystemChannelMutex.Unlock()
-	fake.IsSystemChannelStub = nil
-	if fake.isSystemChannelReturnsOnCall == nil {
-		fake.isSystemChannelReturnsOnCall = make(map[int]struct {
-			result1 bool
-		})
-	}
-	fake.isSystemChannelReturnsOnCall[i] = struct {
-		result1 bool
 	}{result1}
 }
 
@@ -1160,20 +1293,24 @@ func (fake *FakeConsenterSupport) WriteConfigBlockArgsForCall(i int) (*common.Bl
 func (fake *FakeConsenterSupport) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.appendMutex.RLock()
+	defer fake.appendMutex.RUnlock()
 	fake.blockMutex.RLock()
 	defer fake.blockMutex.RUnlock()
 	fake.blockCutterMutex.RLock()
 	defer fake.blockCutterMutex.RUnlock()
 	fake.chainIDMutex.RLock()
 	defer fake.chainIDMutex.RUnlock()
+	fake.channelConfigMutex.RLock()
+	defer fake.channelConfigMutex.RUnlock()
 	fake.classifyMsgMutex.RLock()
 	defer fake.classifyMsgMutex.RUnlock()
 	fake.createNextBlockMutex.RLock()
 	defer fake.createNextBlockMutex.RUnlock()
+	fake.detectConsensusMigrationMutex.RLock()
+	defer fake.detectConsensusMigrationMutex.RUnlock()
 	fake.heightMutex.RLock()
 	defer fake.heightMutex.RUnlock()
-	fake.isSystemChannelMutex.RLock()
-	defer fake.isSystemChannelMutex.RUnlock()
 	fake.processConfigMsgMutex.RLock()
 	defer fake.processConfigMsgMutex.RUnlock()
 	fake.processConfigUpdateMsgMutex.RLock()

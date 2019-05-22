@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package tests
 
 import (
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,16 +20,14 @@ import (
 	"github.com/hyperledger/fabric/common/ledger/blkstorage/fsblkstorage"
 	"github.com/hyperledger/fabric/common/ledger/util"
 	"github.com/hyperledger/fabric/core/common/privdata"
-	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
+	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
 	"github.com/hyperledger/fabric/core/peer"
 	"github.com/hyperledger/fabric/core/scc/lscc"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
-type config map[string]interface{}
 type rebuildable uint8
 
 const (
@@ -37,56 +36,53 @@ const (
 	rebuildableConfigHistory rebuildable = 4
 )
 
-var (
-	defaultConfig = config{
-		"peer.fileSystemPath":        "/tmp/fabric/ledgertests",
-		"ledger.state.stateDatabase": "goleveldb",
-	}
-)
-
 type env struct {
 	assert            *assert.Assertions
+	rootPath          string
 	cleanupExtTestEnv func()
 }
 
-func newEnv(conf config, t *testing.T) *env {
-	setupConfigs(conf)
-
+func newEnv(t *testing.T) *env {
+	rootPath, err := ioutil.TempDir("", "kvlenv")
+	if err != nil {
+		t.Fatalf("Failed to create root directory: %s", err)
+	}
 	//setup extension test environment
 	_, _, destroy := xtestutil.SetupExtTestEnv()
-	env := &env{assert.New(t), destroy}
-
-	os.RemoveAll(getLedgerRootPath())
-	initLedgerMgmt()
+	env := &env{
+		assert:            assert.New(t),
+		rootPath:          rootPath,
+		cleanupExtTestEnv: destroy,
+	}
 	return env
 }
 
 func (e *env) cleanup() {
 	closeLedgerMgmt()
 	e.cleanupExtTestEnv()
-	e.assert.NoError(os.RemoveAll(getLedgerRootPath()))
+	e.assert.NoError(os.RemoveAll(e.rootPath))
 }
 
 func (e *env) closeAllLedgersAndDrop(flags rebuildable) {
 	closeLedgerMgmt()
-	defer initLedgerMgmt()
+	defer e.initLedgerMgmt()
 
 	if flags&rebuildableBlockIndex == rebuildableBlockIndex {
-		indexPath := getBlockIndexDBPath()
+		indexPath := filepath.Join(e.rootPath, "ledgersData", "chains", fsblkstorage.IndexDir)
 		logger.Infof("Deleting blockstore indexdb path [%s]", indexPath)
 		e.verifyNonEmptyDirExists(indexPath)
 		e.assert.NoError(os.RemoveAll(indexPath))
 	}
 
 	if flags&rebuildableStatedb == rebuildableStatedb {
-		statedbPath := getLevelstateDBPath()
+		statedbPath := filepath.Join(e.rootPath, "ledgersData", "stateLeveldb")
 		logger.Infof("Deleting statedb path [%s]", statedbPath)
 		e.verifyNonEmptyDirExists(statedbPath)
 		e.assert.NoError(os.RemoveAll(statedbPath))
 	}
 
 	if flags&rebuildableConfigHistory == rebuildableConfigHistory {
-		configHistory := getConfigHistoryDBPath()
+		configHistory := filepath.Join(e.rootPath, "ledgersData", "configHistory")
 		logger.Infof("Deleting configHistory db path [%s]", configHistory)
 		e.verifyNonEmptyDirExists(configHistory)
 		e.assert.NoError(os.RemoveAll(configHistory))
@@ -100,28 +96,36 @@ func (e *env) verifyNonEmptyDirExists(path string) {
 }
 
 // ########################### ledgermgmt and ledgerconfig related functions wrappers #############################
-// In the current code, ledgermgmt and ledgerconfigs are packaged scope APIs and hence so are the following
-// wrapper APIs. As a TODO, both the ledgermgmt and ledgerconfig can be refactored as separate objects and then
-// the instances of these two would be wrapped inside the `env` struct above.
+// In the current code, ledgermgmt is a packaged scoped APIs and hence so are the following
+// wrapper APIs. As a TODO, both the ledgermgmt can be refactored as separate objects withn
+// instances wrapped inside the `env` struct above.
 // #################################################################################################################
-func setupConfigs(conf config) {
-	for c, v := range conf {
-		viper.Set(c, v)
-	}
-}
-
-func initLedgerMgmt() {
+func (e *env) initLedgerMgmt() {
 	identityDeserializerFactory := func(chainID string) msp.IdentityDeserializer {
 		return mgmt.GetManagerForChain(chainID)
 	}
 	membershipInfoProvider := privdata.NewMembershipInfoProvider(createSelfSignedData(), identityDeserializerFactory)
 
+	ledgerPath := filepath.Join(e.rootPath, "ledgersData")
 	ledgermgmt.InitializeExistingTestEnvWithInitializer(
 		&ledgermgmt.Initializer{
 			CustomTxProcessors:            peer.ConfigTxProcessors,
 			DeployedChaincodeInfoProvider: &lscc.DeployedCCInfoProvider{},
 			MembershipInfoProvider:        membershipInfoProvider,
 			MetricsProvider:               &disabled.Provider{},
+			Config: &ledger.Config{
+				RootFSPath: ledgerPath,
+				StateDB: &ledger.StateDB{
+					StateDatabase: "goleveldb",
+					LevelDBPath:   filepath.Join(ledgerPath, "stateLeveldb"),
+				},
+				PrivateData: &ledger.PrivateData{
+					StorePath:       filepath.Join(ledgerPath, "pvtdataStore"),
+					MaxBatchSize:    5000,
+					BatchesInterval: 1000,
+					PurgeInterval:   100,
+				},
+			},
 		},
 	)
 }
@@ -146,20 +150,4 @@ func createSelfSignedData() protoutil.SignedData {
 
 func closeLedgerMgmt() {
 	ledgermgmt.Close()
-}
-
-func getLedgerRootPath() string {
-	return ledgerconfig.GetRootPath()
-}
-
-func getLevelstateDBPath() string {
-	return ledgerconfig.GetStateLevelDBPath()
-}
-
-func getBlockIndexDBPath() string {
-	return filepath.Join(ledgerconfig.GetBlockStorePath(), fsblkstorage.IndexDir)
-}
-
-func getConfigHistoryDBPath() string {
-	return ledgerconfig.GetConfigHistoryPath()
 }

@@ -11,8 +11,7 @@ package ccintf
 //Currently inproccontroller uses it. dockercontroller does not.
 
 import (
-	"fmt"
-
+	persistence "github.com/hyperledger/fabric/core/chaincode/persistence/intf"
 	pb "github.com/hyperledger/fabric/protos/peer"
 )
 
@@ -28,21 +27,15 @@ type CCSupport interface {
 	HandleChaincodeStream(ChaincodeStream) error
 }
 
-// GetCCHandlerKey is used to pass CCSupport via context
-func GetCCHandlerKey() string {
-	return "CCHANDLER"
+// CCID encapsulates chaincode ID
+type CCID string
+
+// String returns a string version of the chaincode ID
+func (c CCID) String() string {
+	return string(c)
 }
 
-//CCID encapsulates chaincode ID
-type CCID struct {
-	Name    string
-	Version string
-}
-
-//GetName returns canonical chaincode name based on the fields of CCID
-func (ccid *CCID) GetName() string {
-	if ccid.Version != "" {
-		return fmt.Sprintf("%s-%s", ccid.Name, ccid.Version)
-	}
-	return ccid.Name
+// New returns a chaincode ID given the supplied package ID
+func New(packageID persistence.PackageID) CCID {
+	return CCID(packageID.String())
 }

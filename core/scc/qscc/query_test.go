@@ -18,7 +18,6 @@ import (
 	"github.com/hyperledger/fabric/core/aclmgmt/resources"
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 	ledger2 "github.com/hyperledger/fabric/core/ledger"
-	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
 	"github.com/hyperledger/fabric/core/peer"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/protos/common"
@@ -30,11 +29,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupTestLedger(chainid string, path string) (*shim.MockStub, error) {
+func setupTestLedger(chainid string, path string) (*shim.MockStub, func(), error) {
 	mockAclProvider.Reset()
 
 	viper.Set("peer.fileSystemPath", path)
-	peer.MockInitialize()
+	cleanup, err := peer.MockInitialize()
+	if err != nil {
+		return nil, nil, err
+	}
 	peer.MockCreateChain(chainid)
 
 	lq := &LedgerQuerier{
@@ -42,9 +44,9 @@ func setupTestLedger(chainid string, path string) (*shim.MockStub, error) {
 	}
 	stub := shim.NewMockStub("LedgerQuerier", lq)
 	if res := stub.MockInit("1", nil); res.Status != shim.OK {
-		return nil, fmt.Errorf("Init failed for test ledger [%s] with message: %s", chainid, string(res.Message))
+		return nil, cleanup, fmt.Errorf("Init failed for test ledger [%s] with message: %s", chainid, string(res.Message))
 	}
-	return stub, nil
+	return stub, cleanup, nil
 }
 
 //pass the prop so we can conveniently inline it in the call and get it back
@@ -65,10 +67,11 @@ func TestQueryGetChainInfo(t *testing.T) {
 	path := tempDir(t, "test1")
 	defer os.RemoveAll(path)
 
-	stub, err := setupTestLedger(chainid, path)
+	stub, cleanup, err := setupTestLedger(chainid, path)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	defer cleanup()
 
 	args := [][]byte{[]byte(GetChainInfo), []byte(chainid)}
 	prop := resetProvider(resources.Qscc_GetChainInfo, chainid, &peer2.SignedProposal{}, nil)
@@ -89,10 +92,11 @@ func TestQueryGetTransactionByID(t *testing.T) {
 	path := tempDir(t, "test2")
 	defer os.RemoveAll(path)
 
-	stub, err := setupTestLedger(chainid, path)
+	stub, cleanup, err := setupTestLedger(chainid, path)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	defer cleanup()
 
 	args := [][]byte{[]byte(GetTransactionByID), []byte(chainid), []byte("1")}
 	prop := resetProvider(resources.Qscc_GetTransactionByID, chainid, &peer2.SignedProposal{}, nil)
@@ -114,10 +118,11 @@ func TestQueryGetBlockByNumber(t *testing.T) {
 	path := tempDir(t, "test3")
 	defer os.RemoveAll(path)
 
-	stub, err := setupTestLedger(chainid, path)
+	stub, cleanup, err := setupTestLedger(chainid, path)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	defer cleanup()
 
 	// block number 0 (genesis block) would already be present in the ledger
 	args := [][]byte{[]byte(GetBlockByNumber), []byte(chainid), []byte("0")}
@@ -141,10 +146,11 @@ func TestQueryGetBlockByHash(t *testing.T) {
 	path := tempDir(t, "test4")
 	defer os.RemoveAll(path)
 
-	stub, err := setupTestLedger(chainid, path)
+	stub, cleanup, err := setupTestLedger(chainid, path)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	defer cleanup()
 
 	args := [][]byte{[]byte(GetBlockByHash), []byte(chainid), []byte("0")}
 	prop := resetProvider(resources.Qscc_GetBlockByHash, chainid, &peer2.SignedProposal{}, nil)
@@ -161,10 +167,11 @@ func TestQueryGetBlockByTxID(t *testing.T) {
 	path := tempDir(t, "test5")
 	defer os.RemoveAll(path)
 
-	stub, err := setupTestLedger(chainid, path)
+	stub, cleanup, err := setupTestLedger(chainid, path)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	defer cleanup()
 
 	args := [][]byte{[]byte(GetBlockByTxID), []byte(chainid), []byte("")}
 	prop := resetProvider(resources.Qscc_GetBlockByTxID, chainid, &peer2.SignedProposal{}, nil)
@@ -177,10 +184,11 @@ func TestFailingAccessControl(t *testing.T) {
 	path := tempDir(t, "test6")
 	defer os.RemoveAll(path)
 
-	_, err := setupTestLedger(chainid, path)
+	_, cleanup, err := setupTestLedger(chainid, path)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	defer cleanup()
 	e := &LedgerQuerier{
 		aclProvider: mockAclProvider,
 	}
@@ -252,10 +260,11 @@ func TestQueryNonexistentFunction(t *testing.T) {
 	path := tempDir(t, "test7")
 	defer os.RemoveAll(path)
 
-	stub, err := setupTestLedger(chainid, path)
+	stub, cleanup, err := setupTestLedger(chainid, path)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	defer cleanup()
 
 	args := [][]byte{[]byte("GetBlocks"), []byte(chainid), []byte("arg1")}
 	prop := resetProvider("qscc/GetBlocks", chainid, &peer2.SignedProposal{}, nil)
@@ -270,10 +279,11 @@ func TestQueryGeneratedBlock(t *testing.T) {
 	path := tempDir(t, "test8")
 	defer os.RemoveAll(path)
 
-	stub, err := setupTestLedger(chainid, path)
+	stub, cleanup, err := setupTestLedger(chainid, path)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	defer cleanup()
 
 	block1 := addBlockForTesting(t, chainid)
 
@@ -353,9 +363,6 @@ func addBlockForTesting(t *testing.T, chainid string) *common.Block {
 var mockAclProvider *mocks.MockACLProvider
 
 func TestMain(m *testing.M) {
-	// Read the core.yaml file for default config.
-	ledgertestutil.SetupCoreYAMLConfig()
-
 	//setup extension test environment
 	_, _, destroy := xtestutil.SetupExtTestEnv()
 

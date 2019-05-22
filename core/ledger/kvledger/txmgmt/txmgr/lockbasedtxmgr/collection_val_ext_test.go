@@ -19,7 +19,6 @@ import (
 func TestUnknownCollectionValidation(t *testing.T) {
 	testEnv := testEnvsMap[levelDBtestEnvName]
 	testEnv.init(t, "testLedger", nil)
-	defer testEnv.cleanup()
 	txMgr := testEnv.getTxMgr()
 
 	populateUnknownCollConfigForTest(t, txMgr.(*LockBasedTxMgr),

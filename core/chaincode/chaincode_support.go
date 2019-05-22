@@ -8,14 +8,12 @@ package chaincode
 
 import (
 	"bytes"
-	"fmt"
 	"time"
 	"unicode/utf8"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/common/metrics"
 	"github.com/hyperledger/fabric/common/util"
-	"github.com/hyperledger/fabric/core/chaincode/platforms"
+	persistence "github.com/hyperledger/fabric/core/chaincode/persistence/intf"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/common/sysccprovider"
 	"github.com/hyperledger/fabric/core/container/ccintf"
@@ -57,87 +55,26 @@ type Lifecycle interface {
 
 // ChaincodeSupport responsible for providing interfacing with chaincodes from the Peer.
 type ChaincodeSupport struct {
-	Keepalive              time.Duration
-	ExecuteTimeout         time.Duration
-	UserRunsCC             bool
-	Runtime                Runtime
 	ACLProvider            ACLProvider
-	HandlerRegistry        *HandlerRegistry
-	Launcher               Launcher
-	SystemCCProvider       sysccprovider.SystemChaincodeProvider
-	Lifecycle              Lifecycle
 	AppConfig              ApplicationConfigRetriever
-	HandlerMetrics         *HandlerMetrics
-	LaunchMetrics          *LaunchMetrics
 	DeployedCCInfoProvider ledger.DeployedChaincodeInfoProvider
-}
-
-// NewChaincodeSupport creates a new ChaincodeSupport instance.
-func NewChaincodeSupport(
-	config *Config,
-	peerAddress string,
-	userRunsCC bool,
-	caCert []byte,
-	certGenerator CertGenerator,
-	packageProvider PackageProvider,
-	lifecycle Lifecycle,
-	aclProvider ACLProvider,
-	processor Processor,
-	SystemCCProvider sysccprovider.SystemChaincodeProvider,
-	platformRegistry *platforms.Registry,
-	appConfig ApplicationConfigRetriever,
-	metricsProvider metrics.Provider,
-	deployedCCInfoProvider ledger.DeployedChaincodeInfoProvider,
-) *ChaincodeSupport {
-	cs := &ChaincodeSupport{
-		UserRunsCC:             userRunsCC,
-		Keepalive:              config.Keepalive,
-		ExecuteTimeout:         config.ExecuteTimeout,
-		HandlerRegistry:        NewHandlerRegistry(userRunsCC),
-		ACLProvider:            aclProvider,
-		SystemCCProvider:       SystemCCProvider,
-		Lifecycle:              lifecycle,
-		AppConfig:              appConfig,
-		HandlerMetrics:         NewHandlerMetrics(metricsProvider),
-		LaunchMetrics:          NewLaunchMetrics(metricsProvider),
-		DeployedCCInfoProvider: deployedCCInfoProvider,
-	}
-
-	// Keep TestQueries working
-	if !config.TLSEnabled {
-		certGenerator = nil
-	}
-
-	cs.Runtime = &ContainerRuntime{
-		CertGenerator:    certGenerator,
-		Processor:        processor,
-		CACert:           caCert,
-		PeerAddress:      peerAddress,
-		PlatformRegistry: platformRegistry,
-		CommonEnv: []string{
-			"CORE_CHAINCODE_LOGGING_LEVEL=" + config.LogLevel,
-			"CORE_CHAINCODE_LOGGING_SHIM=" + config.ShimLogLevel,
-			"CORE_CHAINCODE_LOGGING_FORMAT=" + config.LogFormat,
-		},
-	}
-
-	cs.Launcher = &RuntimeLauncher{
-		Runtime:         cs.Runtime,
-		Registry:        cs.HandlerRegistry,
-		PackageProvider: packageProvider,
-		StartupTimeout:  config.StartupTimeout,
-		Metrics:         cs.LaunchMetrics,
-	}
-
-	return cs
+	ExecuteTimeout         time.Duration
+	HandlerMetrics         *HandlerMetrics
+	HandlerRegistry        *HandlerRegistry
+	Keepalive              time.Duration
+	Launcher               Launcher
+	Lifecycle              Lifecycle
+	Runtime                Runtime
+	SystemCCProvider       sysccprovider.SystemChaincodeProvider
+	TotalQueryLimit        int
+	UserRunsCC             bool
 }
 
 // LaunchInit bypasses getting the chaincode spec from the LSCC table
 // as in the case of v1.0-v1.2 lifecycle, the chaincode will not yet be
 // defined in the LSCC table
 func (cs *ChaincodeSupport) LaunchInit(ccci *ccprovider.ChaincodeContainerInfo) error {
-	cname := ccci.Name + ":" + ccci.Version
-	if cs.HandlerRegistry.Handler(cname) != nil {
+	if cs.HandlerRegistry.Handler(ccintf.New(ccci.PackageID)) != nil {
 		return nil
 	}
 
@@ -148,19 +85,19 @@ func (cs *ChaincodeSupport) LaunchInit(ccci *ccprovider.ChaincodeContainerInfo) 
 // blocks until the peer side handler gets into ready state or encounters a fatal
 // error. If the chaincode is already running, it simply returns.
 func (cs *ChaincodeSupport) Launch(chainID string, ccci *ccprovider.ChaincodeContainerInfo) (*Handler, error) {
-	cname := ccci.Name + ":" + ccci.Version
+	ccid := ccintf.New(ccci.PackageID)
 
-	if h := cs.HandlerRegistry.Handler(cname); h != nil {
+	if h := cs.HandlerRegistry.Handler(ccid); h != nil {
 		return h, nil
 	}
 
 	if err := cs.Launcher.Launch(ccci); err != nil {
-		return nil, errors.Wrapf(err, "[channel %s] could not launch chaincode %s", chainID, cname)
+		return nil, errors.Wrapf(err, "[channel %s] could not launch chaincode %s", chainID, ccci.PackageID)
 	}
 
-	h := cs.HandlerRegistry.Handler(cname)
+	h := cs.HandlerRegistry.Handler(ccid)
 	if h == nil {
-		return nil, errors.Errorf("[channel %s] claimed to start chaincode container for %s but could not find handler", chainID, cname)
+		return nil, errors.Errorf("[channel %s] claimed to start chaincode container for %s but could not find handler", chainID, ccci.PackageID)
 	}
 
 	return h, nil
@@ -190,6 +127,7 @@ func (cs *ChaincodeSupport) HandleChaincodeStream(stream ccintf.ChaincodeStream)
 		DeployedCCInfoProvider:     cs.DeployedCCInfoProvider,
 		AppConfig:                  cs.AppConfig,
 		Metrics:                    cs.HandlerMetrics,
+		TotalQueryLimit:            cs.TotalQueryLimit,
 	}
 
 	return handler.ProcessStream(stream)
@@ -222,16 +160,20 @@ func createCCMessage(messageType pb.ChaincodeMessage_Type, cid string, txid stri
 func (cs *ChaincodeSupport) ExecuteLegacyInit(txParams *ccprovider.TransactionParams, cccid *ccprovider.CCContext, spec *pb.ChaincodeDeploymentSpec) (*pb.Response, *pb.ChaincodeEvent, error) {
 	ccci := ccprovider.DeploymentSpecToChaincodeContainerInfo(spec)
 	ccci.Version = cccid.Version
+	// FIXME: this is a hack, we shouldn't construct the
+	// packageID manually but rather let lifecycle construct it
+	// for us. However this is legacy code that will disappear
+	// so it is acceptable for now (FAB-14627)
+	ccci.PackageID = persistence.PackageID(ccci.Name + ":" + ccci.Version)
 
 	err := cs.LaunchInit(ccci)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	cname := ccci.Name + ":" + ccci.Version
-	h := cs.HandlerRegistry.Handler(cname)
+	h := cs.HandlerRegistry.Handler(ccintf.New(ccci.PackageID))
 	if h == nil {
-		return nil, nil, errors.Wrapf(err, "[channel %s] claimed to start chaincode container for %s but could not find handler", txParams.ChannelID, cname)
+		return nil, nil, errors.Wrapf(err, "[channel %s] claimed to start chaincode container for %s but could not find handler", txParams.ChannelID, ccci.PackageID)
 	}
 
 	resp, err := cs.execute(pb.ChaincodeMessage_INIT, txParams, cccid, spec.GetChaincodeSpec().Input, h)
@@ -281,7 +223,6 @@ func (cs *ChaincodeSupport) Invoke(txParams *ccprovider.TransactionParams, cccid
 	var ccci *ccprovider.ChaincodeContainerInfo
 	var err error
 
-	// TODO: remove this once _lifecycle has definitions for all system chaincodes
 	if !cs.SystemCCProvider.IsSysCC(cccid.Name) {
 		ccci, err = cs.Lifecycle.ChaincodeContainerInfo(txParams.ChannelID, cccid.Name, txParams.TXSimulator)
 		if err != nil {
@@ -295,9 +236,11 @@ func (cs *ChaincodeSupport) Invoke(txParams *ccprovider.TransactionParams, cccid
 			return nil, errors.Wrapf(err, "[channel %s] failed to get chaincode container info for %s", txParams.ChannelID, cccid.Name)
 		}
 	} else {
+		// FIXME: remove this once _lifecycle has definitions for all system chaincodes (FAB-14628)
 		ccci = &ccprovider.ChaincodeContainerInfo{
-			Version: util.GetSysCCVersion(),
-			Name:    cccid.Name,
+			Version:   util.GetSysCCVersion(),
+			Name:      cccid.Name,
+			PackageID: persistence.PackageID(cccid.Name + ":" + util.GetSysCCVersion()),
 		}
 	}
 
@@ -380,7 +323,7 @@ func (cs *ChaincodeSupport) execute(cctyp pb.ChaincodeMessage_Type, txParams *cc
 
 	ccresp, err := h.Execute(txParams, cccid, ccMsg, cs.ExecuteTimeout)
 	if err != nil {
-		return nil, errors.WithMessage(err, fmt.Sprintf("error sending"))
+		return nil, errors.WithMessage(err, "error sending")
 	}
 
 	return ccresp, nil

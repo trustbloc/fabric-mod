@@ -2,7 +2,7 @@
 
 **Audience**: Architects, Application and smart contract developers
 
-An application can interact with a blockhain network by submitting transactions
+An application can interact with a blockchain network by submitting transactions
 to a ledger or querying ledger content. This topic covers the mechanics of how
 an application does this; in our scenario, organizations access PaperNet using
 applications which invoke **issue**, **sell** and **redeem** transactions
@@ -305,6 +305,11 @@ send the transaction proposal to the right peers in the network, where it can
 get the required endorsements. But the application doesn't need to worry about
 any of this -- it just issues `submitTransaction` and the SDK takes care of it
 all!
+
+Note that the `submitTransaction` API includes a process for listening for
+transaction commits. Listening for commits is required because without it,
+you will not know whether your transaction has successfully been orderered,
+validated, and committed to the ledger.
 
 Let's now turn our attention to how the application handles the response!
 

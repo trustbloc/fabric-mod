@@ -14,19 +14,19 @@ import (
 	"sync/atomic"
 	"time"
 
-	proto2 "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/core/common/privdata"
 	"github.com/hyperledger/fabric/gossip/api"
 	gossipCommon "github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/discovery"
 	"github.com/hyperledger/fabric/gossip/filter"
-	gossip2 "github.com/hyperledger/fabric/gossip/gossip"
+	gossipgossip "github.com/hyperledger/fabric/gossip/gossip"
 	"github.com/hyperledger/fabric/gossip/metrics"
 	"github.com/hyperledger/fabric/gossip/protoext"
 	"github.com/hyperledger/fabric/gossip/util"
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/protos/common"
-	proto "github.com/hyperledger/fabric/protos/gossip"
+	protosgossip "github.com/hyperledger/fabric/protos/gossip"
 	"github.com/hyperledger/fabric/protos/ledger/rwset"
 	"github.com/hyperledger/fabric/protos/transientstore"
 	"github.com/hyperledger/fabric/protoutil"
@@ -36,7 +36,7 @@ import (
 // gossipAdapter an adapter for API's required from gossip module
 type gossipAdapter interface {
 	// SendByCriteria sends a given message to all peers that match the given SendCriteria
-	SendByCriteria(message *protoext.SignedGossipMessage, criteria gossip2.SendCriteria) error
+	SendByCriteria(message *protoext.SignedGossipMessage, criteria gossipgossip.SendCriteria) error
 
 	// PeerFilter receives a SubChannelSelectionCriteria and returns a RoutingFilter that selects
 	// only peer identities that match the given criteria, and that they published their channel participation
@@ -93,7 +93,7 @@ func (p *policyAccessFactory) AccessPolicy(config *common.CollectionConfig, chai
 	case *common.CollectionConfig_StaticCollectionConfig:
 		err := colAP.Setup(cconf.StaticCollectionConfig, p.GetIdentityDeserializer(chainID))
 		if err != nil {
-			return nil, errors.WithMessage(err, fmt.Sprintf("error setting up collection  %#v", cconf.StaticCollectionConfig.Name))
+			return nil, errors.WithMessagef(err, "error setting up collection  %#v", cconf.StaticCollectionConfig.Name)
 		}
 		return colAP, nil
 	default:
@@ -132,7 +132,7 @@ func (d *distributorImpl) Distribute(txID string, privData *transientstore.TxPvt
 
 type dissemination struct {
 	msg      *protoext.SignedGossipMessage
-	criteria gossip2.SendCriteria
+	criteria gossipgossip.SendCriteria
 }
 
 func (d *distributorImpl) computeDisseminationPlan(txID string,
@@ -236,7 +236,7 @@ func (d *distributorImpl) disseminationPlanForMsg(colAP privdata.CollectionAcces
 				required = 0
 			}
 			peer2SendPerOrg := selectionPeers[rand.Intn(len(selectionPeers))]
-			sc := gossip2.SendCriteria{
+			sc := gossipgossip.SendCriteria{
 				Timeout:  d.pushAckTimeout,
 				Channel:  gossipCommon.ChainID(d.chainID),
 				MaxPeers: 1,
@@ -248,8 +248,8 @@ func (d *distributorImpl) disseminationPlanForMsg(colAP privdata.CollectionAcces
 			disseminationPlan = append(disseminationPlan, &dissemination{
 				criteria: sc,
 				msg: &protoext.SignedGossipMessage{
-					Envelope:      proto2.Clone(pvtDataMsg.Envelope).(*proto.Envelope),
-					GossipMessage: proto2.Clone(pvtDataMsg.GossipMessage).(*proto.GossipMessage),
+					Envelope:      proto.Clone(pvtDataMsg.Envelope).(*protosgossip.Envelope),
+					GossipMessage: proto.Clone(pvtDataMsg.GossipMessage).(*protosgossip.GossipMessage),
 				},
 			})
 
@@ -266,7 +266,7 @@ func (d *distributorImpl) disseminationPlanForMsg(colAP privdata.CollectionAcces
 
 	// criteria to select remaining peers to satisfy colAP.MaximumPeerCount()
 	// collection policy parameters
-	sc := gossip2.SendCriteria{
+	sc := gossipgossip.SendCriteria{
 		Timeout:  d.pushAckTimeout,
 		Channel:  gossipCommon.ChainID(d.chainID),
 		MaxPeers: maximumPeerCount,
@@ -348,13 +348,13 @@ func (d *distributorImpl) createPrivateDataMessage(txID, namespace string,
 	collection *rwset.CollectionPvtReadWriteSet,
 	ccp *common.CollectionConfigPackage,
 	blkHt uint64) (*protoext.SignedGossipMessage, error) {
-	msg := &proto.GossipMessage{
+	msg := &protosgossip.GossipMessage{
 		Channel: []byte(d.chainID),
 		Nonce:   util.RandomUInt64(),
-		Tag:     proto.GossipMessage_CHAN_ONLY,
-		Content: &proto.GossipMessage_PrivateData{
-			PrivateData: &proto.PrivateDataMessage{
-				Payload: &proto.PrivatePayload{
+		Tag:     protosgossip.GossipMessage_CHAN_ONLY,
+		Content: &protosgossip.GossipMessage_PrivateData{
+			PrivateData: &protosgossip.PrivateDataMessage{
+				Payload: &protosgossip.PrivatePayload{
 					Namespace:         namespace,
 					CollectionName:    collection.CollectionName,
 					TxId:              txID,

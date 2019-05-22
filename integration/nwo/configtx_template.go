@@ -46,11 +46,14 @@ Organizations:{{ range .PeerOrgs }}
     Admins:
       Type: Signature
       Rule: OR('{{.MSPID}}.admin')
+  OrdererEndpoints:{{ range $w.OrderersInOrg .Name }}
+  - 127.0.0.1:{{ $w.OrdererPort . "Listen" }}
+  {{- end }}
 {{ end }}
 
 Channel: &ChannelDefaults
   Capabilities:
-    V1_4_2: true
+    V2_0: true
   Policies:
     Readers:
       Type: ImplicitMeta
@@ -88,7 +91,7 @@ Profiles:{{ range .Profiles }}
       EtcdRaft:
         Options:
           TickInterval: 500ms
-          SnapshotInterval: 1 KB
+          SnapshotIntervalSize: 1 KB
         Consenters:{{ range .Orderers }}{{ with $w.Orderer . }}
         - Host: 127.0.0.1
           Port: {{ $w.OrdererPort . "Listen" }}

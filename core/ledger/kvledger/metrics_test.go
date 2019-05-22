@@ -21,15 +21,19 @@ import (
 )
 
 func TestStatsBlockchainHeight(t *testing.T) {
-	env := newTestEnv(t)
-	defer env.cleanup()
+	conf, cleanup := testConfig(t)
+	defer cleanup()
 	testMetricProvider := testutilConstructMetricProvider()
-	provider, err := NewProvider()
-	assert.NoError(t, err)
-	provider.Initialize(&lgr.Initializer{
-		DeployedChaincodeInfoProvider: &mock.DeployedChaincodeInfoProvider{},
-		MetricsProvider:               testMetricProvider.fakeProvider,
-	})
+	provider, err := NewProvider(
+		&lgr.Initializer{
+			DeployedChaincodeInfoProvider: &mock.DeployedChaincodeInfoProvider{},
+			MetricsProvider:               testMetricProvider.fakeProvider,
+			Config:                        conf,
+		},
+	)
+	if err != nil {
+		t.Fatalf("Failed to create new Provider: %s", err)
+	}
 	defer provider.Close()
 
 	// create a ledger
@@ -64,15 +68,19 @@ func TestStatsBlockchainHeight(t *testing.T) {
 }
 
 func TestStatsBlockCommit(t *testing.T) {
-	env := newTestEnv(t)
-	defer env.cleanup()
+	conf, cleanup := testConfig(t)
+	defer cleanup()
 	testMetricProvider := testutilConstructMetricProvider()
-	provider, err := NewProvider()
-	assert.NoError(t, err)
-	provider.Initialize(&lgr.Initializer{
-		DeployedChaincodeInfoProvider: &mock.DeployedChaincodeInfoProvider{},
-		MetricsProvider:               testMetricProvider.fakeProvider,
-	})
+	provider, err := NewProvider(
+		&lgr.Initializer{
+			DeployedChaincodeInfoProvider: &mock.DeployedChaincodeInfoProvider{},
+			MetricsProvider:               testMetricProvider.fakeProvider,
+			Config:                        conf,
+		},
+	)
+	if err != nil {
+		t.Fatalf("Failed to create new Provider: %s", err)
+	}
 	defer provider.Close()
 
 	// create a ledger

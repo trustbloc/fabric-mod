@@ -20,42 +20,20 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/commontests"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
-	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
 	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 	"github.com/hyperledger/fabric/integration/runner"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(testMain(m))
-}
-
-func testMain(m *testing.M) int {
-	// Read the core.yaml file for default config.
-	ledgertestutil.SetupCoreYAMLConfig()
-	viper.Set("peer.fileSystemPath", "/tmp/fabric/ledgertests/kvledger/txmgmt/statedb/statecouchdb")
-
 	// Switch to CouchDB
-	couchAddress, cleanup := couchDBSetup()
+	address, cleanup := couchDBSetup()
+	couchAddress = address
 	defer cleanup()
-	viper.Set("ledger.state.stateDatabase", "CouchDB")
-	defer viper.Set("ledger.state.stateDatabase", "goleveldb")
-
-	viper.Set("ledger.state.couchDBConfig.couchDBAddress", couchAddress)
-	// Replace with correct username/password such as
-	// admin/admin if user security is enabled on couchdb.
-	viper.Set("ledger.state.couchDBConfig.username", "")
-	viper.Set("ledger.state.couchDBConfig.password", "")
-	viper.Set("ledger.state.couchDBConfig.maxRetries", 3)
-	viper.Set("ledger.state.couchDBConfig.maxRetriesOnStartup", 20)
-	viper.Set("ledger.state.couchDBConfig.requestTimeout", time.Second*35)
-	// Disable auto warm to avoid error logs when the couchdb database has been dropped
-	viper.Set("ledger.state.couchDBConfig.autoWarmIndexes", false)
 
 	flogging.ActivateSpec("statecouchdb=debug")
 	//run the actual test
-	return m.Run()
+	os.Exit(m.Run())
 }
 
 func couchDBSetup() (addr string, cleanup func()) {
@@ -120,10 +98,8 @@ func TestGetVersion(t *testing.T) {
 }
 
 func TestSmallBatchSize(t *testing.T) {
-	viper.Set("ledger.state.couchDBConfig.maxBatchUpdateSize", 2)
 	env := NewTestVDBEnv(t)
 	defer env.Cleanup()
-	defer viper.Set("ledger.state.couchDBConfig.maxBatchUpdateSize", 1000)
 	commontests.TestSmallBatchSize(t, env.DBProvider)
 }
 
@@ -574,9 +550,6 @@ func TestPaginatedQuery(t *testing.T) {
 	_, err = executeQuery(t, db, "ns1", queryString, "", int32(50), returnKeys)
 	assert.NoError(t, err)
 
-	//Set queryLimit to 50
-	viper.Set("ledger.state.couchDBConfig.internalQueryLimit", 50)
-
 	// Test explicit paging
 	// Pagesize is 10, so all 28 records should be return in 3 "pages"
 	returnKeys = []string{"key2", "key3", "key4", "key6", "key8", "key12", "key13", "key14", "key15", "key16"}
@@ -589,9 +562,6 @@ func TestPaginatedQuery(t *testing.T) {
 	_, err = executeQuery(t, db, "ns1", queryString, bookmark, int32(10), returnKeys)
 	assert.NoError(t, err)
 
-	// Set queryLimit to 10
-	viper.Set("ledger.state.couchDBConfig.internalQueryLimit", 10)
-
 	// Test implicit paging
 	returnKeys = []string{"key2", "key3", "key4", "key6", "key8", "key12", "key13", "key14", "key15",
 		"key16", "key17", "key18", "key19", "key20", "key22", "key24", "key25", "key26", "key28", "key29",
@@ -599,16 +569,10 @@ func TestPaginatedQuery(t *testing.T) {
 	_, err = executeQuery(t, db, "ns1", queryString, "", int32(0), returnKeys)
 	assert.NoError(t, err)
 
-	//Set queryLimit to 5
-	viper.Set("ledger.state.couchDBConfig.internalQueryLimit", 5)
-
 	// pagesize greater than querysize will execute with implicit paging
 	returnKeys = []string{"key2", "key3", "key4", "key6", "key8", "key12", "key13", "key14", "key15", "key16"}
 	_, err = executeQuery(t, db, "ns1", queryString, "", int32(10), returnKeys)
 	assert.NoError(t, err)
-
-	// Set queryLimit to 1000
-	viper.Set("ledger.state.couchDBConfig.internalQueryLimit", 1000)
 }
 
 func executeQuery(t *testing.T, db statedb.VersionedDB, namespace, query, bookmark string, limit int32, returnKeys []string) (string, error) {

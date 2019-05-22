@@ -285,9 +285,9 @@ func TestUpdateRootsFromConfigBlock(t *testing.T) {
 	}
 
 	_, _, destroy := xtestutil.SetupExtTestEnv()
-	ledgermgmt.InitializeTestEnv()
+	cleanup := ledgermgmt.InitializeTestEnv(t)
 
-	defer ledgermgmt.CleanupTestEnv()
+	defer cleanup()
 	defer destroy()
 
 	for _, test := range tests {

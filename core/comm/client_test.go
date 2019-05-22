@@ -497,7 +497,7 @@ func TestSetMessageSize(t *testing.T) {
 			// create service client from conn
 			svcClient := testpb.NewEchoServiceClient(conn)
 			callCtx := context.Background()
-			callCtx, cancel := context.WithTimeout(callCtx, timeout)
+			callCtx, cancel := context.WithTimeout(callCtx, testTimeout)
 			defer cancel()
 			//invoke service
 			echo := &testpb.Echo{
@@ -524,8 +524,6 @@ type testCerts struct {
 	caPEM      []byte
 	certPEM    []byte
 	keyPEM     []byte
-	serverKey  []byte
-	serverPEM  []byte
 	clientCert tls.Certificate
 	serverCert tls.Certificate
 }

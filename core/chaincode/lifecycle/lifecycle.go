@@ -13,8 +13,11 @@ import (
 	"github.com/hyperledger/fabric/common/chaincode"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/chaincode/persistence"
+	p "github.com/hyperledger/fabric/core/chaincode/persistence/intf"
 	cb "github.com/hyperledger/fabric/protos/common"
+	pb "github.com/hyperledger/fabric/protos/peer"
 	lb "github.com/hyperledger/fabric/protos/peer/lifecycle"
+	"github.com/hyperledger/fabric/protoutil"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/pkg/errors"
@@ -39,6 +42,17 @@ const (
 
 	// FriendlyChaincodeDefinitionType is the name exposed to the outside world for the chaincode namespace
 	FriendlyChaincodeDefinitionType = "Chaincode"
+
+	// DefaultEndorsementPolicyRef is the name of the default endorsement policy for this channel
+	DefaultEndorsementPolicyRef = "/Channel/Application/Endorsement"
+)
+
+var (
+	DefaultEndorsementPolicyBytes = protoutil.MarshalOrPanic(&pb.ApplicationPolicy{
+		Type: &pb.ApplicationPolicy_ChannelConfigPolicyReference{
+			ChannelConfigPolicyReference: DefaultEndorsementPolicyRef,
+		},
+	})
 )
 
 // Sequences are the underpinning of the definition framework for lifecycle.  All definitions
@@ -81,7 +95,7 @@ const (
 // WARNING: This structure is serialized/deserialized from the DB, re-ordering or adding fields
 // will cause opaque checks to fail.
 type ChaincodeLocalPackage struct {
-	Hash []byte
+	PackageID string
 }
 
 // ChaincodeParameters are the parts of the chaincode definition which are serialized
@@ -132,12 +146,37 @@ func (cd *ChaincodeDefinition) Parameters() *ChaincodeParameters {
 	}
 }
 
+func (cd *ChaincodeDefinition) String() string {
+	endorsementInfo := "endorsement info: <EMPTY>"
+	if cd.EndorsementInfo != nil {
+		endorsementInfo = fmt.Sprintf("endorsement info: (version: '%s', plugin: '%s', init required: %t)",
+			cd.EndorsementInfo.Version,
+			cd.EndorsementInfo.EndorsementPlugin,
+			cd.EndorsementInfo.InitRequired,
+		)
+	}
+
+	validationInfo := "validation info: <EMPTY>"
+	if cd.ValidationInfo != nil {
+		validationInfo = fmt.Sprintf("validation info: (plugin: '%s', policy: '%x')",
+			cd.ValidationInfo.ValidationPlugin,
+			cd.ValidationInfo.ValidationParameter,
+		)
+	}
+
+	return fmt.Sprintf("sequence: %d, %s, %s, collections: (%+v)",
+		cd.Sequence,
+		endorsementInfo,
+		validationInfo,
+		cd.Collections,
+	)
+}
+
 // ChaincodeStore provides a way to persist chaincodes
 type ChaincodeStore interface {
-	Save(name, version string, ccInstallPkg []byte) (hash []byte, err error)
-	RetrieveHash(name, version string) (hash []byte, err error)
+	Save(label string, ccInstallPkg []byte) (p.PackageID, error)
 	ListInstalledChaincodes() ([]chaincode.InstalledChaincode, error)
-	Load(hash []byte) (ccInstallPkg []byte, metadata []*persistence.ChaincodeMetadata, err error)
+	Load(packageID p.PackageID) (ccInstallPkg []byte, err error)
 }
 
 type PackageParser interface {
@@ -146,7 +185,7 @@ type PackageParser interface {
 
 //go:generate counterfeiter -o mock/install_listener.go --fake-name InstallListener . InstallListener
 type InstallListener interface {
-	HandleChaincodeInstalled(md *persistence.ChaincodePackageMetadata, hash []byte)
+	HandleChaincodeInstalled(md *persistence.ChaincodePackageMetadata, packageID p.PackageID)
 }
 
 // Resources stores the common functions needed by all components of the lifecycle
@@ -174,7 +213,7 @@ func (r *Resources) ChaincodeDefinitionIfDefined(chaincodeName string, state Rea
 
 	metadata, ok, err := r.Serializer.DeserializeMetadata(NamespacesName, chaincodeName, state)
 	if err != nil {
-		return false, nil, errors.WithMessage(err, fmt.Sprintf("could not deserialize metadata for chaincode %s", chaincodeName))
+		return false, nil, errors.WithMessagef(err, "could not deserialize metadata for chaincode %s", chaincodeName)
 	}
 
 	if !ok {
@@ -188,7 +227,7 @@ func (r *Resources) ChaincodeDefinitionIfDefined(chaincodeName string, state Rea
 	definedChaincode := &ChaincodeDefinition{}
 	err = r.Serializer.Deserialize(NamespacesName, chaincodeName, metadata, definedChaincode, state)
 	if err != nil {
-		return false, nil, errors.WithMessage(err, fmt.Sprintf("could not deserialize chaincode definition for chaincode %s", chaincodeName))
+		return false, nil, errors.WithMessagef(err, "could not deserialize chaincode definition for chaincode %s", chaincodeName)
 	}
 
 	return true, definedChaincode, nil
@@ -204,12 +243,10 @@ type ExternalFunctions struct {
 	InstallListener InstallListener
 }
 
-// CommitChaincodeDefinition takes a chaincode definition, checks that its sequence number is the next allowable sequence number,
-// checks which organizations agree with the definition, and applies the definition to the public world state.
-// It is the responsibility of the caller to check the agreement to determine if the result is valid (typically
-// this means checking that the peer's own org is in agreement.)
-func (ef *ExternalFunctions) CommitChaincodeDefinition(name string, cd *ChaincodeDefinition, publicState ReadWritableState, orgStates []OpaqueState) ([]bool, error) {
-	currentSequence, err := ef.Resources.Serializer.DeserializeFieldAsInt64(NamespacesName, name, "Sequence", publicState)
+// QueryApprovalStatus takes a chaincode definition, checks that its sequence number is the next allowable sequence number
+// and checks which organizations agree with the definition
+func (ef *ExternalFunctions) QueryApprovalStatus(chname, ccname string, cd *ChaincodeDefinition, publicState ReadWritableState, orgStates []OpaqueState) ([]bool, error) {
+	currentSequence, err := ef.Resources.Serializer.DeserializeFieldAsInt64(NamespacesName, ccname, "Sequence", publicState)
 	if err != nil {
 		return nil, errors.WithMessage(err, "could not get current sequence")
 	}
@@ -218,26 +255,100 @@ func (ef *ExternalFunctions) CommitChaincodeDefinition(name string, cd *Chaincod
 		return nil, errors.Errorf("requested sequence is %d, but new definition must be sequence %d", cd.Sequence, currentSequence+1)
 	}
 
-	agreement := make([]bool, len(orgStates))
-	privateName := fmt.Sprintf("%s#%d", name, cd.Sequence)
-	for i, orgState := range orgStates {
-		match, err := ef.Resources.Serializer.IsSerialized(NamespacesName, privateName, cd.Parameters(), orgState)
-		agreement[i] = (err == nil && match)
+	if err := ef.SetChaincodeDefinitionDefaults(chname, cd); err != nil {
+		return nil, errors.WithMessagef(err, "could not set defaults for chaincode definition in channel %s", chname)
 	}
 
-	if err = ef.Resources.Serializer.Serialize(NamespacesName, name, cd, publicState); err != nil {
+	agreement := make([]bool, len(orgStates))
+	privateName := fmt.Sprintf("%s#%d", ccname, cd.Sequence)
+	for i, orgState := range orgStates {
+		match, err := ef.Resources.Serializer.IsSerialized(NamespacesName, privateName, cd.Parameters(), orgState)
+		if err != nil {
+			return nil, errors.WithMessagef(err, "serialization check failed for key %s", privateName)
+		}
+
+		agreement[i] = match
+	}
+
+	logger.Infof("successfully queried approval status for definition %s, name '%s' on channel '%s'", cd, ccname, chname)
+
+	return agreement, nil
+}
+
+// CommitChaincodeDefinition takes a chaincode definition, checks that its sequence number is the next allowable sequence number,
+// checks which organizations agree with the definition, and applies the definition to the public world state.
+// It is the responsibility of the caller to check the agreement to determine if the result is valid (typically
+// this means checking that the peer's own org is in agreement.)
+func (ef *ExternalFunctions) CommitChaincodeDefinition(chname, ccname string, cd *ChaincodeDefinition, publicState ReadWritableState, orgStates []OpaqueState) ([]bool, error) {
+	agreement, err := ef.QueryApprovalStatus(chname, ccname, cd, publicState, orgStates)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = ef.Resources.Serializer.Serialize(NamespacesName, ccname, cd, publicState); err != nil {
 		return nil, errors.WithMessage(err, "could not serialize chaincode definition")
 	}
 
+	logger.Infof("successfully committed definition %s, name '%s' on channel '%s'", cd, ccname, chname)
+
 	return agreement, nil
+}
+
+// DefaultEndorsementPolicyAsBytes returns a marshalled version
+// of the default chaincode endorsement policy in the supplied channel
+func (ef *ExternalFunctions) DefaultEndorsementPolicyAsBytes(channelID string) ([]byte, error) {
+	channelConfig := ef.Resources.ChannelConfigSource.GetStableChannelConfig(channelID)
+	if channelConfig == nil {
+		return nil, errors.Errorf("could not get channel config for channel '%s'", channelID)
+	}
+
+	// see if the channel defines a default
+	if _, ok := channelConfig.PolicyManager().GetPolicy(DefaultEndorsementPolicyRef); ok {
+		return DefaultEndorsementPolicyBytes, nil
+	}
+
+	return nil, errors.Errorf(
+		"Policy '%s' must be defined for channel '%s' before chaincode operations can be attempted",
+		DefaultEndorsementPolicyRef,
+		channelID,
+	)
+}
+
+// SetChaincodeDefinitionDefaults fills any empty fields in the
+// supplied ChaincodeDefinition with the supplied channel's defaults
+func (ef *ExternalFunctions) SetChaincodeDefinitionDefaults(chname string, cd *ChaincodeDefinition) error {
+	if cd.EndorsementInfo.EndorsementPlugin == "" {
+		// TODO:
+		// 1) rename to "default" or "builtin"
+		// 2) retrieve from channel config
+		cd.EndorsementInfo.EndorsementPlugin = "escc"
+	}
+
+	if cd.ValidationInfo.ValidationPlugin == "" {
+		// TODO:
+		// 1) rename to "default" or "builtin"
+		// 2) retrieve from channel config
+		cd.ValidationInfo.ValidationPlugin = "vscc"
+	}
+
+	if len(cd.ValidationInfo.ValidationParameter) == 0 {
+		policyBytes, err := ef.DefaultEndorsementPolicyAsBytes(chname)
+		if err != nil {
+			return err
+		}
+
+		cd.ValidationInfo.ValidationParameter = policyBytes
+	}
+
+	return nil
 }
 
 // ApproveChaincodeDefinitionForOrg adds a chaincode definition entry into the passed in Org state.  The definition must be
 // for either the currently defined sequence number or the next sequence number.  If the definition is
 // for the current sequence number, then it must match exactly the current definition or it will be rejected.
-func (ef *ExternalFunctions) ApproveChaincodeDefinitionForOrg(name string, cd *ChaincodeDefinition, localPackageHash []byte, publicState ReadableState, orgState ReadWritableState) error {
+func (ef *ExternalFunctions) ApproveChaincodeDefinitionForOrg(chname, ccname string, cd *ChaincodeDefinition, packageID p.PackageID, publicState ReadableState, orgState ReadWritableState) error {
 	// Get the current sequence from the public state
-	currentSequence, err := ef.Resources.Serializer.DeserializeFieldAsInt64(NamespacesName, name, "Sequence", publicState)
+	currentSequence, err := ef.Resources.Serializer.DeserializeFieldAsInt64(NamespacesName, ccname, "Sequence", publicState)
 	if err != nil {
 		return errors.WithMessage(err, "could not get current sequence")
 	}
@@ -256,8 +367,12 @@ func (ef *ExternalFunctions) ApproveChaincodeDefinitionForOrg(name string, cd *C
 		return errors.Errorf("requested sequence %d is larger than the next available sequence number %d", requestedSequence, currentSequence+1)
 	}
 
+	if err := ef.SetChaincodeDefinitionDefaults(chname, cd); err != nil {
+		return errors.WithMessagef(err, "could not set defaults for chaincode definition in channel %s", chname)
+	}
+
 	if requestedSequence == currentSequence {
-		metadata, ok, err := ef.Resources.Serializer.DeserializeMetadata(NamespacesName, name, publicState)
+		metadata, ok, err := ef.Resources.Serializer.DeserializeMetadata(NamespacesName, ccname, publicState)
 		if err != nil {
 			return errors.WithMessage(err, "could not fetch metadata for current definition")
 		}
@@ -266,69 +381,95 @@ func (ef *ExternalFunctions) ApproveChaincodeDefinitionForOrg(name string, cd *C
 		}
 
 		definedChaincode := &ChaincodeDefinition{}
-		if err := ef.Resources.Serializer.Deserialize(NamespacesName, name, metadata, definedChaincode, publicState); err != nil {
-			return errors.WithMessage(err, fmt.Sprintf("could not deserialize namespace %s as chaincode", name))
+		if err := ef.Resources.Serializer.Deserialize(NamespacesName, ccname, metadata, definedChaincode, publicState); err != nil {
+			return errors.WithMessagef(err, "could not deserialize namespace %s as chaincode", ccname)
 		}
 
 		if err := definedChaincode.Parameters().Equal(cd.Parameters()); err != nil {
-			return errors.WithMessage(err, "attempted to define the current sequence (%d) for namespace %s, but")
+			return errors.WithMessagef(err, "attempted to define the current sequence (%d) for namespace %s, but", currentSequence, ccname)
 		}
 	}
 
-	privateName := fmt.Sprintf("%s#%d", name, requestedSequence)
+	privateName := fmt.Sprintf("%s#%d", ccname, requestedSequence)
 	if err := ef.Resources.Serializer.Serialize(NamespacesName, privateName, cd.Parameters(), orgState); err != nil {
 		return errors.WithMessage(err, "could not serialize chaincode parameters to state")
 	}
 
-	if localPackageHash != nil {
-		if err := ef.Resources.Serializer.Serialize(ChaincodeSourcesName, privateName, &ChaincodeLocalPackage{
-			Hash: localPackageHash,
-		}, orgState); err != nil {
-			return errors.WithMessage(err, "could not serialize chaincode package info to state")
-		}
+	// set the package id - whether empty or not. Setting
+	// an empty package ID means that the chaincode won't
+	// be invokable. The package might be set empty after
+	// the definition commits as a way of instructing the
+	// peers of an org no longer to endorse invocations
+	// for this chaincode
+	if err := ef.Resources.Serializer.Serialize(ChaincodeSourcesName, privateName, &ChaincodeLocalPackage{
+		PackageID: packageID.String(),
+	}, orgState); err != nil {
+		return errors.WithMessage(err, "could not serialize chaincode package info to state")
 	}
+
+	logger.Infof("successfully approved definition %s, name '%s' on channel '%s'", cd, ccname, chname)
 
 	return nil
 }
 
-// QueryChaincodeDefinition returns the defined chaincode by the given name (if it is defined, and a chaincode)
+// ErrNamespaceNotDefined is the error returned when a namespace
+// is not defined. This indicates that the chaincode definition
+// has not been committed.
+type ErrNamespaceNotDefined struct {
+	Namespace string
+}
+
+func (e ErrNamespaceNotDefined) Error() string {
+	return fmt.Sprintf("namespace %s is not defined", e.Namespace)
+}
+
+// QueryChaincodeDefinition returns the defined chaincode by the given name (if it is committed, and a chaincode)
 // or otherwise returns an error.
 func (ef *ExternalFunctions) QueryChaincodeDefinition(name string, publicState ReadableState) (*ChaincodeDefinition, error) {
 	metadata, ok, err := ef.Resources.Serializer.DeserializeMetadata(NamespacesName, name, publicState)
 	if err != nil {
-		return nil, errors.WithMessage(err, fmt.Sprintf("could not fetch metadata for namespace %s", name))
+		return nil, errors.WithMessagef(err, "could not fetch metadata for namespace %s", name)
 	}
 	if !ok {
-		return nil, errors.Errorf("namespace %s is not defined", name)
+		return nil, ErrNamespaceNotDefined{Namespace: name}
 	}
 
 	definedChaincode := &ChaincodeDefinition{}
 	if err := ef.Resources.Serializer.Deserialize(NamespacesName, name, metadata, definedChaincode, publicState); err != nil {
-		return nil, errors.WithMessage(err, fmt.Sprintf("could not deserialize namespace %s as chaincode", name))
+		return nil, errors.WithMessagef(err, "could not deserialize namespace %s as chaincode", name)
 	}
+
+	logger.Infof("successfully queried definition %s, name '%s'", definedChaincode, name)
 
 	return definedChaincode, nil
 }
 
 // InstallChaincode installs a given chaincode to the peer's chaincode store.
 // It returns the hash to reference the chaincode by or an error on failure.
-func (ef *ExternalFunctions) InstallChaincode(name, version string, chaincodeInstallPackage []byte) ([]byte, error) {
+func (ef *ExternalFunctions) InstallChaincode(chaincodeInstallPackage []byte) (*chaincode.InstalledChaincode, error) {
 	// Let's validate that the chaincodeInstallPackage is at least well formed before writing it
 	pkg, err := ef.Resources.PackageParser.Parse(chaincodeInstallPackage)
 	if err != nil {
 		return nil, errors.WithMessage(err, "could not parse as a chaincode install package")
 	}
 
-	hash, err := ef.Resources.ChaincodeStore.Save(name, version, chaincodeInstallPackage)
+	if pkg.Metadata == nil {
+		return nil, errors.New("empty metadata for supplied chaincode")
+	}
+
+	packageID, err := ef.Resources.ChaincodeStore.Save(pkg.Metadata.Label, chaincodeInstallPackage)
 	if err != nil {
 		return nil, errors.WithMessage(err, "could not save cc install package")
 	}
 
 	if ef.InstallListener != nil {
-		ef.InstallListener.HandleChaincodeInstalled(pkg.Metadata, hash)
+		ef.InstallListener.HandleChaincodeInstalled(pkg.Metadata, packageID)
 	}
 
-	return hash, nil
+	return &chaincode.InstalledChaincode{
+		PackageID: packageID,
+		Label:     pkg.Metadata.Label,
+	}, nil
 }
 
 // QueryNamespaceDefinitions lists the publicly defined namespaces in a channel.  Today it should only ever
@@ -354,13 +495,28 @@ func (ef *ExternalFunctions) QueryNamespaceDefinitions(publicState RangeableStat
 }
 
 // QueryInstalledChaincode returns the hash of an installed chaincode of a given name and version.
-func (ef *ExternalFunctions) QueryInstalledChaincode(name, version string) ([]byte, error) {
-	hash, err := ef.Resources.ChaincodeStore.RetrieveHash(name, version)
+func (ef *ExternalFunctions) QueryInstalledChaincode(packageID p.PackageID) (*chaincode.InstalledChaincode, error) {
+	ccPackageBytes, err := ef.Resources.ChaincodeStore.Load(packageID)
 	if err != nil {
-		return nil, errors.WithMessage(err, fmt.Sprintf("could not retrieve hash for chaincode '%s:%s'", name, version))
+		if _, ok := err.(persistence.CodePackageNotFoundErr); ok {
+			return nil, err
+		}
+		return nil, errors.WithMessagef(err, "could not load chaincode with package id '%s'", packageID)
 	}
 
-	return hash, nil
+	parsedCCPackage, err := ef.Resources.PackageParser.Parse(ccPackageBytes)
+	if err != nil {
+		return nil, errors.WithMessagef(err, "could not parse chaincode with package id '%s'", packageID)
+	}
+
+	if parsedCCPackage.Metadata == nil {
+		return nil, errors.Errorf("empty metadata for chaincode with package id '%s'", packageID)
+	}
+
+	return &chaincode.InstalledChaincode{
+		PackageID: packageID,
+		Label:     parsedCCPackage.Metadata.Label,
+	}, nil
 }
 
 // QueryInstalledChaincodes returns a list of installed chaincodes

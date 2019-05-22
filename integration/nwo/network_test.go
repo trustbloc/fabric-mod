@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	docker "github.com/fsouza/go-dockerclient"
+	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/integration/nwo"
 	"github.com/hyperledger/fabric/integration/nwo/commands"
 	. "github.com/onsi/ginkgo"
@@ -96,17 +97,17 @@ var _ = Describe("Network", func() {
 			peer := network.Peer("org1", "peer2")
 
 			chaincode := nwo.Chaincode{
-				Name:              "mycc",
-				Version:           "0.0",
-				Path:              "github.com/hyperledger/fabric/integration/chaincode/simple/cmd",
-				Lang:              "golang",
-				PackageFile:       filepath.Join(tempDir, "simplecc.tar.gz"),
-				Ctor:              `{"Args":["init","a","100","b","200"]}`,
-				EndorsementPlugin: "escc",
-				ValidationPlugin:  "vscc",
-				Policy:            `AND ('Org1ExampleCom.member','Org2ExampleCom.member')`,
-				Sequence:          "1",
-				InitRequired:      true,
+				Name:                "mycc",
+				Version:             "0.0",
+				Path:                "github.com/hyperledger/fabric/integration/chaincode/simple/cmd",
+				Lang:                "golang",
+				PackageFile:         filepath.Join(tempDir, "simplecc.tar.gz"),
+				Ctor:                `{"Args":["init","a","100","b","200"]}`,
+				Policy:              `AND ('Org1ExampleCom.member','Org2ExampleCom.member')`,
+				ChannelConfigPolicy: "/Channel/Application/Endorsement",
+				Sequence:            "1",
+				InitRequired:        true,
+				Label:               "my_simple_chaincode",
 			}
 
 			network.CreateAndJoinChannels(orderer)
@@ -118,6 +119,40 @@ var _ = Describe("Network", func() {
 			nwo.DeployChaincodeNewLifecycle(network, "testchannel", orderer, chaincode)
 
 			RunQueryInvokeQuery(network, orderer, peer, 100)
+
+			By("setting a bad package ID to temporarily disable endorsements on org1")
+			savedPackageID := chaincode.PackageID
+			// note that in theory it should be sufficient to set it to an
+			// empty string, but the ApproveChaincodeForMyOrgNewLifecycle
+			// function fills the packageID field if empty
+			chaincode.PackageID = "bad"
+			nwo.ApproveChaincodeForMyOrgNewLifecycle(network, "testchannel", orderer, chaincode, peer)
+
+			By("querying the chaincode and expecting the invocation to fail")
+			sess, err := network.PeerUserSession(peer, "User1", commands.ChaincodeQuery{
+				ChannelID: "testchannel",
+				Name:      "mycc",
+				Ctor:      `{"Args":["query","a"]}`,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(sess, network.EventuallyTimeout).Should(gexec.Exit(1))
+			Expect(sess.Err).To(gbytes.Say("Error: endorsement failure during query. response: status:500 " +
+				"message:\"make sure the chaincode mycc has been successfully defined on channel testchannel and try " +
+				"again: chaincode definition for 'mycc' exists, but chaincode is not installed\""))
+
+			By("setting the correct package ID to restore the chaincode")
+			chaincode.PackageID = savedPackageID
+			nwo.ApproveChaincodeForMyOrgNewLifecycle(network, "testchannel", orderer, chaincode, peer)
+
+			By("querying the chaincode and expecting the invocation to succeed")
+			sess, err = network.PeerUserSession(peer, "User1", commands.ChaincodeQuery{
+				ChannelID: "testchannel",
+				Name:      "mycc",
+				Ctor:      `{"Args":["query","a"]}`,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(sess, network.EventuallyTimeout).Should(gexec.Exit(0))
+			Expect(sess).To(gbytes.Say("90"))
 		})
 	})
 
@@ -262,20 +297,23 @@ var _ = Describe("Network", func() {
 				Ctor:              `{"Args":["init","a","100","b","200"]}`,
 				EndorsementPlugin: "escc",
 				ValidationPlugin:  "vscc",
-				Policy:            `AND ('Org1ExampleCom.member','Org2ExampleCom.member')`,
+				SignaturePolicy:   `AND ('Org1ExampleCom.member','Org2ExampleCom.member')`,
 				Sequence:          "1",
 				InitRequired:      true,
+				Label:             "my_simple_chaincode",
 			}
 			nwo.PackageChaincodeNewLifecycle(network, chaincode, testPeers[0])
+
+			// we set the PackageID so that we can pass it to the approve step
+			filebytes, err := ioutil.ReadFile(chaincode.PackageFile)
+			Expect(err).NotTo(HaveOccurred())
+			hashStr := fmt.Sprintf("%x", util.ComputeSHA256(filebytes))
+			chaincode.PackageID = chaincode.Label + ":" + hashStr
+
 			nwo.InstallChaincodeNewLifecycle(network, chaincode, testPeers...)
-			maxLedgerHeight := nwo.GetMaxLedgerHeight(network, "testchannel", testPeers...)
-			for _, org := range network.PeerOrgs() {
-				nwo.ApproveChaincodeForMyOrgNewLifecycle(network, "testchannel", orderer, chaincode, network.PeersInOrg(org.Name)...)
-			}
-			// wait for all peers to have same ledger height (to ensure the
-			// ApproveChaincodeDefinitionForMyOrg blocks have been gossiped
-			// to the other peers in each org
-			nwo.WaitUntilEqualLedgerHeight(network, "testchannel", maxLedgerHeight+len(network.PeerOrgs()), testPeers...)
+
+			nwo.ApproveChaincodeForMyOrgNewLifecycle(network, "testchannel", orderer, chaincode, testPeers...)
+			nwo.EnsureApproved(network, "testchannel", chaincode, network.PeerOrgs(), testPeers...)
 
 			nwo.CommitChaincodeNewLifecycle(network, "testchannel", orderer, chaincode, testPeers[0], testPeers...)
 			nwo.InitChaincodeNewLifecycle(network, "testchannel", orderer, chaincode, testPeers...)
@@ -284,12 +322,9 @@ var _ = Describe("Network", func() {
 
 			// upgrade chaincode to sequence 2
 			chaincode.Sequence = "2"
-			maxLedgerHeight = nwo.GetMaxLedgerHeight(network, "testchannel", testPeers...)
-			for _, org := range network.PeerOrgs() {
-				nwo.ApproveChaincodeForMyOrgNewLifecycle(network, "testchannel", orderer, chaincode, network.PeersInOrg(org.Name)...)
-			}
 
-			nwo.WaitUntilEqualLedgerHeight(network, "testchannel", maxLedgerHeight+len(network.PeerOrgs()), testPeers...)
+			nwo.ApproveChaincodeForMyOrgNewLifecycle(network, "testchannel", orderer, chaincode, testPeers...)
+			nwo.EnsureApproved(network, "testchannel", chaincode, network.PeerOrgs(), testPeers...)
 
 			nwo.CommitChaincodeNewLifecycle(network, "testchannel", orderer, chaincode, testPeers[0], testPeers...)
 

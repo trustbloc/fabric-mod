@@ -2,20 +2,20 @@
 package mock
 
 import (
-	sync "sync"
-
-	channelconfig "github.com/hyperledger/fabric/common/channelconfig"
-	metrics "github.com/hyperledger/fabric/common/metrics"
-	policies "github.com/hyperledger/fabric/common/policies"
-	platforms "github.com/hyperledger/fabric/core/chaincode/platforms"
-	plugin "github.com/hyperledger/fabric/core/committer/txvalidator/plugin"
-	plugindispatcher "github.com/hyperledger/fabric/core/committer/txvalidator/v20/plugindispatcher"
-	sysccprovider "github.com/hyperledger/fabric/core/common/sysccprovider"
-	ledger "github.com/hyperledger/fabric/core/ledger"
-	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	"github.com/hyperledger/fabric/extensions/mocks"
-	common "github.com/hyperledger/fabric/protos/common"
-	peer "github.com/hyperledger/fabric/protos/peer"
+	"sync"
+
+	"github.com/hyperledger/fabric/common/channelconfig"
+	"github.com/hyperledger/fabric/common/metrics"
+	"github.com/hyperledger/fabric/common/policies"
+	"github.com/hyperledger/fabric/core/chaincode/platforms"
+	"github.com/hyperledger/fabric/core/committer/txvalidator/plugin"
+	"github.com/hyperledger/fabric/core/committer/txvalidator/v20/plugindispatcher"
+	"github.com/hyperledger/fabric/core/common/sysccprovider"
+	"github.com/hyperledger/fabric/core/ledger"
+	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
+	"github.com/hyperledger/fabric/protos/common"
+	"github.com/hyperledger/fabric/protos/peer"
 )
 
 type PeerOperations struct {
@@ -115,18 +115,20 @@ type PeerOperations struct {
 	initChainArgsForCall []struct {
 		arg1 string
 	}
-	InitializeStub        func(func(string), sysccprovider.SystemChaincodeProvider, plugin.Mapper, *platforms.Registry, ledger.DeployedChaincodeInfoProvider, ledger.MembershipInfoProvider, metrics.Provider, plugindispatcher.LifecycleResources, plugindispatcher.CollectionAndLifecycleResources, storeapi.Provider)
+	InitializeStub        func(func(string), sysccprovider.SystemChaincodeProvider, plugin.Mapper, *platforms.Registry, ledger.DeployedChaincodeInfoProvider, ledger.MembershipInfoProvider, metrics.Provider, plugindispatcher.LifecycleResources, plugindispatcher.CollectionAndLifecycleResources, *ledger.Config, int, storeapi.Provider)
 	initializeMutex       sync.RWMutex
 	initializeArgsForCall []struct {
-		arg1 func(string)
-		arg2 sysccprovider.SystemChaincodeProvider
-		arg3 plugin.Mapper
-		arg4 *platforms.Registry
-		arg5 ledger.DeployedChaincodeInfoProvider
-		arg6 ledger.MembershipInfoProvider
-		arg7 metrics.Provider
-		arg8 plugindispatcher.LifecycleResources
-		arg9 plugindispatcher.CollectionAndLifecycleResources
+		arg1  func(string)
+		arg2  sysccprovider.SystemChaincodeProvider
+		arg3  plugin.Mapper
+		arg4  *platforms.Registry
+		arg5  ledger.DeployedChaincodeInfoProvider
+		arg6  ledger.MembershipInfoProvider
+		arg7  metrics.Provider
+		arg8  plugindispatcher.LifecycleResources
+		arg9  plugindispatcher.CollectionAndLifecycleResources
+		arg10 *ledger.Config
+		arg11 int
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -639,23 +641,25 @@ func (fake *PeerOperations) InitChainArgsForCall(i int) string {
 	return argsForCall.arg1
 }
 
-func (fake *PeerOperations) Initialize(arg1 func(string), arg2 sysccprovider.SystemChaincodeProvider, arg3 plugin.Mapper, arg4 *platforms.Registry, arg5 ledger.DeployedChaincodeInfoProvider, arg6 ledger.MembershipInfoProvider, arg7 metrics.Provider, arg8 plugindispatcher.LifecycleResources, arg9 plugindispatcher.CollectionAndLifecycleResources, arg10 storeapi.Provider) {
+func (fake *PeerOperations) Initialize(arg1 func(string), arg2 sysccprovider.SystemChaincodeProvider, arg3 plugin.Mapper, arg4 *platforms.Registry, arg5 ledger.DeployedChaincodeInfoProvider, arg6 ledger.MembershipInfoProvider, arg7 metrics.Provider, arg8 plugindispatcher.LifecycleResources, arg9 plugindispatcher.CollectionAndLifecycleResources, arg10 *ledger.Config, arg11 int, arg12 storeapi.Provider) {
 	fake.initializeMutex.Lock()
 	fake.initializeArgsForCall = append(fake.initializeArgsForCall, struct {
-		arg1 func(string)
-		arg2 sysccprovider.SystemChaincodeProvider
-		arg3 plugin.Mapper
-		arg4 *platforms.Registry
-		arg5 ledger.DeployedChaincodeInfoProvider
-		arg6 ledger.MembershipInfoProvider
-		arg7 metrics.Provider
-		arg8 plugindispatcher.LifecycleResources
-		arg9 plugindispatcher.CollectionAndLifecycleResources
-	}{arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9})
-	fake.recordInvocation("Initialize", []interface{}{arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9})
+		arg1  func(string)
+		arg2  sysccprovider.SystemChaincodeProvider
+		arg3  plugin.Mapper
+		arg4  *platforms.Registry
+		arg5  ledger.DeployedChaincodeInfoProvider
+		arg6  ledger.MembershipInfoProvider
+		arg7  metrics.Provider
+		arg8  plugindispatcher.LifecycleResources
+		arg9  plugindispatcher.CollectionAndLifecycleResources
+		arg10 *ledger.Config
+		arg11 int
+	}{arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11})
+	fake.recordInvocation("Initialize", []interface{}{arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11})
 	fake.initializeMutex.Unlock()
 	if fake.InitializeStub != nil {
-		fake.InitializeStub(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, &mocks.DataProvider{})
+		fake.InitializeStub(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, &mocks.DataProvider{})
 	}
 }
 
@@ -665,17 +669,17 @@ func (fake *PeerOperations) InitializeCallCount() int {
 	return len(fake.initializeArgsForCall)
 }
 
-func (fake *PeerOperations) InitializeCalls(stub func(func(string), sysccprovider.SystemChaincodeProvider, plugin.Mapper, *platforms.Registry, ledger.DeployedChaincodeInfoProvider, ledger.MembershipInfoProvider, metrics.Provider, plugindispatcher.LifecycleResources, plugindispatcher.CollectionAndLifecycleResources, storeapi.Provider)) {
+func (fake *PeerOperations) InitializeCalls(stub func(func(string), sysccprovider.SystemChaincodeProvider, plugin.Mapper, *platforms.Registry, ledger.DeployedChaincodeInfoProvider, ledger.MembershipInfoProvider, metrics.Provider, plugindispatcher.LifecycleResources, plugindispatcher.CollectionAndLifecycleResources, *ledger.Config, int, storeapi.Provider)) {
 	fake.initializeMutex.Lock()
 	defer fake.initializeMutex.Unlock()
 	fake.InitializeStub = stub
 }
 
-func (fake *PeerOperations) InitializeArgsForCall(i int) (func(string), sysccprovider.SystemChaincodeProvider, plugin.Mapper, *platforms.Registry, ledger.DeployedChaincodeInfoProvider, ledger.MembershipInfoProvider, metrics.Provider, plugindispatcher.LifecycleResources, plugindispatcher.CollectionAndLifecycleResources) {
+func (fake *PeerOperations) InitializeArgsForCall(i int) (func(string), sysccprovider.SystemChaincodeProvider, plugin.Mapper, *platforms.Registry, ledger.DeployedChaincodeInfoProvider, ledger.MembershipInfoProvider, metrics.Provider, plugindispatcher.LifecycleResources, plugindispatcher.CollectionAndLifecycleResources, *ledger.Config, int) {
 	fake.initializeMutex.RLock()
 	defer fake.initializeMutex.RUnlock()
 	argsForCall := fake.initializeArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5, argsForCall.arg6, argsForCall.arg7, argsForCall.arg8, argsForCall.arg9
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5, argsForCall.arg6, argsForCall.arg7, argsForCall.arg8, argsForCall.arg9, argsForCall.arg10, argsForCall.arg11
 }
 
 func (fake *PeerOperations) Invocations() map[string][][]interface{} {

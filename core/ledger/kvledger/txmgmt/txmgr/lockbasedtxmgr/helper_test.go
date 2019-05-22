@@ -30,7 +30,6 @@ func TestPvtdataResultsItr(t *testing.T) {
 		},
 	)
 	testEnv.init(t, "test-pvtdata-range-queries", btlPolicy)
-	defer testEnv.cleanup()
 
 	txMgr := testEnv.getTxMgr().(*LockBasedTxMgr)
 	populateCollConfigForTest(t, txMgr, []collConfigkey{
@@ -47,7 +46,7 @@ func TestPvtdataResultsItr(t *testing.T) {
 	putPvtUpdates(t, updates, "ns2", "coll1", "key6", []byte("pvt_value6"), version.NewHeight(1, 6))
 	putPvtUpdates(t, updates, "ns3", "coll1", "key7", []byte("pvt_value7"), version.NewHeight(1, 7))
 	txMgr.db.ApplyPrivacyAwareUpdates(updates, version.NewHeight(2, 7))
-	queryHelper := newQueryHelper(txMgr, nil)
+	queryHelper := newQueryHelper(txMgr, nil, true)
 
 	resItr, err := queryHelper.getPrivateDataRangeScanIterator("ns1", "coll1", "key1", "key3")
 	assert.NoError(t, err)
@@ -88,7 +87,6 @@ func testPrivateDataMetadataRetrievalByHash(t *testing.T, env testEnv) {
 		},
 	)
 	env.init(t, ledgerid, btlPolicy)
-	defer env.cleanup()
 
 	txMgr := env.getTxMgr()
 	bg, _ := testutil.NewBlockGenerator(t, ledgerid, false)
@@ -105,14 +103,14 @@ func testPrivateDataMetadataRetrievalByHash(t *testing.T, env testEnv) {
 	assert.NoError(t, txMgr.Commit())
 
 	t.Run("query-helper-for-queryexecutor", func(t *testing.T) {
-		queryHelper := newQueryHelper(txMgr.(*LockBasedTxMgr), nil)
+		queryHelper := newQueryHelper(txMgr.(*LockBasedTxMgr), nil, true)
 		metadataRetrieved, err := queryHelper.getPrivateDataMetadataByHash("ns", "coll", util.ComputeStringHash("key1"))
 		assert.NoError(t, err)
 		assert.Equal(t, metadata1, metadataRetrieved)
 	})
 
 	t.Run("query-helper-for-txsimulator", func(t *testing.T) {
-		queryHelper := newQueryHelper(txMgr.(*LockBasedTxMgr), rwsetutil.NewRWSetBuilder())
+		queryHelper := newQueryHelper(txMgr.(*LockBasedTxMgr), rwsetutil.NewRWSetBuilder(), true)
 		_, err := queryHelper.getPrivateDataMetadataByHash("ns", "coll", util.ComputeStringHash("key1"))
 		assert.EqualError(t, err, "retrieving private data metadata by keyhash is not supported in simulation. This function is only available for query as yet")
 	})
@@ -132,7 +130,6 @@ func testGetPvtdataHash(t *testing.T, env testEnv) {
 		},
 	)
 	env.init(t, ledgerid, btlPolicy)
-	defer env.cleanup()
 	txMgr := env.getTxMgr().(*LockBasedTxMgr)
 	populateCollConfigForTest(t, txMgr, []collConfigkey{{"ns", "coll"}}, version.NewHeight(1, 1))
 

@@ -4,16 +4,16 @@ Copyright IBM Corp All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-package e2e
+package pvtdata
 
 import (
 	"encoding/json"
+	"testing"
 
+	"github.com/hyperledger/fabric/integration"
 	"github.com/hyperledger/fabric/integration/nwo"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
-	"testing"
 )
 
 func TestEndToEnd(t *testing.T) {
@@ -22,7 +22,7 @@ func TestEndToEnd(t *testing.T) {
 }
 
 var components *nwo.Components
-var suiteBase = 31000
+var suiteBase = integration.PrivateDataBasePort
 
 var _ = SynchronizedBeforeSuite(func() []byte {
 	components = &nwo.Components{}

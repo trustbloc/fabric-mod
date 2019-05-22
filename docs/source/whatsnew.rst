@@ -1,126 +1,143 @@
-What's new in v1.4
-==================
+What's new in the v2.0 Alpha
+============================
 
-Hyperledger Fabric's First long term support release
-----------------------------------------------------
+A word about the Alpha release
+------------------------------
 
-Hyperledger Fabric has matured since the initial v1.0 release, and so has the
-community of Fabric operators. The Fabric developers have been working with
-network operators to deliver v1.4 with a focus on stability and production
-operations. As such, v1.4 will be our first long term support release.
+The Alpha release of Hyperledger Fabric v2.0 allows users to try out two exciting
+new features --- the new Fabric chaincode lifecycle and FabToken. The Alpha release
+is being offered to provide users a preview of new capabilities and is not meant
+to be used in production. Additionally there is no upgrade support to the v2.0
+Alpha release, and no intended upgrade support from the the Alpha release
+to future versions of v2.x.
 
-Our policy to date has been to provide bug fix (patch) releases for our most
-recent major or minor release until the next major or minor release has been
-published. We plan to continue this policy for subsequent releases. However,
-for Hyperledger Fabric v1.4, the Fabric maintainers are pledging to provide
-bug fixes for a period of one year from the date of release. This will likely
-result in a series of patch releases (v1.4.1, v1.4.2, …), where multiple fixes
-are bundled into a patch release.
+Fabric chaincode lifecycle
+--------------------------
 
-If you are running with Hyperledger Fabric v1.4, you can be assured that
-you will be able to safely upgrade to any of the subsequent patch releases.
-In the advent that there is need of some upgrade process to remedy a defect,
-we will provide that process with the patch release.
+The Fabric 2.0 Alpha introduces decentralized governance for chaincode, with
+a new process for installing a chaincode on your peers and starting it
+on a channel. The new Fabric chaincode lifecycle allows
+multiple organizations to come to agreement on the parameters of a chaincode,
+such as the chaincode endorsement policy, before it can be used to interact
+with the ledger. The new model offers several improvements over the previous
+lifecycle:
 
-Serviceability and operations improvements
-------------------------------------------
+* **Multiple organizations must agree to the parameters of a chaincode:** In
+  the release 1.x versions of Fabric, one organization had the ability to set
+  parameters of a chaincode (for instance the endorsement policy) for all other
+  channel members. The new Fabric chaincode lifecycle is more flexible since
+  it supports both centralized trust models (such as that of the previous
+  lifecycle model) as well as decentralized models requiring a sufficient number
+  of organizations to agree on an endorsement policy before it goes into effect.
 
-As more Hyperledger Fabric networks get
-deployed and enter a production state, serviceability and operational aspects
-are critical. Fabric v1.4 takes a giant leap forward with logging improvements,
-health checks, and operational metrics. As such, Fabric v1.4
-is the recommended release for production operations.
+* **Safer chaincode upgrade process:** In the previous chaincode lifecycle,
+  the upgrade transaction could be issued by a single organization, creating a
+  risk for a channel member that had not yet installed the new chaincode. The
+  new model allows for a chaincode to be upgraded only after a sufficient
+  number of organizations have approved the upgrade.
 
-* :doc:`operations_service`:
-  The new RESTful operations service provides operators with three
-  services to monitor and manage peer and orderer node operations:
+* **Easier endorsement policy updates:** Fabric lifecycle allows you to change
+  an endorsement policy without having to repackage or reinstall the chaincode.
+  Users can also take advantage of a new default policy that requires endorsement
+  from a majority of members on the channel. This policy is updated automatically
+  when organizations are added or removed from the channel.
 
-  * The logging ``/logspec`` endpoint allows operators to dynamically get and set
-    logging levels for the peer and orderer nodes.
+* **Inspectable chaincode packages:** The Fabric lifecycle packages chaincode in
+  easily readable tar files. This makes it easier to inspect the chaincode
+  package and coordinate installation across multiple organizations.
 
-  * The ``/healthz`` endpoint allows operators and container orchestration services to
-    check peer and orderer node liveness and health.
+* **Start multiple chaincodes on a channel using one package:** The previous
+  lifecycle defined each chaincode on the channel using a name and version that
+  was specified when the chaincode package was installed. You can now use a
+  single chaincode package and deploy it multiple times with different names
+  on the same or different channel.
 
-  * The ``/metrics`` endpoint allows operators to utilize Prometheus to pull operational
-    metrics from peer and orderer nodes. Metrics can also be pushed to StatsD.
+Using the new chaincode lifecycle
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Improved programming model for developing applications
-------------------------------------------------------
+Use the following tutorials to get started with the new chaincode lifecycle:
 
-Writing decentralized applications has just gotten easier. Programming model
-improvements in the Node.js SDK and Node.js chaincode makes the development
-of decentralized applications more intuitive, allowing you to focus
-on your application logic. The existing npm packages are still available for
-use, while the new npm packages provide a layer of abstraction to improve
-developer productivity and ease of use.
+* :doc:`chaincode4noah`:
+  Provides a detailed overview of the steps required to install and define a
+  chaincode, as well as the capabilities available with the new model.
 
-New documentation helps you
-understand the various aspects of creating a decentralized application for
-Hyperledger Fabric, using a commercial paper business network scenario.
+* :doc:`build_network`:
+  If you want to start using the new lifecycle right away, the BYFN tutorial has
+  been updated to use the :doc:`commands/peerlifecycle` CLI to install and
+  define chaincode on a sample network.
 
-* :doc:`developapps/scenario`:
-  Describes a hypothetical business network involving six organizations who want
-  to build an application to transact together that will serve as a use case
-  to describe the programming model.
+* :doc:`private_data_tutorial`:
+  Has been updated to demonstrate how to use :doc:`private-data/private-data`
+  collections with the new chaincode lifecycle.
 
-* :doc:`developapps/analysis`:
-  Describes the structure of a commercial paper and how transactions affect it
-  over time. Demonstrates that modeling using states and transactions
-  provides a precise way to understand and model the decentralized business process.
+* :doc:`endorsement-policies`:
+  Learn how the new lifecycle allows you to use policies in the channel
+  configuration as chaincode endorsement policies.
 
-* :doc:`developapps/architecture`:
-  Shows how to design the commercial paper processes and their related data
-  structures.
+Restrictions and limitations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* :doc:`developapps/smartcontract`:
-  Shows how a smart contract governing the decentralized business process of
-  issuing, buying and redeeming commercial paper should be designed.
+The new Fabric chaincode lifecycle in the v2.0 Alpha release is not yet feature
+complete. Specifically, be aware of the following limitations in the Alpha release:
 
-* :doc:`developapps/application`
-  Conceptually describes a client application that would leverage the smart contract
-  described in :doc:`developapps/smartcontract`.
+- CouchDB indexes are not yet supported
+- Chaincodes defined with the new lifecycle are not yet discoverable via service
+  discovery
 
-* :doc:`developapps/designelements`:
-  Describes the details around contract namespaces, transaction context,
-  transaction handlers, connection profiles, connection options, wallets, and
-  gateways.
+These limitations will be resolved after the Alpha release.
 
-And finally, a tutorial and sample that brings the commercial paper scenario to life:
+FabToken
+--------
 
-* :doc:`tutorial/commercial_paper`
+The Fabric 2.0 Alpha also provides users the ability to easily represent
+assets as tokens on Fabric channels. FabToken is a token management system that
+uses an Unspent Transaction Output (UTXO) model to issue, transfer, and redeem
+tokens using the identity and membership infrastructure provided by Hyperledger
+Fabric.
 
-New tutorials
+* :doc:`token/FabToken`:
+  This operations guide provides a detailed overview of how to use tokens on a
+  Fabric network. The guide also includes an example on how to create and
+  transfer tokens using the :doc:`commands/token` CLI.
+
+Alpine images
 -------------
 
-* :doc:`write_first_app`:
-  This tutorial has been updated to leverage the improved Node.js SDK and chaincode
-  programming model. The tutorial has both JavaScript and Typescript examples of
-  the client application and chaincode.
+Starting with v2.0, Hyperledger Fabric Docker images will use Alpine Linux, a
+security-oriented, lightweight Linux distribution. This means that Docker images
+are now much smaller, providing faster download and startup
+times, as well as taking up less disk space on host systems. Alpine Linux
+is designed from the ground up with security in mind, and the
+minimalist nature of the Alpine distribution greatly reduces the risk of
+security vulnerabilities.
 
-* :doc:`tutorial/commercial_paper`
-  As mentioned above, this is the tutorial that accompanies the new Developing
-  Applications documentation.
+Raft ordering service
+---------------------
 
-* :doc:`upgrade_to_newest_version`:
-  Leverages the network from :doc:`build_network` to demonstrate an upgrade from
-  v1.3 to v1.4. Includes both a script (which can serve as a template for upgrades),
-  as well as the individual commands so that you can understand every step of an
-  upgrade.
+Introduced in v1.4.1, `Raft <https://raft.github.io/raft.pdf>`_ is a crash fault
+tolerant (CFT) ordering service based on an implementation of Raft protocol in
+`etcd <https://coreos.com/etcd/>`_. Raft follows a "leader and follower" model,
+where a leader node is elected (per channel) and its decisions are replicated to
+the followers. Raft ordering services should be easier to set up and manage than
+Kafka-based ordering services, and their design allows organizations spread out
+across the world to contribute nodes to a decentralized ordering service.
 
-Private data enhancements
--------------------------
+* :doc:`orderer/ordering_service`:
+  Describes the role of an ordering service in Fabric and an overview of the
+  three ordering service implementations currently available: Solo, Kafka, and
+  Raft.
 
-* :doc:`private-data-arch`:
-  The Private data feature has been a part of Fabric since v1.2, and this release
-  debuts two new enhancements:
+* :doc:`raft_configuration`:
+  Shows the configuration parameters and considerations when deploying a Raft
+  ordering service.
 
-  * **Reconciliation**, which allows peers for organizations that are added
-    to private data collections to retrieve the private data for prior
-    transactions to which they now are entitled.
+* :doc:`orderer_deploy`:
+  Describes the process for deploying an ordering node, independent of what the
+  ordering service implementation will be.
 
-  * **Client access control** to automatically enforce access control within
-    chaincode based on the client organization collection membership without having
-    to write specific chaincode logic.
+* :doc:`build_network`:
+  Has been updated to allow you to use a Raft ordering service with a sample
+  network.
 
 Release notes
 =============
@@ -128,8 +145,8 @@ Release notes
 The release notes provide more details for users moving to the new release, along
 with a link to the full release change log.
 
-* `Fabric release notes <https://github.com/hyperledger/fabric/releases/tag/v1.4.0>`_.
-* `Fabric CA release notes <https://github.com/hyperledger/fabric-ca/releases/tag/v1.4.0>`_.
+* `Fabric v2.0.0-alpha release notes <https://github.com/hyperledger/fabric/releases/tag/v2.0.0-alpha>`_.
+* `Fabric CA v2.0.0-alpha release notes <https://github.com/hyperledger/fabric-ca/releases/tag/v2.0.0-alpha>`_.
 
 .. Licensed under Creative Commons Attribution 4.0 International License
    https://creativecommons.org/licenses/by/4.0/

@@ -16,6 +16,8 @@ import (
 	"github.com/hyperledger/fabric/internal/pkg/identity"
 	cb "github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protoutil"
+
+	"github.com/pkg/errors"
 )
 
 // ChannelConfigTemplator can be used to generate config templates.
@@ -40,6 +42,9 @@ func NewSystemChannel(support StandardChannelSupport, templator ChannelConfigTem
 }
 
 // CreateSystemChannelFilters creates the set of filters for the ordering system chain.
+//
+// In maintenance mode, require the signature of /Channel/Orderer/Writers. This will filter out configuration
+// changes that are not related to consensus-type migration (e.g on /Channel/Application).
 func CreateSystemChannelFilters(chainCreator ChainCreator, ledgerResources channelconfig.Resources) *RuleSet {
 	ordererConfig, ok := ledgerResources.OrdererConfig()
 	if !ok {
@@ -49,7 +54,7 @@ func CreateSystemChannelFilters(chainCreator ChainCreator, ledgerResources chann
 		EmptyRejectRule,
 		NewExpirationRejectRule(ledgerResources),
 		NewSizeFilter(ordererConfig),
-		NewSigFilter(policies.ChannelWriters, ledgerResources),
+		NewSigFilter(policies.ChannelWriters, policies.ChannelOrdererWriters, ledgerResources),
 		NewSystemChannelFilter(ledgerResources, chainCreator),
 	})
 }
@@ -101,7 +106,7 @@ func (s *SystemChannel) ProcessConfigUpdateMsg(envConfigUpdate *cb.Envelope) (co
 
 	newChannelConfigEnv, err := bundle.ConfigtxValidator().ProposeConfigUpdate(envConfigUpdate)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, errors.WithMessagef(err, "error validating channel creation transaction for new channel '%s', could not succesfully apply update to template configuration", channelID)
 	}
 
 	newChannelEnvConfig, err := protoutil.CreateSignedEnvelope(cb.HeaderType_CONFIG, channelID, s.support.Signer(), newChannelConfigEnv, msgVersion, epoch)

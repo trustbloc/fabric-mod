@@ -8,17 +8,18 @@ package privacyenabledstate
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/hyperledger/fabric/common/metrics/disabled"
+	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/bookkeeping"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/statecouchdb"
-	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/core/ledger/mock"
+	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 	"github.com/hyperledger/fabric/integration/runner"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -42,17 +43,28 @@ type LevelDBCommonStorageTestEnv struct {
 	t                 testing.TB
 	provider          DBProvider
 	bookkeeperTestEnv *bookkeeping.TestEnv
+	dbPath            string
 }
 
 // Init implements corresponding function from interface TestEnv
 func (env *LevelDBCommonStorageTestEnv) Init(t testing.TB) {
-	viper.Set("ledger.state.stateDatabase", "")
-	removeDBPath(t)
+	dbPath, err := ioutil.TempDir("", "cstestenv")
+	if err != nil {
+		t.Fatalf("Failed to create level db storage directory: %s", err)
+	}
 	env.bookkeeperTestEnv = bookkeeping.NewTestEnv(t)
-	dbProvider, err := NewCommonStorageDBProvider(env.bookkeeperTestEnv.TestProvider, &disabled.Provider{}, &mock.HealthCheckRegistry{})
+	dbProvider, err := NewCommonStorageDBProvider(
+		env.bookkeeperTestEnv.TestProvider,
+		&disabled.Provider{},
+		&mock.HealthCheckRegistry{},
+		&ledger.StateDB{
+			LevelDBPath: dbPath,
+		},
+	)
 	assert.NoError(t, err)
 	env.t = t
 	env.provider = dbProvider
+	env.dbPath = dbPath
 }
 
 // GetDBHandle implements corresponding function from interface TestEnv
@@ -71,7 +83,7 @@ func (env *LevelDBCommonStorageTestEnv) GetName() string {
 func (env *LevelDBCommonStorageTestEnv) Cleanup() {
 	env.provider.Close()
 	env.bookkeeperTestEnv.Cleanup()
-	removeDBPath(env.t)
+	os.RemoveAll(env.dbPath)
 }
 
 ///////////// CouchDB Environment //////////////
@@ -81,6 +93,7 @@ type CouchDBCommonStorageTestEnv struct {
 	t                 testing.TB
 	provider          DBProvider
 	bookkeeperTestEnv *bookkeeping.TestEnv
+	redoPath          string
 	couchCleanup      func()
 }
 
@@ -102,24 +115,38 @@ func (env *CouchDBCommonStorageTestEnv) setupCouch() string {
 
 // Init implements corresponding function from interface TestEnv
 func (env *CouchDBCommonStorageTestEnv) Init(t testing.TB) {
-	redologsPath := ledgerconfig.GetCouchdbRedologsPath()
-	assert.NoError(t, os.RemoveAll(redologsPath))
-	viper.Set("ledger.state.stateDatabase", "CouchDB")
-	couchAddr := env.setupCouch()
-	viper.Set("ledger.state.couchDBConfig.couchDBAddress", couchAddr)
-	// Replace with correct username/password such as
-	// admin/admin if user security is enabled on couchdb.
-	viper.Set("ledger.state.couchDBConfig.username", "")
-	viper.Set("ledger.state.couchDBConfig.password", "")
-	viper.Set("ledger.state.couchDBConfig.maxRetries", 3)
-	viper.Set("ledger.state.couchDBConfig.maxRetriesOnStartup", 20)
-	viper.Set("ledger.state.couchDBConfig.requestTimeout", time.Second*35)
+	redoPath, err := ioutil.TempDir("", "pestate")
+	if err != nil {
+		t.Fatalf("Failed to create redo log directory: %s", err)
+	}
+	couchAddress := env.setupCouch()
+
+	stateDBConfig := &ledger.StateDB{
+		StateDatabase: "CouchDB",
+		CouchDB: &couchdb.Config{
+			Address:             couchAddress,
+			Username:            "",
+			Password:            "",
+			MaxRetries:          3,
+			MaxRetriesOnStartup: 20,
+			RequestTimeout:      35 * time.Second,
+			InternalQueryLimit:  1000,
+			MaxBatchUpdateSize:  1000,
+			RedoLogPath:         redoPath,
+		},
+	}
 
 	env.bookkeeperTestEnv = bookkeeping.NewTestEnv(t)
-	dbProvider, err := NewCommonStorageDBProvider(env.bookkeeperTestEnv.TestProvider, &disabled.Provider{}, &mock.HealthCheckRegistry{})
+	dbProvider, err := NewCommonStorageDBProvider(
+		env.bookkeeperTestEnv.TestProvider,
+		&disabled.Provider{},
+		&mock.HealthCheckRegistry{},
+		stateDBConfig,
+	)
 	assert.NoError(t, err)
 	env.t = t
 	env.provider = dbProvider
+	env.redoPath = redoPath
 }
 
 // GetDBHandle implements corresponding function from interface TestEnv
@@ -138,17 +165,8 @@ func (env *CouchDBCommonStorageTestEnv) GetName() string {
 func (env *CouchDBCommonStorageTestEnv) Cleanup() {
 	csdbProvider, _ := env.provider.(*CommonStorageDBProvider)
 	statecouchdb.CleanupDB(env.t, csdbProvider.VersionedDBProvider)
-	redologsPath := ledgerconfig.GetCouchdbRedologsPath()
-	assert.NoError(env.t, os.RemoveAll(redologsPath))
+	os.RemoveAll(env.redoPath)
 	env.bookkeeperTestEnv.Cleanup()
 	env.provider.Close()
 	env.couchCleanup()
-}
-
-func removeDBPath(t testing.TB) {
-	dbPath := ledgerconfig.GetStateLevelDBPath()
-	if err := os.RemoveAll(dbPath); err != nil {
-		t.Fatalf("Err: %s", err)
-		t.FailNow()
-	}
 }

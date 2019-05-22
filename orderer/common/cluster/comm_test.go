@@ -9,8 +9,10 @@ package cluster_test
 import (
 	"context"
 	"crypto/rand"
+	"crypto/x509"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -31,6 +33,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 )
 
@@ -124,7 +128,9 @@ func (*mockChannelExtractor) TargetChannel(msg proto.Message) string {
 }
 
 type clusterNode struct {
-	freezeWG     sync.WaitGroup
+	lock         sync.Mutex
+	frozen       bool
+	freezeCond   sync.Cond
 	dialer       *cluster.PredicateDialer
 	handler      *mocks.Handler
 	nodeInfo     cluster.RemoteNode
@@ -136,7 +142,7 @@ type clusterNode struct {
 }
 
 func (cn *clusterNode) Step(stream orderer.Cluster_StepServer) error {
-	cn.freezeWG.Wait()
+	cn.waitIfFrozen()
 	req, err := stream.Recv()
 	if err != nil {
 		return err
@@ -150,12 +156,28 @@ func (cn *clusterNode) Step(stream orderer.Cluster_StepServer) error {
 	return stream.Send(&orderer.StepResponse{})
 }
 
+func (cn *clusterNode) waitIfFrozen() {
+	cn.lock.Lock()
+	// There is no freeze after an unfreeze so no need
+	// for a for loop.
+	if cn.frozen {
+		cn.freezeCond.Wait()
+		return
+	}
+	cn.lock.Unlock()
+}
+
 func (cn *clusterNode) freeze() {
-	cn.freezeWG.Add(1)
+	cn.lock.Lock()
+	defer cn.lock.Unlock()
+	cn.frozen = true
 }
 
 func (cn *clusterNode) unfreeze() {
-	cn.freezeWG.Done()
+	cn.lock.Lock()
+	cn.frozen = false
+	cn.lock.Unlock()
+	cn.freezeCond.Broadcast()
 }
 
 func (cn *clusterNode) resurrect() {
@@ -189,9 +211,8 @@ func (cn *clusterNode) renewCertificates() {
 	cn.serverConfig.SecOpts.Certificate = serverKeyPair.Cert
 	cn.serverConfig.SecOpts.Key = serverKeyPair.Key
 
-	cn.clientConfig.SecOpts.Key = clientKeyPair.Key
-	cn.clientConfig.SecOpts.Certificate = clientKeyPair.Cert
-	cn.dialer.SetConfig(cn.clientConfig)
+	cn.dialer.Config.SecOpts.Key = clientKeyPair.Key
+	cn.dialer.Config.SecOpts.Certificate = clientKeyPair.Cert
 }
 
 func newTestNodeWithMetrics(t *testing.T, metrics cluster.MetricsProvider, tlsConnGauge metrics.Gauge) *clusterNode {
@@ -214,7 +235,9 @@ func newTestNodeWithMetrics(t *testing.T, metrics cluster.MetricsProvider, tlsCo
 		},
 	}
 
-	dialer := cluster.NewTLSPinningDialer(clientConfig)
+	dialer := &cluster.PredicateDialer{
+		Config: clientConfig,
+	}
 
 	srvConfig := comm_utils.ServerConfig{
 		SecOpts: &comm_utils.SecureOptions{
@@ -241,14 +264,17 @@ func newTestNodeWithMetrics(t *testing.T, metrics cluster.MetricsProvider, tlsCo
 		srv: gRPCServer,
 	}
 
+	tstSrv.freezeCond.L = &tstSrv.lock
+
 	tstSrv.c = &cluster.Comm{
-		SendBufferSize: 1,
-		Logger:         flogging.MustGetLogger("test"),
-		Chan2Members:   make(cluster.MembersByChannel),
-		H:              handler,
-		ChanExt:        channelExtractor,
-		Connections:    cluster.NewConnectionStore(dialer, tlsConnGauge),
-		Metrics:        cluster.NewMetrics(metrics),
+		CertExpWarningThreshold: time.Hour,
+		SendBufferSize:          1,
+		Logger:                  flogging.MustGetLogger("test"),
+		Chan2Members:            make(cluster.MembersByChannel),
+		H:                       handler,
+		ChanExt:                 channelExtractor,
+		Connections:             cluster.NewConnectionStore(dialer, tlsConnGauge),
+		Metrics:                 cluster.NewMetrics(metrics),
 	}
 
 	orderer.RegisterClusterServer(gRPCServer.Server(), tstSrv)
@@ -325,6 +351,11 @@ func TestSendBigMessage(t *testing.T) {
 	streams := map[uint64]*cluster.Stream{}
 
 	for _, node := range []*clusterNode{node2, node3, node4, node5} {
+		// Freeze the node, in order to block its Recv
+		node.freeze()
+	}
+
+	for _, node := range []*clusterNode{node2, node3, node4, node5} {
 		rm, err := node1.c.Remote(testChannel, node.nodeInfo.ID)
 		assert.NoError(t, err)
 
@@ -335,8 +366,6 @@ func TestSendBigMessage(t *testing.T) {
 	t0 := time.Now()
 	for _, node := range []*clusterNode{node2, node3, node4, node5} {
 		stream := streams[node.nodeInfo.ID]
-		// Freeze the node, in order to block its Recv
-		node.freeze()
 
 		t1 := time.Now()
 		err = stream.Send(wrappedMsg)
@@ -407,10 +436,13 @@ func TestBlockingSend(t *testing.T) {
 			fakeStream.On("Context", mock.Anything).Return(context.Background())
 			client.On("Step", mock.Anything).Return(fakeStream, nil).Once()
 
-			var unBlock sync.WaitGroup
-			unBlock.Add(1)
+			unBlock := make(chan struct{})
+			var sendInvoked sync.WaitGroup
+			sendInvoked.Add(1)
+			var once sync.Once
 			fakeStream.On("Send", mock.Anything).Run(func(_ mock.Arguments) {
-				unBlock.Wait()
+				once.Do(sendInvoked.Done)
+				<-unBlock
 			}).Return(errors.New("oops"))
 
 			stream, err := rm.NewStream(time.Hour)
@@ -421,14 +453,11 @@ func TestBlockingSend(t *testing.T) {
 			assert.NoError(t, err)
 
 			// The second once doesn't either.
-			// At this point, we have 1 goroutine which is blocked on Send(),
+			// After this point, we have 1 goroutine which is blocked on Send(),
 			// and one message in the buffer.
+			sendInvoked.Wait()
 			err = stream.Send(testCase.messageToSend)
-			if testCase.overflowErr == "" {
-				assert.NoError(t, err)
-			} else {
-				assert.EqualError(t, err, testCase.overflowErr)
-			}
+			assert.NoError(t, err)
 
 			// The third blocks, so we need to unblock it ourselves
 			// in order for it to go through, unless the operation
@@ -436,15 +465,24 @@ func TestBlockingSend(t *testing.T) {
 			go func() {
 				time.Sleep(time.Second)
 				if testCase.streamUnblocks {
-					unBlock.Done()
+					close(unBlock)
 				}
 			}()
 
 			t1 := time.Now()
-			stream.Send(testCase.messageToSend)
+			err = stream.Send(testCase.messageToSend)
+			// The third send always overflows or blocks.
+			// If we expect to receive an overflow error - assert it.
+			if testCase.overflowErr != "" {
+				assert.EqualError(t, err, testCase.overflowErr)
+			}
 			elapsed := time.Since(t1)
 			t.Log("Elapsed time:", elapsed)
 			assert.True(t, elapsed > testCase.elapsedGreaterThan)
+
+			if !testCase.streamUnblocks {
+				close(unBlock)
+			}
 		})
 	}
 }
@@ -473,13 +511,11 @@ func TestUnavailableHosts(t *testing.T) {
 	// to a host that is down
 	node1 := newTestNode(t)
 
-	clientConfig, err := node1.dialer.ClientConfig()
-	assert.NoError(t, err)
+	clientConfig := node1.dialer.Config
 	// The below timeout makes sure that connection establishment is done
 	// asynchronously. Had it been synchronous, the Remote() call would be
 	// blocked for an hour.
 	clientConfig.Timeout = time.Hour
-	node1.dialer.SetConfig(clientConfig)
 	defer node1.stop()
 
 	node2 := newTestNode(t)
@@ -521,12 +557,12 @@ func TestStreamAbort(t *testing.T) {
 		{
 			testName:      "Evicted from membership",
 			membership:    nil,
-			expectedError: "rpc error",
+			expectedError: "rpc error: code = Canceled desc = context canceled",
 		},
 		{
 			testName:      "Changed TLS certificate",
 			membership:    []cluster.RemoteNode{invalidNodeInfo},
-			expectedError: "rpc error",
+			expectedError: "rpc error: code = Canceled desc = context canceled",
 		},
 	} {
 		t.Run(tst.testName, func(t *testing.T) {
@@ -545,33 +581,29 @@ func testStreamAbort(t *testing.T, node2 *clusterNode, newMembership []cluster.R
 	node1.c.Configure(testChannel2, []cluster.RemoteNode{node2.nodeInfo})
 	node2.c.Configure(testChannel2, []cluster.RemoteNode{node1.nodeInfo})
 
-	var waitForReconfigWG sync.WaitGroup
-	waitForReconfigWG.Add(1)
-
 	var streamCreated sync.WaitGroup
 	streamCreated.Add(1)
+
+	stopChan := make(chan struct{})
 
 	node2.handler.On("OnSubmit", testChannel, node1.nodeInfo.ID, mock.Anything).Once().Run(func(_ mock.Arguments) {
 		// Notify the stream was created
 		streamCreated.Done()
-		// Wait for reconfiguration to take place before returning, so that
-		// the Recv() would happen after reconfiguration
-		waitForReconfigWG.Wait()
+		// Wait for the test to finish
+		<-stopChan
 	}).Return(nil).Once()
 
 	rm1, err := node1.c.Remote(testChannel, node2.nodeInfo.ID)
 	assert.NoError(t, err)
-
-	errorChan := make(chan error)
 
 	go func() {
 		stream := assertEventualEstablishStream(t, rm1)
 		// Signal the reconfiguration
 		err = stream.Send(wrapSubmitReq(testReq))
 		assert.NoError(t, err)
-		_, err = stream.Recv()
+		_, err := stream.Recv()
 		assert.Contains(t, err.Error(), expectedError)
-		errorChan <- err
+		close(stopChan)
 	}()
 
 	go func() {
@@ -579,10 +611,9 @@ func testStreamAbort(t *testing.T, node2 *clusterNode, newMembership []cluster.R
 		streamCreated.Wait()
 		// Reconfigure the channel membership
 		node1.c.Configure(testChannel, newMembership)
-		waitForReconfigWG.Done()
 	}()
 
-	<-errorChan
+	<-stopChan
 }
 
 func TestDoubleReconfigure(t *testing.T) {
@@ -787,10 +818,8 @@ func TestReconnect(t *testing.T) {
 
 	node1 := newTestNode(t)
 	defer node1.stop()
-	conf, err := node1.dialer.ClientConfig()
-	assert.NoError(t, err)
+	conf := node1.dialer.Config
 	conf.Timeout = time.Hour
-	node1.dialer.SetConfig(conf)
 
 	node2 := newTestNode(t)
 	node2.handler.On("OnSubmit", testChannel, node1.nodeInfo.ID, mock.Anything).Return(nil)
@@ -1267,6 +1296,81 @@ func TestMetrics(t *testing.T) {
 
 			testCase.runTest(node1, node2, testCase.testMetrics)
 		})
+	}
+}
+
+func TestCertExpirationWarningEgress(t *testing.T) {
+	t.Parallel()
+	// Scenario: Ensures that when certificates are due to expire,
+	// a warning is logged to the log.
+
+	node1 := newTestNode(t)
+	node2 := newTestNode(t)
+
+	cert, err := x509.ParseCertificate(node2.nodeInfo.ServerTLSCert)
+	assert.NoError(t, err)
+	assert.NotNil(t, cert)
+
+	// Let the NotAfter time of the certificate be T1, the current time be T0.
+	// So time.Until is (T1 - T0), which means we have (T1 - T0) time left.
+	// We want to trigger a warning, so we set the warning threshold to be 20 seconds above
+	// the time left, so the time left would be smaller than the threshold.
+	node1.c.CertExpWarningThreshold = time.Until(cert.NotAfter) + time.Second*20
+	// We only alert once in 3 seconds
+	node1.c.MinimumExpirationWarningInterval = time.Second * 3
+
+	defer node1.stop()
+	defer node2.stop()
+
+	config := []cluster.RemoteNode{node1.nodeInfo, node2.nodeInfo}
+	node1.c.Configure(testChannel, config)
+	node2.c.Configure(testChannel, config)
+
+	stub, err := node1.c.Remote(testChannel, node2.nodeInfo.ID)
+	assert.NoError(t, err)
+
+	mockgRPC := &mocks.StepClient{}
+	mockgRPC.On("Send", mock.Anything).Return(nil)
+	mockgRPC.On("Context").Return(context.Background())
+	mockClient := &mocks.ClusterClient{}
+	mockClient.On("Step", mock.Anything).Return(mockgRPC, nil)
+
+	stub.Client = mockClient
+
+	stream := assertEventualEstablishStream(t, stub)
+
+	alerts := make(chan struct{}, 100)
+
+	stream.Logger = stream.Logger.WithOptions(zap.Hooks(func(entry zapcore.Entry) error {
+		if strings.Contains(entry.Message, "expires in less than") {
+			alerts <- struct{}{}
+		}
+		return nil
+	}))
+
+	// Send a message to the node and expert an alert to be logged.
+	stream.Send(wrapSubmitReq(testReq))
+	select {
+	case <-alerts:
+	case <-time.After(time.Second * 5):
+		t.Fatal("Should have logged an alert")
+	}
+	// Send another message, and ensure we don't log anything to the log, because the
+	// alerts should be suppressed before the minimum interval timeout expires.
+	stream.Send(wrapSubmitReq(testReq))
+	select {
+	case <-alerts:
+		t.Fatal("Should not have logged an alert")
+	case <-time.After(time.Millisecond * 500):
+	}
+	// Wait enough time for the alert interval to clear.
+	time.Sleep(node1.c.MinimumExpirationWarningInterval + time.Second)
+	// Send again a message, and this time it should be logged again.
+	stream.Send(wrapSubmitReq(testReq))
+	select {
+	case <-alerts:
+	case <-time.After(time.Second * 5):
+		t.Fatal("Should have logged an alert")
 	}
 }
 

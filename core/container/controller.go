@@ -12,6 +12,7 @@ import (
 	"io"
 	"sync"
 
+	docker "github.com/fsouza/go-dockerclient"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/chaincode/platforms"
 	"github.com/hyperledger/fabric/core/container/ccintf"
@@ -45,7 +46,7 @@ type refCountedLock struct {
 //     eventually probably need fine grained management)
 type VMController struct {
 	sync.RWMutex
-	containerLocks map[string]*refCountedLock
+	containerLocks map[ccintf.CCID]*refCountedLock
 	vmProviders    map[string]VMProvider
 }
 
@@ -54,7 +55,7 @@ var vmLogger = flogging.MustGetLogger("container")
 // NewVMController creates a new instance of VMController
 func NewVMController(vmProviders map[string]VMProvider) *VMController {
 	return &VMController{
-		containerLocks: make(map[string]*refCountedLock),
+		containerLocks: make(map[ccintf.CCID]*refCountedLock),
 		vmProviders:    vmProviders,
 	}
 }
@@ -67,7 +68,7 @@ func (vmc *VMController) newVM(typ string) VM {
 	return v.NewVM()
 }
 
-func (vmc *VMController) lockContainer(id string) {
+func (vmc *VMController) lockContainer(id ccintf.CCID) {
 	//get the container lock under global lock
 	vmc.Lock()
 	var refLck *refCountedLock
@@ -85,7 +86,7 @@ func (vmc *VMController) lockContainer(id string) {
 	vmLogger.Debugf("got container (%s) lock", id)
 }
 
-func (vmc *VMController) unlockContainer(id string) {
+func (vmc *VMController) unlockContainer(id ccintf.CCID) {
 	vmc.Lock()
 	if refLck, ok := vmc.containerLocks[id]; ok {
 		if refLck.refCount <= 0 {
@@ -134,6 +135,7 @@ type PlatformBuilder struct {
 	Version          string
 	CodePackage      []byte
 	PlatformRegistry *platforms.Registry
+	Client           *docker.Client
 }
 
 // Build a tar stream based on the CDS
@@ -144,6 +146,7 @@ func (b *PlatformBuilder) Build() (io.Reader, error) {
 		b.Name,
 		b.Version,
 		b.CodePackage,
+		b.Client,
 	)
 }
 
@@ -201,10 +204,9 @@ func (w WaitContainerReq) GetCCID() ccintf.CCID {
 func (vmc *VMController) Process(vmtype string, req VMCReq) error {
 	v := vmc.newVM(vmtype)
 	ccid := req.GetCCID()
-	id := ccid.GetName()
 
-	vmc.lockContainer(id)
-	defer vmc.unlockContainer(id)
+	vmc.lockContainer(ccid)
+	defer vmc.unlockContainer(ccid)
 	return req.Do(v)
 }
 

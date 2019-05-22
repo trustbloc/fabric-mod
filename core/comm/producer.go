@@ -9,6 +9,7 @@ package comm
 import (
 	"fmt"
 	"math/rand"
+	"reflect"
 	"sync"
 	"time"
 
@@ -18,10 +19,42 @@ import (
 
 var logger = flogging.MustGetLogger("ConnProducer")
 
-var EndpointDisableInterval = time.Second * 10
-
 // ConnectionFactory creates a connection to a certain endpoint
 type ConnectionFactory func(endpoint string) (*grpc.ClientConn, error)
+
+// EndpointCriteria defines an endpoint, and a list of trusted
+// organizations it corresponds to.
+type EndpointCriteria struct {
+	Endpoint      string
+	Organizations []string
+}
+
+// Equals returns whether this EndpointCriteria is equivalent to the given other EndpointCriteria
+func (ec EndpointCriteria) Equals(other EndpointCriteria) bool {
+	ss1 := stringSet(ec.Organizations)
+	ss2 := stringSet(other.Organizations)
+	return ec.Endpoint == other.Endpoint && ss1.equals(ss2)
+}
+
+// stringSet defines a collection of strings without
+// any significance to their order or number of occurrences.
+type stringSet []string
+
+func (ss stringSet) equals(ss2 stringSet) bool {
+	// If the sets are of different sizes, they are different.
+	if len(ss) != len(ss2) {
+		return false
+	}
+	return reflect.DeepEqual(ss.toMap(), ss2.toMap())
+}
+
+func (ss stringSet) toMap() map[string]struct{} {
+	m := make(map[string]struct{})
+	for _, s := range ss {
+		m[s] = struct{}{}
+	}
+	return m
+}
 
 // ConnectionProducer produces connections out of a set of predefined
 // endpoints
@@ -33,8 +66,6 @@ type ConnectionProducer interface {
 	// UpdateEndpoints updates the endpoints of the ConnectionProducer
 	// to be the given endpoints
 	UpdateEndpoints(endpoints []string)
-	// DisableEndpoint remove endpoint from endpoint for some time
-	DisableEndpoint(endpoint string)
 	// GetEndpoints return ordering service endpoints
 	GetEndpoints() []string
 }
@@ -42,8 +73,8 @@ type ConnectionProducer interface {
 type connProducer struct {
 	sync.RWMutex
 	endpoints         []string
-	disabledEndpoints map[string]time.Time
 	connect           ConnectionFactory
+	nextEndpointIndex int
 }
 
 // NewConnectionProducer creates a new ConnectionProducer with given endpoints and connection factory.
@@ -52,7 +83,7 @@ func NewConnectionProducer(factory ConnectionFactory, endpoints []string) Connec
 	if len(endpoints) == 0 {
 		return nil
 	}
-	return &connProducer{endpoints: endpoints, connect: factory, disabledEndpoints: make(map[string]time.Time)}
+	return &connProducer{endpoints: shuffle(endpoints), connect: factory}
 }
 
 // NewConnection creates a new connection.
@@ -62,26 +93,23 @@ func (cp *connProducer) NewConnection() (*grpc.ClientConn, string, error) {
 	cp.Lock()
 	defer cp.Unlock()
 
-	for endpoint, timeout := range cp.disabledEndpoints {
-		if time.Since(timeout) >= EndpointDisableInterval {
-			delete(cp.disabledEndpoints, endpoint)
+	logger.Debugf("Creating a new connection")
+
+	for i := 0; i < len(cp.endpoints); i++ {
+		currentEndpoint := cp.endpoints[cp.nextEndpointIndex]
+		conn, err := cp.connect(currentEndpoint)
+		cp.nextEndpointIndex = (cp.nextEndpointIndex + 1) % len(cp.endpoints)
+		if err != nil {
+			logger.Error("Failed connecting to", currentEndpoint, ", error:", err)
+			continue
 		}
+		logger.Debugf("Connected to %s", currentEndpoint)
+		return conn, currentEndpoint, nil
 	}
 
-	endpoints := shuffle(cp.endpoints)
-	checkedEndpoints := make([]string, 0)
-	for _, endpoint := range endpoints {
-		if _, ok := cp.disabledEndpoints[endpoint]; !ok {
-			checkedEndpoints = append(checkedEndpoints, endpoint)
-			conn, err := cp.connect(endpoint)
-			if err != nil {
-				logger.Error("Failed connecting to", endpoint, ", error:", err)
-				continue
-			}
-			return conn, endpoint, nil
-		}
-	}
-	return nil, "", fmt.Errorf("Could not connect to any of the endpoints: %v", checkedEndpoints)
+	logger.Errorf("Could not connect to any of the endpoints: %v", cp.endpoints)
+
+	return nil, "", fmt.Errorf("could not connect to any of the endpoints: %v", cp.endpoints)
 }
 
 // UpdateEndpoints updates the endpoints of the ConnectionProducer
@@ -94,31 +122,8 @@ func (cp *connProducer) UpdateEndpoints(endpoints []string) {
 	cp.Lock()
 	defer cp.Unlock()
 
-	newDisabled := make(map[string]time.Time)
-	for i := range endpoints {
-		if startTime, ok := cp.disabledEndpoints[endpoints[i]]; ok {
-			newDisabled[endpoints[i]] = startTime
-		}
-	}
+	cp.nextEndpointIndex = 0
 	cp.endpoints = endpoints
-	cp.disabledEndpoints = newDisabled
-}
-
-func (cp *connProducer) DisableEndpoint(endpoint string) {
-	cp.Lock()
-	defer cp.Unlock()
-
-	if len(cp.endpoints)-len(cp.disabledEndpoints) == 1 {
-		logger.Warning("Only 1 endpoint remained, will not black-list it")
-		return
-	}
-
-	for _, currEndpoint := range cp.endpoints {
-		if currEndpoint == endpoint {
-			cp.disabledEndpoints[endpoint] = time.Now()
-			break
-		}
-	}
 }
 
 func shuffle(a []string) []string {
