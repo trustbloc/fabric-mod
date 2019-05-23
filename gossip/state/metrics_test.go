@@ -30,6 +30,7 @@ func TestMetrics(t *testing.T) {
 	g.On("PeersOfChannel", mock.Anything).Return([]discovery.NetworkMember{})
 	g.On("Accept", mock.Anything, false).Return(make(<-chan *proto.GossipMessage), nil)
 	g.On("Accept", mock.Anything, true).Return(nil, make(chan protoext.ReceivedMessage))
+	g.On("Gossip", mock.Anything).Return()
 
 	heightWG := sync.WaitGroup{}
 	heightWG.Add(1)

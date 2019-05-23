@@ -12,6 +12,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	xstate "github.com/hyperledger/fabric/extensions/gossip/state"
+
+	"github.com/hyperledger/fabric/core/ledger"
+
 	pb "github.com/golang/protobuf/proto"
 	vsccErrors "github.com/hyperledger/fabric/common/errors"
 	"github.com/hyperledger/fabric/gossip/api"
@@ -91,6 +95,9 @@ type GossipAdapter interface {
 
 	// IdentityInfo returns information known peer identities
 	IdentityInfo() api.PeerIdentitySet
+
+	// Gossip sends a message to other peers to the network
+	Gossip(msg *proto.GossipMessage)
 }
 
 // MCSAdapter adapter of message crypto service interface to bound
@@ -181,6 +188,10 @@ type GossipStateProviderImpl struct {
 	config *Configuration
 
 	msgDispatcher messageDispatcher
+
+	peerLedger ledger.PeerLedger
+
+	extension xstate.GossipStateProviderExtension
 }
 
 var logger = util.GetLogger(util.StateLogger, "")
@@ -248,7 +259,7 @@ func readConfiguration() *Configuration {
 // NewGossipStateProvider creates state provider with coordinator instance
 // to orchestrate arrival of private rwsets and blocks before committing them into the ledger.
 func NewGossipStateProvider(chainID string, services *ServicesMediator, ledger ledgerResources,
-	stateMetrics *metrics.StateMetrics, blockingMode bool, msgDispatcher messageDispatcher) GossipStateProvider {
+	stateMetrics *metrics.StateMetrics, blockingMode bool, msgDispatcher messageDispatcher, peerLedger ledger.PeerLedger) GossipStateProvider {
 
 	gossipChan, _ := services.Accept(func(message interface{}) bool {
 		// Get only data messages
@@ -337,6 +348,10 @@ func NewGossipStateProvider(chainID string, services *ServicesMediator, ledger l
 		config: config,
 
 		msgDispatcher: msgDispatcher,
+
+		peerLedger: peerLedger,
+
+		extension: xstate.NewGossipStateProviderExtension(chainID, ledger, peerLedger, services),
 	}
 
 	logger.Infof("Updating metadata information, "+
@@ -350,10 +365,12 @@ func NewGossipStateProvider(chainID string, services *ServicesMediator, ledger l
 	go s.listen()
 	// Deliver in order messages into the incoming channel
 	go s.deliverPayloads()
+
 	if s.config.EnableStateTransfer {
 		// Execute anti entropy to fill missing gaps
-		go s.antiEntropy()
+		go s.extension.AntiEntropy(s.antiEntropy)()
 	}
+
 	// Taking care of state request messages
 	go s.processStateRequests()
 
@@ -485,7 +502,7 @@ func (s *GossipStateProviderImpl) processStateRequests() {
 	for {
 		select {
 		case msg := <-s.stateRequestCh:
-			s.handleStateRequest(msg)
+			s.extension.HandleStateRequest(s.handleStateRequest)(msg)
 		case <-s.stopCh:
 			s.stopCh <- struct{}{}
 			return
@@ -806,7 +823,7 @@ func (s *GossipStateProviderImpl) stateRequestMessage(beginSeq uint64, endSeq ui
 // selectPeerToRequestFrom selects peer which has required blocks to ask missing blocks from
 func (s *GossipStateProviderImpl) selectPeerToRequestFrom(height uint64) (*comm.RemotePeer, error) {
 	// Filter peers which posses required range of missing blocks
-	peers := s.filterPeers(s.hasRequiredHeight(height))
+	peers := s.filterPeers(s.extension.Predicate(s.hasRequiredHeight(height)))
 
 	n := len(peers)
 	if n == 0 {
@@ -844,7 +861,7 @@ func (s *GossipStateProviderImpl) hasRequiredHeight(height uint64) func(peer dis
 
 // AddPayload adds new payload into state.
 func (s *GossipStateProviderImpl) AddPayload(payload *proto.Payload) error {
-	return s.addPayload(payload, s.blockingMode)
+	return s.extension.AddPayload(s.addPayload)(payload, s.blockingMode)
 }
 
 // addPayload adds new payload into state. It may (or may not) block according to the
@@ -879,7 +896,7 @@ func (s *GossipStateProviderImpl) commitBlock(block *common.Block, pvtData util.
 	t1 := time.Now()
 
 	// Commit block with available private transactions
-	if err := s.ledger.StoreBlock(block, pvtData); err != nil {
+	if err := s.extension.StoreBlock(s.ledger.StoreBlock)(block, pvtData); err != nil {
 		logger.Errorf("Got error while committing(%+v)", errors.WithStack(err))
 		return err
 	}
