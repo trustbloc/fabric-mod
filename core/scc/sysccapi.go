@@ -18,7 +18,6 @@ import (
 	"github.com/hyperledger/fabric/core/container/inproccontroller"
 	"github.com/hyperledger/fabric/core/peer"
 	pb "github.com/hyperledger/fabric/protos/peer"
-	"github.com/spf13/viper"
 )
 
 var sysccLogger = flogging.MustGetLogger("sccapi")
@@ -26,7 +25,7 @@ var sysccLogger = flogging.MustGetLogger("sccapi")
 // Registrar provides a way for system chaincodes to be registered
 type Registrar interface {
 	// Register registers a system chaincode
-	Register(ccid *ccintf.CCID, cc shim.Chaincode) error
+	Register(ccid ccintf.CCID, cc shim.Chaincode) error
 }
 
 // SystemChaincode defines the metadata needed to initialize system chaincode
@@ -104,7 +103,7 @@ type SelfDescribingSysCC interface {
 
 // registerSysCC registers the given system chaincode with the peer
 func (p *Provider) registerSysCC(syscc SelfDescribingSysCC) (bool, error) {
-	if !syscc.Enabled() || !isWhitelisted(syscc) {
+	if !syscc.Enabled() || !p.isWhitelisted(syscc) {
 		sysccLogger.Info(fmt.Sprintf("system chaincode (%s,%s,%t) disabled", syscc.Name(), syscc.Path(), syscc.Enabled()))
 		return false, nil
 	}
@@ -112,10 +111,7 @@ func (p *Provider) registerSysCC(syscc SelfDescribingSysCC) (bool, error) {
 	// XXX This is an ugly hack, version should be tied to the chaincode instance, not he peer binary
 	version := util.GetSysCCVersion()
 
-	ccid := &ccintf.CCID{
-		Name:    syscc.Name(),
-		Version: version,
-	}
+	ccid := ccintf.CCID(syscc.Name() + ":" + version)
 	err := p.Registrar.Register(ccid, syscc.Chaincode())
 	if err != nil {
 		//if the type is registered, the instance may not be... keep going
@@ -131,8 +127,8 @@ func (p *Provider) registerSysCC(syscc SelfDescribingSysCC) (bool, error) {
 }
 
 // deploySysCC deploys the given system chaincode on a chain
-func deploySysCC(chainID string, ccprov ccprovider.ChaincodeProvider, syscc SelfDescribingSysCC) error {
-	if !syscc.Enabled() || !isWhitelisted(syscc) {
+func (p *Provider) deploySysCC(chainID string, ccprov ccprovider.ChaincodeProvider, syscc SelfDescribingSysCC) error {
+	if !syscc.Enabled() || !p.isWhitelisted(syscc) {
 		sysccLogger.Info(fmt.Sprintf("system chaincode (%s,%s) disabled", syscc.Name(), syscc.Path()))
 		return nil
 	}
@@ -203,9 +199,7 @@ func deDeploySysCC(chainID string, ccprov ccprovider.ChaincodeProvider, syscc Se
 	return err
 }
 
-func isWhitelisted(syscc SelfDescribingSysCC) bool {
-	chaincodes := viper.GetStringMapString("chaincode.system")
-	val, ok := chaincodes[syscc.Name()]
-	enabled := val == "enable" || val == "true" || val == "yes"
+func (p *Provider) isWhitelisted(syscc SelfDescribingSysCC) bool {
+	enabled, ok := p.Whitelist[syscc.Name()]
 	return ok && enabled
 }

@@ -31,8 +31,7 @@ func TestCreateIndexWithRetry(t *testing.T) {
 	defer cleanup(database)
 
 	//create a new instance and database object
-	couchInstance, err := CreateCouchInstance(couchDBDef.URL, couchDBDef.Username, couchDBDef.Password,
-		couchDBDef.MaxRetries, couchDBDef.MaxRetriesOnStartup, couchDBDef.RequestTimeout, couchDBDef.CreateGlobalChangesDB, &disabled.Provider{})
+	couchInstance, err := CreateCouchInstance(testConfig(), &disabled.Provider{})
 	require.NoError(t, err, "Error when trying to create couch instance")
 	db := CouchDatabase{CouchInstance: couchInstance, DBName: database}
 
@@ -57,8 +56,7 @@ func TestIndexDesignDocExists(t *testing.T) {
 	defer cleanup(database)
 
 	//create a new instance and database object
-	couchInstance, err := CreateCouchInstance(couchDBDef.URL, couchDBDef.Username, couchDBDef.Password,
-		couchDBDef.MaxRetries, couchDBDef.MaxRetriesOnStartup, couchDBDef.RequestTimeout, couchDBDef.CreateGlobalChangesDB, &disabled.Provider{})
+	couchInstance, err := CreateCouchInstance(testConfig(), &disabled.Provider{})
 	require.NoError(t, err, "Error when trying to create couch instance")
 	db := CouchDatabase{CouchInstance: couchInstance, DBName: database}
 
@@ -88,8 +86,7 @@ func TestIndexDesignDocExistsWithRetry(t *testing.T) {
 	defer cleanup(database)
 
 	//create a new instance and database object
-	couchInstance, err := CreateCouchInstance(couchDBDef.URL, couchDBDef.Username, couchDBDef.Password,
-		5, couchDBDef.MaxRetriesOnStartup, couchDBDef.RequestTimeout, couchDBDef.CreateGlobalChangesDB, &disabled.Provider{})
+	couchInstance, err := CreateCouchInstance(testConfig(), &disabled.Provider{})
 	require.NoError(t, err, "Error when trying to create couch instance")
 	db := CouchDatabase{CouchInstance: couchInstance, DBName: database}
 
@@ -122,8 +119,7 @@ func TestDBExists(t *testing.T) {
 	defer cleanup(database)
 
 	//create a new instance and database object
-	couchInstance, err := CreateCouchInstance(couchDBDef.URL, couchDBDef.Username, couchDBDef.Password,
-		couchDBDef.MaxRetries, couchDBDef.MaxRetriesOnStartup, couchDBDef.RequestTimeout, couchDBDef.CreateGlobalChangesDB, &disabled.Provider{})
+	couchInstance, err := CreateCouchInstance(testConfig(), &disabled.Provider{})
 	require.NoError(t, err, "Error when trying to create couch instance")
 	db := CouchDatabase{CouchInstance: couchInstance, DBName: database}
 
@@ -149,8 +145,7 @@ func TestDBExistsWithRetry(t *testing.T) {
 	defer cleanup(database)
 
 	//create a new instance and database object
-	couchInstance, err := CreateCouchInstance(couchDBDef.URL, couchDBDef.Username, couchDBDef.Password,
-		5, couchDBDef.MaxRetriesOnStartup, couchDBDef.RequestTimeout, couchDBDef.CreateGlobalChangesDB, &disabled.Provider{})
+	couchInstance, err := CreateCouchInstance(testConfig(), &disabled.Provider{})
 	require.NoError(t, err, "Error when trying to create couch instance")
 	db := CouchDatabase{CouchInstance: couchInstance, DBName: database}
 

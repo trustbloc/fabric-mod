@@ -9,7 +9,6 @@ package peer
 import (
 	"fmt"
 	"net"
-	"runtime"
 	"sync"
 
 	"github.com/hyperledger/fabric/common/channelconfig"
@@ -51,7 +50,6 @@ import (
 	"github.com/hyperledger/fabric/token/tms/manager"
 	"github.com/hyperledger/fabric/token/transaction"
 	"github.com/pkg/errors"
-	"github.com/spf13/viper"
 )
 
 var peerLogger = flogging.MustGetLogger("peer")
@@ -207,6 +205,8 @@ func (cs *chainSupport) Reader() blockledger.Reader {
 // the peer does not have any error conditions that lead to
 // this function signaling that an error has occurred.
 func (cs *chainSupport) Errored() <-chan struct{} {
+	// If this is ever updated to return a real channel, the error message
+	// in deliver.go around this channel closing should be updated.
 	return nil
 }
 
@@ -240,16 +240,20 @@ var validationWorkersSemaphore semaphore.Semaphore
 // Initialize sets up any chains that the peer has from the persistence. This
 // function should be called at the start up when the ledger and gossip
 // ready
-func Initialize(init func(string), sccp sysccprovider.SystemChaincodeProvider,
-	pm plugin.Mapper, pr *platforms.Registry, deployedCCInfoProvider ledger.DeployedChaincodeInfoProvider,
-	membershipProvider ledger.MembershipInfoProvider, metricsProvider metrics.Provider,
+func Initialize(
+	init func(string),
+	sccp sysccprovider.SystemChaincodeProvider,
+	pm plugin.Mapper,
+	pr *platforms.Registry,
+	deployedCCInfoProvider ledger.DeployedChaincodeInfoProvider,
+	membershipProvider ledger.MembershipInfoProvider,
+	metricsProvider metrics.Provider,
 	legacyLifecycleValidation plugindispatcher.LifecycleResources,
 	newLifecycleValidation plugindispatcher.CollectionAndLifecycleResources,
-	collDataProvider storeapi.Provider) {
-	nWorkers := viper.GetInt("peer.validatorPoolSize")
-	if nWorkers <= 0 {
-		nWorkers = runtime.NumCPU()
-	}
+	ledgerConfig *ledger.Config,
+	nWorkers int,
+	collDataProvider storeapi.Provider,
+) {
 	validationWorkersSemaphore = semaphore.New(nWorkers)
 
 	pluginMapper = pm
@@ -263,6 +267,7 @@ func Initialize(init func(string), sccp sysccprovider.SystemChaincodeProvider,
 		DeployedChaincodeInfoProvider: deployedCCInfoProvider,
 		MembershipInfoProvider:        membershipProvider,
 		MetricsProvider:               metricsProvider,
+		Config:                        ledgerConfig,
 		CollDataProvider:              collDataProvider,
 	})
 	ledgerIds, err := ledgermgmt.GetLedgerIDs()
@@ -272,18 +277,18 @@ func Initialize(init func(string), sccp sysccprovider.SystemChaincodeProvider,
 	for _, cid := range ledgerIds {
 		peerLogger.Infof("Loading chain %s", cid)
 		if ledger, err = ledgermgmt.OpenLedger(cid); err != nil {
-			peerLogger.Warningf("Failed to load ledger %s(%s)", cid, err)
+			peerLogger.Errorf("Failed to load ledger %s(%s)", cid, err)
 			peerLogger.Debugf("Error while loading ledger %s with message %s. We continue to the next ledger rather than abort.", cid, err)
 			continue
 		}
 		if cb, err = getCurrConfigBlockFromLedger(ledger); err != nil {
-			peerLogger.Warningf("Failed to find config block on ledger %s(%s)", cid, err)
+			peerLogger.Errorf("Failed to find config block on ledger %s(%s)", cid, err)
 			peerLogger.Debugf("Error while looking for config block on ledger %s with message %s. We continue to the next ledger rather than abort.", cid, err)
 			continue
 		}
 		// Create a chain if we get a valid ledger with config block
 		if err = createChain(cid, ledger, cb, sccp, pm, deployedCCInfoProvider, legacyLifecycleValidation, newLifecycleValidation); err != nil {
-			peerLogger.Warningf("Failed to load chain %s(%s)", cid, err)
+			peerLogger.Errorf("Failed to load chain %s(%s)", cid, err)
 			peerLogger.Debugf("Error reloading chain %s with message %s. We continue to the next chain rather than abort.", cid, err)
 			continue
 		}
@@ -717,20 +722,20 @@ func SetCurrConfigBlock(block *common.Block, cid string) error {
 }
 
 // GetLocalIP returns the non loopback local IP of the host
-func GetLocalIP() string {
+func GetLocalIP() (string, error) {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
-		return ""
+		return "", err
 	}
 	for _, address := range addrs {
 		// check the address type and if it is not a loopback then display it
 		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
 			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
+				return ipnet.IP.String(), nil
 			}
 		}
 	}
-	return ""
+	return "", fmt.Errorf("no non-loopback, IPv4 interface detected")
 }
 
 // GetChannelsInfo returns an array with information about all channels for

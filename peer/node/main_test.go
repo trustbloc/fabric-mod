@@ -33,6 +33,7 @@ func TestStart(t *testing.T) {
 	viper.Set("peer.fileSystemPath", tempDir)
 	viper.Set("chaincode.executetimeout", "30s")
 	viper.Set("chaincode.mode", "dev")
+	viper.Set("vm.endpoint", "unix:///var/run/docker.sock")
 
 	require.NoError(t, msptesttools.LoadMSPSetupForTesting())
 

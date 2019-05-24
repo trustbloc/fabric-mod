@@ -6,32 +6,38 @@ SPDX-License-Identifier: Apache-2.0
 package ledgermgmt
 
 import (
-	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
+	"testing"
 
 	"github.com/hyperledger/fabric/common/metrics/disabled"
 	"github.com/hyperledger/fabric/core/chaincode/platforms"
 	"github.com/hyperledger/fabric/core/chaincode/platforms/golang"
-	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
+	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/mock"
 )
 
+//TODO:  Remove all of these functions and create ledger provider instances
+
 // InitializeTestEnv initializes ledgermgmt for tests
-func InitializeTestEnv() {
-	remove()
-	InitializeTestEnvWithInitializer(nil)
+func InitializeTestEnv(t *testing.T) (cleanup func()) {
+	cleanup, err := InitializeTestEnvWithInitializer(nil)
+	if err != nil {
+		t.Fatalf("Failed to initialize test environment: %s", err)
+	}
+	return cleanup
 }
 
 // InitializeTestEnvWithInitializer initializes ledgermgmt for tests with the supplied Initializer
-func InitializeTestEnvWithInitializer(initializer *Initializer) {
-	remove()
-	InitializeExistingTestEnvWithInitializer(initializer)
+func InitializeTestEnvWithInitializer(initializer *Initializer) (cleanup func(), err error) {
+	return InitializeExistingTestEnvWithInitializer(initializer)
 }
 
 // InitializeExistingTestEnvWithInitializer initializes ledgermgmt for tests with existing ledgers
 // This function does not remove the existing ledgers and is used in upgrade tests
 // TODO ledgermgmt should be reworked to move the package scoped functions to a struct
-func InitializeExistingTestEnvWithInitializer(initializer *Initializer) {
+func InitializeExistingTestEnvWithInitializer(initializer *Initializer) (cleanup func(), err error) {
 	if initializer == nil {
 		initializer = &Initializer{}
 	}
@@ -44,20 +50,35 @@ func InitializeExistingTestEnvWithInitializer(initializer *Initializer) {
 	if initializer.PlatformRegistry == nil {
 		initializer.PlatformRegistry = platforms.NewRegistry(&golang.Platform{})
 	}
-	initialize(initializer)
-}
-
-// CleanupTestEnv closes the ledgermagmt and removes the store directory
-func CleanupTestEnv() {
-	Close()
-	remove()
-}
-
-func remove() {
-	path := ledgerconfig.GetRootPath()
-	fmt.Printf("removing dir = %s\n", path)
-	err := os.RemoveAll(path)
-	if err != nil {
-		logger.Errorf("Error: %s", err)
+	if initializer.Config == nil {
+		rootPath, err := ioutil.TempDir("", "ltestenv")
+		if err != nil {
+			return nil, err
+		}
+		initializer.Config = &ledger.Config{
+			RootFSPath: rootPath,
+			StateDB: &ledger.StateDB{
+				LevelDBPath: filepath.Join(rootPath, "stateleveldb"),
+			},
+		}
 	}
+	if initializer.Config.PrivateData == nil {
+		initializer.Config.PrivateData = &ledger.PrivateData{
+			StorePath:       filepath.Join(initializer.Config.RootFSPath, "pvtdataStore"),
+			MaxBatchSize:    5000,
+			BatchesInterval: 1000,
+			PurgeInterval:   100,
+		}
+	}
+	if initializer.Config.HistoryDB == nil {
+		initializer.Config.HistoryDB = &ledger.HistoryDB{
+			Enabled: true,
+		}
+	}
+	initialize(initializer)
+	cleanup = func() {
+		Close()
+		os.RemoveAll(initializer.Config.RootFSPath)
+	}
+	return cleanup, nil
 }

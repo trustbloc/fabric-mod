@@ -11,11 +11,10 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/hyperledger/fabric/token/identity"
-
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/protos/ledger/queryresult"
 	"github.com/hyperledger/fabric/protos/token"
+	"github.com/hyperledger/fabric/token/identity"
 	"github.com/hyperledger/fabric/token/ledger"
 	"github.com/pkg/errors"
 )
@@ -34,6 +33,7 @@ type Transactor struct {
 // RequestTransfer creates a TokenTransaction of type transfer request
 func (t *Transactor) RequestTransfer(request *token.TransferRequest) (*token.TokenTransaction, error) {
 	var outputs []*token.Token
+	var outputSum = NewZeroQuantity(Precision)
 
 	if len(request.GetTokenIds()) == 0 {
 		return nil, errors.New("no token IDs in transfer request")
@@ -42,7 +42,7 @@ func (t *Transactor) RequestTransfer(request *token.TransferRequest) (*token.Tok
 		return nil, errors.New("no shares in transfer request")
 	}
 
-	tokenType, _, err := t.getInputsFromTokenIds(request.GetTokenIds())
+	tokenType, inputSum, _, err := t.getInputsFromTokenIds(request.GetTokenIds(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -57,10 +57,39 @@ func (t *Transactor) RequestTransfer(request *token.TransferRequest) (*token.Tok
 			return nil, errors.Errorf("invalid quantity in transfer request '%s'", err)
 		}
 
+		outputSum, err = outputSum.Add(q)
+		if err != nil {
+			return nil, errors.Errorf("failed adding up output quantities, err '%s'", err)
+		}
+
 		outputs = append(outputs, &token.Token{
 			Owner:    ttt.Recipient,
 			Type:     tokenType,
 			Quantity: q.Hex(),
+		})
+	}
+
+	// compare outputSum and inputSum
+	cmp, err := inputSum.Cmp(outputSum)
+	if err != nil {
+		return nil, errors.Errorf("cannot compare quantities '%s'", err)
+	}
+	if cmp < 0 {
+		return nil, errors.Errorf("total quantity [%d] from TokenIds is less than total quantity [%s] for transfer", inputSum, outputSum)
+	}
+
+	// add a new output for the owner if there is remaining quantity after transfer
+	if cmp > 0 {
+		change, err := inputSum.Sub(outputSum)
+		if err != nil {
+			return nil, errors.Errorf("failed computing change, err '%s'", err)
+		}
+
+		outputs = append(outputs, &token.Token{
+			// note that tokenOwner type may change in the future depending on creator type
+			Owner:    &token.TokenOwner{Type: token.TokenOwner_MSP_IDENTIFIER, Raw: t.PublicCredential},
+			Type:     tokenType,
+			Quantity: change.Hex(),
 		})
 	}
 
@@ -91,7 +120,7 @@ func (t *Transactor) RequestRedeem(request *token.RedeemRequest) (*token.TokenTr
 		return nil, errors.Errorf("quantity to redeem [%s] is invalid, err '%s'", request.GetQuantity(), err)
 	}
 
-	tokenType, quantitySum, err := t.getInputsFromTokenIds(request.GetTokenIds())
+	tokenType, quantitySum, _, err := t.getInputsFromTokenIds(request.GetTokenIds(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -144,16 +173,26 @@ func (t *Transactor) RequestRedeem(request *token.RedeemRequest) (*token.TokenTr
 }
 
 // read token data from ledger for each token ids and calculate the sum of quantities for all token ids
-// Returns TokenIds, token type, sum of token quantities, and error in the case of failure
-func (t *Transactor) getInputsFromTokenIds(tokenIds []*token.TokenId) (string, Quantity, error) {
+// Returns TokenIds, token type, sum of token quantities, and error in the case of failure.
+// If upperBound is different from nil, then only the first t token ids, such that the sum
+// of the quantities in these t tokens covers upperBound, are used.
+func (t *Transactor) getInputsFromTokenIds(tokenIds []*token.TokenId, upperBound Quantity) (string, Quantity, int, error) {
+	// create token owner based on t.PublicCredential
+	tokenOwner := &token.TokenOwner{Type: token.TokenOwner_MSP_IDENTIFIER, Raw: t.PublicCredential}
+	ownerString, err := GetTokenOwnerString(tokenOwner)
+	if err != nil {
+		return "", nil, 0, err
+	}
+
 	var tokenType = ""
 	var sum = NewZeroQuantity(Precision)
+	counter := 0
 	for _, tokenId := range tokenIds {
 		// create the composite key from tokenId
-		inKey, err := createCompositeKey(tokenIdPrefix, []string{tokenId.TxId, strconv.Itoa(int(tokenId.Index))})
+		inKey, err := createTokenKey(ownerString, tokenId.TxId, int(tokenId.Index))
 		if err != nil {
 			verifierLogger.Errorf("error getting creating input key: %s", err)
-			return "", nil, err
+			return "", nil, 0, err
 		}
 		verifierLogger.Debugf("transferring token with ID: '%s'", inKey)
 
@@ -162,48 +201,72 @@ func (t *Transactor) getInputsFromTokenIds(tokenIds []*token.TokenId) (string, Q
 		inBytes, err := t.Ledger.GetState(tokenNameSpace, inKey)
 		if err != nil {
 			verifierLogger.Errorf("error getting token '%s' to spend from ledger: %s", inKey, err)
-			return "", nil, err
+			return "", nil, 0, err
 		}
 		if len(inBytes) == 0 {
-			return "", nil, errors.New(fmt.Sprintf("input '%s' does not exist", inKey))
+			return "", nil, 0, errors.New(fmt.Sprintf("input TokenId (%s, %d) does not exist or not owned by the user", tokenId.TxId, tokenId.Index))
 		}
 		input := &token.Token{}
 		err = proto.Unmarshal(inBytes, input)
 		if err != nil {
-			return "", nil, errors.New(fmt.Sprintf("error unmarshaling input bytes: '%s'", err))
+			return "", nil, 0, errors.New(fmt.Sprintf("error unmarshaling input bytes: '%s'", err))
 		}
 
 		// check the owner of the token
 		if !bytes.Equal(t.PublicCredential, input.Owner.Raw) {
-			return "", nil, errors.New(fmt.Sprintf("the requestor does not own token"))
+			return "", nil, 0, errors.New(fmt.Sprintf("the requestor does not own token"))
 		}
 
 		// check the token type - only one type allowed per transfer
 		if tokenType == "" {
 			tokenType = input.Type
 		} else if tokenType != input.Type {
-			return "", nil, errors.New(fmt.Sprintf("two or more token types specified in input: '%s', '%s'", tokenType, input.Type))
+			return "", nil, 0, errors.New(fmt.Sprintf("two or more token types specified in input: '%s', '%s'", tokenType, input.Type))
 		}
 
 		// sum up the quantity
 		quantity, err := ToQuantity(input.Quantity, Precision)
 		if err != nil {
-			return "", nil, errors.Errorf("quantity in input [%s] is invalid, err '%s'", input.Quantity, err)
+			return "", nil, 0, errors.Errorf("quantity in input [%s] is invalid, err '%s'", input.Quantity, err)
 		}
 
 		sum, err = sum.Add(quantity)
 		if err != nil {
-			return "", nil, errors.Errorf("failed adding up quantities, err '%s'", err)
+			return "", nil, 0, errors.Errorf("failed adding up quantities, err '%s'", err)
+		}
+		counter++
+
+		if upperBound != nil {
+			cmp, err := sum.Cmp(upperBound)
+			if err != nil {
+				return "", nil, 0, errors.Errorf("failed compering with upper bound, err '%s'", err)
+			}
+			if cmp >= 0 {
+				break
+			}
 		}
 	}
 
-	return tokenType, sum, nil
+	return tokenType, sum, counter, nil
 }
 
-// ListTokens creates a TokenTransaction that lists the unspent tokens owned by owner.
+// ListTokens queries the ledger and returns the unspent tokens owned by the user.
+// It does not allow to query unspent tokens owned by other users.
 func (t *Transactor) ListTokens() (*token.UnspentTokens, error) {
+	// The type is always MSP_IDENTIFIER in current use cases
+	tokenOwner := &token.TokenOwner{Type: token.TokenOwner_MSP_IDENTIFIER, Raw: t.PublicCredential}
+	ownerString, err := GetTokenOwnerString(tokenOwner)
+	if err != nil {
+		return nil, err
+	}
 
-	iterator, err := t.Ledger.GetStateRangeScanIterator(tokenNameSpace, "", "")
+	startKey, err := createCompositeKey(tokenKeyPrefix, []string{ownerString})
+	if err != nil {
+		return nil, err
+	}
+	endKey := startKey + string(maxUnicodeRuneValue)
+
+	iterator, err := t.Ledger.GetStateRangeScanIterator(tokenNameSpace, startKey, endKey)
 	if err != nil {
 		return nil, err
 	}
@@ -233,73 +296,78 @@ func (t *Transactor) ListTokens() (*token.UnspentTokens, error) {
 			}
 
 			// show only tokens which are owned by transactor
-			if bytes.Equal(output.Owner.Raw, t.PublicCredential) {
-				verifierLogger.Debugf("adding token with ID '%s' to list of unspent tokens", result.GetKey())
-				id, err := getTokenIdFromKey(result.Key)
-				if err != nil {
-					return nil, err
-				}
-				tokens = append(tokens,
-					&token.UnspentToken{
-						Type:     output.Type,
-						Quantity: output.Quantity,
-						Id:       id,
-					})
+			verifierLogger.Debugf("adding token with ID '%s' to list of unspent tokens", result.GetKey())
+			id, err := getTokenIdFromKey(result.Key)
+			if err != nil {
+				return nil, err
 			}
+			// Convert quantity to decimal
+			q, err := ToQuantity(output.Quantity, Precision)
+			if err != nil {
+				return nil, err
+			}
+			tokens = append(tokens,
+				&token.UnspentToken{
+					Type:     output.Type,
+					Quantity: q.Decimal(),
+					Id:       id,
+				})
 		}
 	}
 }
 
-// RequestExpectation allows indirect transfer based on the expectation.
-// It creates a token transaction based on the outputs as specified in the expectation.
-func (t *Transactor) RequestExpectation(request *token.ExpectationRequest) (*token.TokenTransaction, error) {
-	if len(request.GetTokenIds()) == 0 {
-		return nil, errors.New("no token ids in ExpectationRequest")
+/// RequestTokenOperation returns a token transaction matching the requested transfer operation
+func (t *Transactor) RequestTokenOperation(tokenIDs []*token.TokenId, op *token.TokenOperation) (*token.TokenTransaction, int, error) {
+	if len(tokenIDs) == 0 {
+		return nil, 0, errors.New("no token ids in ExpectationRequest")
 	}
-	if request.GetExpectation() == nil {
-		return nil, errors.New("no token expectation in ExpectationRequest")
+	if op.GetAction() == nil {
+		return nil, 0, errors.New("no action in request")
 	}
-	if request.GetExpectation().GetPlainExpectation() == nil {
-		return nil, errors.New("no plain expectation in ExpectationRequest")
+	if op.GetAction().GetTransfer() == nil {
+		return nil, 0, errors.New("no transfer in action")
 	}
-	if request.GetExpectation().GetPlainExpectation().GetTransferExpectation() == nil {
-		return nil, errors.New("no transfer expectation in ExpectationRequest")
-	}
-
-	inputType, inputSum, err := t.getInputsFromTokenIds(request.GetTokenIds())
-	if err != nil {
-		return nil, err
+	if op.GetAction().GetTransfer().GetSender() == nil {
+		return nil, 0, errors.New("no sender in transfer")
 	}
 
-	outputs := request.GetExpectation().GetPlainExpectation().GetTransferExpectation().GetOutputs()
+	// check how much needs to be transferred and which type of tokens
+	outputs := op.GetAction().GetTransfer().GetOutputs()
 	outputType, outputSum, err := parseOutputs(outputs)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
+
+	inputType, inputSum, count, err := t.getInputsFromTokenIds(tokenIDs, outputSum)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	if outputType != inputType {
-		return nil, errors.Errorf("token type mismatch in inputs and outputs for expectation (%s vs %s)", outputType, inputType)
+		return nil, 0, errors.Errorf("token type mismatch in inputs and outputs for token operation (%s vs %s)", outputType, inputType)
 	}
 	cmp, err := outputSum.Cmp(inputSum)
 	if err != nil {
-		return nil, errors.Errorf("cannot compare quantities '%s'", err)
+		return nil, 0, errors.Errorf("cannot compare quantities '%s'", err)
 	}
 	if cmp > 0 {
-		return nil, errors.Errorf("total quantity [%d] from TokenIds is less than total quantity [%d] in expectation", inputSum, outputSum)
+		return nil, 0, errors.Errorf("total quantity [%d] from TokenIds is less than total quantity [%d] in token operation", inputSum, outputSum)
 	}
 
 	// inputs may have remaining tokens after outputs - add a new output in this case
 	cmp, err = inputSum.Cmp(outputSum)
 	if err != nil {
-		return nil, errors.Errorf("cannot compare quantities '%s'", err)
+		return nil, 0, errors.Errorf("cannot compare quantities '%s'", err)
 	}
 	if cmp > 0 {
 		change, err := inputSum.Sub(outputSum)
 		if err != nil {
-			return nil, errors.Errorf("failed computing change, err '%s'", err)
+			return nil, 0, errors.Errorf("failed computing change, err '%s'", err)
 		}
 
 		outputs = append(outputs, &token.Token{
-			Owner:    &token.TokenOwner{Type: token.TokenOwner_MSP_IDENTIFIER, Raw: t.PublicCredential}, // PublicCredential is serialized identity for the creator
+			// PublicCredential is serialized identity for the creator
+			Owner:    &token.TokenOwner{Type: token.TokenOwner_MSP_IDENTIFIER, Raw: t.PublicCredential},
 			Type:     outputType,
 			Quantity: change.Hex(),
 		})
@@ -310,13 +378,13 @@ func (t *Transactor) RequestExpectation(request *token.ExpectationRequest) (*tok
 			TokenAction: &token.TokenAction{
 				Data: &token.TokenAction_Transfer{
 					Transfer: &token.Transfer{
-						Inputs:  request.GetTokenIds(),
+						Inputs:  tokenIDs[:count],
 						Outputs: outputs,
 					},
 				},
 			},
 		},
-	}, nil
+	}, count, nil
 }
 
 // Done releases any resources held by this transactor
@@ -335,7 +403,8 @@ func splitCompositeKey(compositeKey string) (string, []string, error) {
 			componentIndex = i + 1
 		}
 	}
-	if len(components) < 2 {
+	// there is an extra tokenIdPrefix component in the beginning, trim it off
+	if len(components) < numComponentsInKey+1 {
 		return "", nil, errors.Errorf("invalid composite key - not enough components found in key '%s'", compositeKey)
 	}
 	return components[0], components[1:], nil
@@ -375,14 +444,16 @@ func getTokenIdFromKey(key string) (*token.TokenId, error) {
 		return nil, errors.New(fmt.Sprintf("error splitting input composite key: '%s'", err))
 	}
 
-	if len(components) != 2 {
-		return nil, errors.New(fmt.Sprintf("not enough components in output ID composite key; expected 2, received '%s'", components))
+	// 4 components in key: ownerType, ownerRaw, txid, index
+	if len(components) != numComponentsInKey {
+		return nil, errors.New(fmt.Sprintf("not enough components in output ID composite key; expected 4, received '%s'", components))
 	}
 
-	txID := components[0]
-	index, err := strconv.Atoi(components[1])
+	// txid and index are the last 2 components
+	txID := components[numComponentsInKey-2]
+	index, err := strconv.Atoi(components[numComponentsInKey-1])
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("error parsing output index '%s': '%s'", components[1], err))
+		return nil, errors.New(fmt.Sprintf("error parsing output index '%s': '%s'", components[numComponentsInKey-1], err))
 	}
 	return &token.TokenId{TxId: txID, Index: uint32(index)}, nil
 }

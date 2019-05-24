@@ -39,7 +39,7 @@ type BlockPuller struct {
 	Logger              *flogging.FabricLogger
 	Dialer              Dialer
 	VerifyBlockSequence BlockSequenceVerifier
-	Endpoints           []string
+	Endpoints           []EndpointCriteria
 	// Internal state
 	stream       *ImpatientStream
 	blockBuff    []*common.Block
@@ -93,7 +93,7 @@ func (p *BlockPuller) PullBlock(seq uint64) *common.Block {
 		}
 		retriesLeft--
 		if retriesLeft == 0 && p.MaxPullBlockRetries > 0 {
-			p.Logger.Errorf("Failed pulling block %d: retry count exhausted(%d)", seq, p.MaxPullBlockRetries)
+			p.Logger.Errorf("Failed pulling block [%d]: retry count exhausted(%d)", seq, p.MaxPullBlockRetries)
 			return nil
 		}
 		time.Sleep(p.RetryTimeout)
@@ -189,7 +189,7 @@ func (p *BlockPuller) pullBlocks(seq uint64, reConnected bool) error {
 		totalSize += size
 		p.blockBuff = append(p.blockBuff, block)
 		nextExpectedSequence++
-		p.Logger.Infof("Got block %d of size %dKB from %s", seq, size/1024, p.endpoint)
+		p.Logger.Infof("Got block [%d] of size %d KB from %s", seq, size/1024, p.endpoint)
 	}
 	return nil
 }
@@ -198,7 +198,7 @@ func (p *BlockPuller) obtainStream(reConnected bool, env *common.Envelope, seq u
 	var stream *ImpatientStream
 	var err error
 	if reConnected {
-		p.Logger.Infof("Sending request for block %d to %s", seq, p.endpoint)
+		p.Logger.Infof("Sending request for block [%d] to %s", seq, p.endpoint)
 		stream, err = p.requestBlocks(p.endpoint, NewImpatientStream(p.conn, p.FetchTimeout), env)
 		if err != nil {
 			return nil, err
@@ -277,7 +277,7 @@ func (p *BlockPuller) probeEndpoints(minRequestedSequence uint64) *endpointInfoB
 	var unavailableErr uint32
 
 	for _, endpoint := range p.Endpoints {
-		go func(endpoint string) {
+		go func(endpoint EndpointCriteria) {
 			defer wg.Done()
 			ei, err := p.probeEndpoint(endpoint, minRequestedSequence)
 			if err != nil {
@@ -312,20 +312,20 @@ func (p *BlockPuller) probeEndpoints(minRequestedSequence uint64) *endpointInfoB
 
 // probeEndpoint returns a gRPC connection and the latest block sequence of an endpoint with the given
 // requires minimum sequence, or error if something goes wrong.
-func (p *BlockPuller) probeEndpoint(endpoint string, minRequestedSequence uint64) (*endpointInfo, error) {
+func (p *BlockPuller) probeEndpoint(endpoint EndpointCriteria, minRequestedSequence uint64) (*endpointInfo, error) {
 	conn, err := p.Dialer.Dial(endpoint)
 	if err != nil {
 		p.Logger.Warningf("Failed connecting to %s: %v", endpoint, err)
 		return nil, err
 	}
 
-	lastBlockSeq, err := p.fetchLastBlockSeq(minRequestedSequence, endpoint, conn)
+	lastBlockSeq, err := p.fetchLastBlockSeq(minRequestedSequence, endpoint.Endpoint, conn)
 	if err != nil {
 		conn.Close()
 		return nil, err
 	}
 
-	return &endpointInfo{conn: conn, lastBlockSeq: lastBlockSeq, endpoint: endpoint}, nil
+	return &endpointInfo{conn: conn, lastBlockSeq: lastBlockSeq, endpoint: endpoint.Endpoint}, nil
 }
 
 // randomEndpoint returns a random endpoint of the given endpointInfo

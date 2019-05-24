@@ -12,7 +12,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
 	"github.com/pkg/errors"
@@ -37,11 +36,7 @@ type mgr struct {
 }
 
 // NewMgr constructs an instance that implements interface `Mgr`
-func NewMgr(ccInfoProvider ledger.DeployedChaincodeInfoProvider) Mgr {
-	return newMgr(ccInfoProvider, dbPath())
-}
-
-func newMgr(ccInfoProvider ledger.DeployedChaincodeInfoProvider, dbPath string) Mgr {
+func NewMgr(dbPath string, ccInfoProvider ledger.DeployedChaincodeInfoProvider) Mgr {
 	return &mgr{ccInfoProvider, newDBProvider(dbPath)}
 }
 
@@ -69,9 +64,9 @@ func (m *mgr) HandleStateUpdates(trigger *ledger.StateUpdateTrigger) error {
 	if err != nil {
 		return err
 	}
+	// updated chaincodes can be empty if the invocation to this function is triggered
+	// because of state updates that contains only chaincode approval transaction output
 	if len(updatedCCs) == 0 {
-		logger.Errorf("Config history manager is expected to recieve events only if at least one chaincode is updated stateUpdates = %#v",
-			trigger.StateUpdates)
 		return nil
 	}
 	updatedCollConfigs := map[string]*common.CollectionConfigPackage{}
@@ -80,7 +75,10 @@ func (m *mgr) HandleStateUpdates(trigger *ledger.StateUpdateTrigger) error {
 		if err != nil {
 			return err
 		}
-		if ccInfo.ExplicitCollectionConfigPkg == nil {
+
+		// DeployedChaincodeInfoProvider implementation in new lifecycle return an empty 'CollectionConfigPackage'
+		// (instead of a nil) to indicate the absence of collection config, so check for both conditions
+		if ccInfo.ExplicitCollectionConfigPkg == nil || len(ccInfo.ExplicitCollectionConfigPkg.Config) == 0 {
 			continue
 		}
 		updatedCollConfigs[ccInfo.Name] = ccInfo.ExplicitCollectionConfigPkg
@@ -191,10 +189,6 @@ func compositeKVToCollectionConfig(compositeKV *compositeKV) (*ledger.Collection
 
 func constructCollectionConfigKey(chaincodeName string) string {
 	return chaincodeName + "~collection" // collection config key as in version 1.2 and we continue to use this in order to be compatible with existing data
-}
-
-func dbPath() string {
-	return ledgerconfig.GetConfigHistoryPath()
 }
 
 func extractPublicUpdates(stateUpdates ledger.StateUpdates) map[string][]*kvrwset.KVWrite {

@@ -28,10 +28,9 @@ import (
 	"github.com/hyperledger/fabric/common/cauthdsl"
 	"github.com/hyperledger/fabric/common/configtx"
 	"github.com/hyperledger/fabric/common/crypto/tlsgen"
-	policiesmocks "github.com/hyperledger/fabric/common/mocks/policies"
 	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/common/util"
-	cc "github.com/hyperledger/fabric/core/cclifecycle"
+	"github.com/hyperledger/fabric/core/cclifecycle"
 	lifecyclemocks "github.com/hyperledger/fabric/core/cclifecycle/mocks"
 	"github.com/hyperledger/fabric/core/comm"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
@@ -87,16 +86,19 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	var err error
 	if err := buildBinaries(); err != nil {
-		fmt.Printf("failed generating artifacts: +%v", err)
-		return
+		fmt.Printf("failed to build binaries: +%v", err)
+		gexec.CleanupBuildArtifacts()
+		os.Exit(1)
 	}
 
+	var err error
 	testdir, err = generateChannelArtifacts()
 	if err != nil {
-		fmt.Printf("failed generating artifacts: +%v", err)
-		return
+		fmt.Printf("failed to generate channel artifacts: +%v", err)
+		os.RemoveAll(testdir)
+		gexec.CleanupBuildArtifacts()
+		os.Exit(1)
 	}
 
 	peerDirPrefix := filepath.Join(testdir, "crypto-config", "peerOrganizations")
@@ -119,9 +121,9 @@ func TestGreenPath(t *testing.T) {
 	defer service.Stop()
 	defer client.conn.Close()
 
-	service.lc.query.On("GetState", "lscc", "cc1").Return(cc1Bytes, nil)
-	service.lc.query.On("GetState", "lscc", "cc2").Return(cc2Bytes, nil)
-	service.lc.query.On("GetState", "lscc", "cc2~collection").Return(collectionConfigBytes, nil)
+	service.lsccMetadataManager.query.On("GetState", "lscc", "cc1").Return(cc1Bytes, nil)
+	service.lsccMetadataManager.query.On("GetState", "lscc", "cc2").Return(cc2Bytes, nil)
+	service.lsccMetadataManager.query.On("GetState", "lscc", "cc2~collection").Return(collectionConfigBytes, nil)
 
 	ccWithCollection := &ChaincodeInterest{
 		Chaincodes: []*ChaincodeCall{
@@ -218,9 +220,9 @@ func TestEndorsementComputationFailure(t *testing.T) {
 	defer service.Stop()
 	defer client.conn.Close()
 
-	service.lc.query.On("GetState", "lscc", "cc1").Return(cc1Bytes, nil)
-	service.lc.query.On("GetState", "lscc", "cc2").Return(cc2Bytes, nil)
-	service.lc.query.On("GetState", "lscc", "cc2~collection").Return(collectionConfigBytes, nil)
+	service.lsccMetadataManager.query.On("GetState", "lscc", "cc1").Return(cc1Bytes, nil)
+	service.lsccMetadataManager.query.On("GetState", "lscc", "cc2").Return(cc2Bytes, nil)
+	service.lsccMetadataManager.query.On("GetState", "lscc", "cc2~collection").Return(collectionConfigBytes, nil)
 
 	// Now test a collection query that should fail because cc2's endorsement policy is Org1MSP AND org2MSP
 	// but the collection is configured only to have peers from Org1MSP
@@ -245,9 +247,9 @@ func TestLedgerFailure(t *testing.T) {
 	defer service.Stop()
 	defer client.conn.Close()
 
-	service.lc.query.On("GetState", "lscc", "cc1").Return(cc1Bytes, nil)
-	service.lc.query.On("GetState", "lscc", "cc2").Return(nil, errors.New("IO error"))
-	service.lc.query.On("GetState", "lscc", "cc12~collection").Return(collectionConfigBytes, nil)
+	service.lsccMetadataManager.query.On("GetState", "lscc", "cc1").Return(cc1Bytes, nil)
+	service.lsccMetadataManager.query.On("GetState", "lscc", "cc2").Return(nil, errors.New("IO error"))
+	service.lsccMetadataManager.query.On("GetState", "lscc", "cc12~collection").Return(collectionConfigBytes, nil)
 
 	ccWithCollection := &ChaincodeInterest{
 		Chaincodes: []*ChaincodeCall{
@@ -337,15 +339,15 @@ func (w *mspWrapper) DeserializeIdentity(serializedIdentity []byte) (msp.Identit
 	return w.MSPManager.DeserializeIdentity(serializedIdentity)
 }
 
-type lifeCycle struct {
-	*cc.Lifecycle
+type lsccMetadataManager struct {
+	*cclifecycle.MetadataManager
 	query *lifecyclemocks.Query
 }
 
-func newLifeCycle() *lifeCycle {
+func newLSCCMetadataManager() *lsccMetadataManager {
 	enumerator := &lifecyclemocks.Enumerator{}
 	enumerator.On("Enumerate").Return(nil, nil)
-	lc, err := cc.NewLifeCycle(enumerator)
+	m, err := cclifecycle.NewMetadataManager(enumerator)
 	if err != nil {
 		panic(err)
 	}
@@ -353,13 +355,13 @@ func newLifeCycle() *lifeCycle {
 	query := &lifecyclemocks.Query{}
 	query.On("Done").Return()
 	qc.On("NewQuery").Return(query, nil)
-	_, err = lc.NewChannelSubscription("mychannel", qc)
+	_, err = m.NewChannelSubscription("mychannel", qc)
 	if err != nil {
 		panic(err)
 	}
-	return &lifeCycle{
-		Lifecycle: lc,
-		query:     query,
+	return &lsccMetadataManager{
+		MetadataManager: m,
+		query:           query,
 	}
 }
 
@@ -370,8 +372,8 @@ type principalEvaluator struct {
 
 type service struct {
 	*grpc.Server
-	lc  *lifeCycle
-	sup *support
+	lsccMetadataManager *lsccMetadataManager
+	sup                 *support
 }
 
 type support struct {
@@ -389,7 +391,7 @@ func (s *sequenceWrapper) Sequence() uint64 {
 	return s.instance.Load().(*mocks.ConfigtxValidator).Sequence()
 }
 
-func createSupport(t *testing.T, dir string, lc *lifeCycle) *support {
+func createSupport(t *testing.T, dir string, lsccMetadataManager *lsccMetadataManager) *support {
 	configs := make(map[string]*msprotos.FabricMSPConfig)
 	mspMgr := createMSPManager(t, dir, configs)
 	mspManagerWrapper := &mspWrapper{
@@ -427,8 +429,8 @@ func createSupport(t *testing.T, dir string, lc *lifeCycle) *support {
 		},
 	}
 
-	ccSup := ccsupport.NewDiscoverySupport(lc)
-	ea := endorsement.NewEndorsementAnalyzer(gSup, ccSup, pe, lc)
+	ccSup := ccsupport.NewDiscoverySupport(lsccMetadataManager)
+	ea := endorsement.NewEndorsementAnalyzer(gSup, ccSup, pe, lsccMetadataManager)
 
 	fakeBlockGetter := &mocks.ConfigBlockGetter{}
 	fakeBlockGetter.GetCurrConfigBlockReturns(createGenesisBlock(filepath.Join(dir, "crypto-config")))
@@ -456,8 +458,8 @@ func createClientAndService(t *testing.T, testdir string) (*client, *service) {
 		},
 	})
 
-	lc := newLifeCycle()
-	sup := createSupport(t, testdir, lc)
+	l := newLSCCMetadataManager()
+	sup := createSupport(t, testdir, l)
 	svc := discovery.NewService(discovery.Config{
 		TLS:                          gRPCServer.TLSEnabled(),
 		AuthCacheEnabled:             true,
@@ -498,7 +500,7 @@ func createClientAndService(t *testing.T, testdir string) (*client, *service) {
 	var signerCacheSize uint = 10
 	c := disc.NewClient(wrapperClient.newConnection, signer.Sign, signerCacheSize)
 	wrapperClient.Client = c
-	service := &service{Server: gRPCServer.Server(), lc: lc, sup: sup}
+	service := &service{Server: gRPCServer.Server(), lsccMetadataManager: l, sup: sup}
 	return wrapperClient, service
 }
 
@@ -574,13 +576,10 @@ func createPolicyManagerGetter(t *testing.T, mspMgr msp.MSPManager) *mocks.Chann
 	assert.NoError(t, err)
 	org1Org2MembersPolicy, _, err := cauthdsl.NewPolicyProvider(mspMgr).NewPolicy(protoutil.MarshalOrPanic(org1Org2Members))
 	assert.NoError(t, err)
-	_ = org1Org2MembersPolicy
+
 	polMgr := &mocks.ChannelPolicyManagerGetter{}
-	policyMgr := &policiesmocks.Manager{
-		PolicyMap: map[string]policies.Policy{
-			policies.ChannelApplicationWriters: org1Org2MembersPolicy,
-		},
-	}
+	policyMgr := &mocks.PolicyManager{}
+	policyMgr.On("GetPolicy", policies.ChannelApplicationWriters).Return(org1Org2MembersPolicy, true)
 	polMgr.On("Manager", "mychannel").Return(policyMgr, false)
 	return polMgr
 }
@@ -608,7 +607,7 @@ func generateChannelArtifacts() (string, error) {
 	args := []string{
 		"generate",
 		fmt.Sprintf("--output=%s", cryptoConfigDir),
-		fmt.Sprintf("--config=%s", filepath.Join("..", "..", "examples", "e2e_cli", "crypto-config.yaml")),
+		fmt.Sprintf("--config=%s", filepath.Join("testdata", "crypto-config.yaml")),
 	}
 	b, err := exec.Command(cryptogen, args...).CombinedOutput()
 	if err != nil {
@@ -624,8 +623,8 @@ func generateChannelArtifacts() (string, error) {
 }
 
 func createGenesisBlock(cryptoConfigDir string) *common.Block {
-	appConfig := genesisconfig.Load("TwoOrgsChannel", filepath.Join("..", "..", "examples", "e2e_cli"))
-	ordererConfig := genesisconfig.Load("TwoOrgsOrdererGenesis", filepath.Join("..", "..", "examples", "e2e_cli"))
+	appConfig := genesisconfig.Load("TwoOrgsChannel", "testdata")
+	ordererConfig := genesisconfig.Load("TwoOrgsOrdererGenesis", "testdata")
 	// Glue the two parts together, without loss of generality - to the application parts
 	appConfig.Orderer = ordererConfig.Orderer
 	channelConfig := appConfig

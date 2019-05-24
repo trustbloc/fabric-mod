@@ -7,15 +7,13 @@ SPDX-License-Identifier: Apache-2.0
 package protoutil
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"time"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/bccsp"
-	"github.com/hyperledger/fabric/bccsp/factory"
-	"github.com/hyperledger/fabric/common/crypto"
-	"github.com/hyperledger/fabric/common/util"
-	"github.com/hyperledger/fabric/core/chaincode/platforms"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/pkg/errors"
@@ -150,15 +148,14 @@ func GetProposalResponse(prBytes []byte) (*peer.ProposalResponse, error) {
 }
 
 // GetChaincodeDeploymentSpec returns a ChaincodeDeploymentSpec given args
-func GetChaincodeDeploymentSpec(code []byte, pr *platforms.Registry) (*peer.ChaincodeDeploymentSpec, error) {
+func GetChaincodeDeploymentSpec(code []byte) (*peer.ChaincodeDeploymentSpec, error) {
 	cds := &peer.ChaincodeDeploymentSpec{}
 	err := proto.Unmarshal(code, cds)
 	if err != nil {
 		return nil, errors.Wrap(err, "error unmarshaling ChaincodeDeploymentSpec")
 	}
 
-	// FAB-2122: Validate the CDS according to platform specific requirements
-	return cds, pr.ValidateDeploymentSpec(cds.ChaincodeSpec.Type.String(), cds.CodePackage)
+	return cds, nil
 }
 
 // GetChaincodeAction gets the ChaincodeAction given chaicnode action bytes
@@ -242,7 +239,7 @@ func CreateChaincodeProposal(typ common.HeaderType, chainID string, cis *peer.Ch
 // It returns the proposal and the transaction id associated to the proposal
 func CreateChaincodeProposalWithTransient(typ common.HeaderType, chainID string, cis *peer.ChaincodeInvocationSpec, creator []byte, transientMap map[string][]byte) (*peer.Proposal, string, error) {
 	// generate a random nonce
-	nonce, err := crypto.GetRandomNonce()
+	nonce, err := getRandomNonce()
 	if err != nil {
 		return nil, "", err
 	}
@@ -261,7 +258,7 @@ func CreateChaincodeProposalWithTransient(typ common.HeaderType, chainID string,
 // proposal
 func CreateChaincodeProposalWithTxIDAndTransient(typ common.HeaderType, chainID string, cis *peer.ChaincodeInvocationSpec, creator []byte, txid string, transientMap map[string][]byte) (*peer.Proposal, string, error) {
 	// generate a random nonce
-	nonce, err := crypto.GetRandomNonce()
+	nonce, err := getRandomNonce()
 	if err != nil {
 		return nil, "", err
 	}
@@ -301,7 +298,10 @@ func CreateChaincodeProposalWithTxIDNonceAndTransient(txid string, typ common.He
 	// get a more appropriate mechanism to handle it in.
 	var epoch uint64
 
-	timestamp := util.CreateUtcTimestamp()
+	timestamp, err := ptypes.TimestampProto(time.Now().UTC())
+	if err != nil {
+		return nil, "", errors.Wrap(err, "error validating Timestamp")
+	}
 
 	hdr := &common.Header{
 		ChannelHeader: MarshalOrPanic(
@@ -454,7 +454,7 @@ func GetActionFromEnvelopeMsg(env *common.Envelope) (*peer.ChaincodeAction, erro
 // CreateProposalFromCISAndTxid returns a proposal given a serialized identity
 // and a ChaincodeInvocationSpec
 func CreateProposalFromCISAndTxid(txid string, typ common.HeaderType, chainID string, cis *peer.ChaincodeInvocationSpec, creator []byte) (*peer.Proposal, string, error) {
-	nonce, err := crypto.GetRandomNonce()
+	nonce, err := getRandomNonce()
 	if err != nil {
 		return nil, "", err
 	}
@@ -580,13 +580,8 @@ func createProposalFromCDS(chainID string, msg proto.Message, creator []byte, pr
 func ComputeTxID(nonce, creator []byte) (string, error) {
 	// TODO: Get the Hash function to be used from
 	// channel configuration
-	digest, err := factory.GetDefault().Hash(
-		append(nonce, creator...),
-		&bccsp.SHA256Opts{})
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(digest), nil
+	digest := sha256.Sum256(append(nonce, creator...))
+	return hex.EncodeToString(digest[:]), nil
 }
 
 // CheckTxID checks that txid is equal to the Hash computed
@@ -636,7 +631,6 @@ func computeProposalBindingInternal(nonce, creator []byte, epoch uint64) ([]byte
 
 	// TODO: add to genesis block the hash function used for
 	// the binding computation
-	return factory.GetDefault().Hash(
-		append(append(nonce, creator...), epochBytes...),
-		&bccsp.SHA256Opts{})
+	digest := sha256.Sum256(append(append(nonce, creator...), epochBytes...))
+	return digest[:], nil
 }

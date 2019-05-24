@@ -54,6 +54,7 @@ type signerSerializer interface {
 
 type wrappedBalancer struct {
 	balancer.Balancer
+	balancer.V2Balancer
 	cd *countingDialer
 }
 
@@ -89,7 +90,12 @@ func newCountingDialer() *countingDialer {
 
 func (d *countingDialer) Build(cc balancer.ClientConn, opts balancer.BuildOptions) balancer.Balancer {
 	defer atomic.AddUint32(&d.connectionCount, 1)
-	return &wrappedBalancer{Balancer: d.baseBuilder.Build(cc, opts), cd: d}
+	lb := d.baseBuilder.Build(cc, opts)
+	return &wrappedBalancer{
+		Balancer:   lb,
+		V2Balancer: lb.(balancer.V2Balancer),
+		cd:         d,
+	}
 }
 
 func (d *countingDialer) Name() string {
@@ -104,14 +110,14 @@ func (d *countingDialer) assertAllConnectionsClosed(t *testing.T) {
 	assert.Equal(t, uint32(0), atomic.LoadUint32(&d.connectionCount))
 }
 
-func (d *countingDialer) Dial(address string) (*grpc.ClientConn, error) {
+func (d *countingDialer) Dial(address cluster.EndpointCriteria) (*grpc.ClientConn, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 	defer cancel()
 
 	gRPCBalancerLock.Lock()
 	balancer := grpc.WithBalancerName(d.name)
 	gRPCBalancerLock.Unlock()
-	return grpc.DialContext(ctx, address, grpc.WithBlock(), grpc.WithInsecure(), balancer)
+	return grpc.DialContext(ctx, address.Endpoint, grpc.WithBlock(), grpc.WithInsecure(), balancer)
 }
 
 func noopBlockVerifierf(_ []*common.Block, _ string) error {
@@ -145,6 +151,10 @@ type deliverServer struct {
 	srv            *comm.GRPCServer
 	seekAssertions chan func(*orderer.SeekInfo, string)
 	blockResponses chan *orderer.DeliverResponse
+}
+
+func (ds *deliverServer) endpointCriteria() cluster.EndpointCriteria {
+	return cluster.EndpointCriteria{Endpoint: ds.srv.Address()}
 }
 
 func (ds *deliverServer) isFaulty() bool {
@@ -286,13 +296,21 @@ func newBlockPuller(dialer *countingDialer, orderers ...string) *cluster.BlockPu
 		Dialer:              dialer,
 		Channel:             "mychannel",
 		Signer:              &mocks.SignerSerializer{},
-		Endpoints:           orderers,
-		FetchTimeout:        time.Second,
+		Endpoints:           endpointCriteriaFromEndpoints(orderers...),
+		FetchTimeout:        time.Second * 10,
 		MaxTotalBufferBytes: 1024 * 1024, // 1MB
 		RetryTimeout:        time.Millisecond * 10,
 		VerifyBlockSequence: noopBlockVerifierf,
 		Logger:              flogging.MustGetLogger("test"),
 	}
+}
+
+func endpointCriteriaFromEndpoints(orderers ...string) []cluster.EndpointCriteria {
+	var res []cluster.EndpointCriteria
+	for _, orderer := range orderers {
+		res = append(res, cluster.EndpointCriteria{Endpoint: orderer})
+	}
+	return res
 }
 
 func TestBlockPullerBasicHappyPath(t *testing.T) {
@@ -601,7 +619,7 @@ func TestBlockPullerFailover(t *testing.T) {
 	pulledBlock1.Add(1)
 	var once sync.Once
 	bp.Logger = bp.Logger.WithOptions(zap.Hooks(func(entry zapcore.Entry) error {
-		if strings.Contains(entry.Message, "Got block 1 of size") {
+		if strings.Contains(entry.Message, "Got block [1] of size") {
 			once.Do(pulledBlock1.Done)
 		}
 		return nil
@@ -653,11 +671,11 @@ func TestBlockPullerNoneResponsiveOrderer(t *testing.T) {
 	waitForConnection.Add(1)
 	var once sync.Once
 	bp.Logger = bp.Logger.WithOptions(zap.Hooks(func(entry zapcore.Entry) error {
-		if !strings.Contains(entry.Message, "Sending request for block 1") {
+		if !strings.Contains(entry.Message, "Sending request for block [1]") {
 			return nil
 		}
 		defer once.Do(waitForConnection.Done)
-		s := entry.Message[len("Sending request for block 1 to 127.0.0.1:"):]
+		s := entry.Message[len("Sending request for block [1] to 127.0.0.1:"):]
 		port, err := strconv.ParseInt(s, 10, 32)
 		assert.NoError(t, err)
 		// If osn2 is the current orderer we're connected to,
@@ -819,7 +837,7 @@ func TestBlockPullerFailures(t *testing.T) {
 		},
 		{
 			name:       "failure at pull",
-			logTrigger: "Sending request for block 1",
+			logTrigger: "Sending request for block [1]",
 			beforeFunc: func(osn *deliverServer, bp *cluster.BlockPuller) {
 				// The first seek request asks for the latest block and succeeds
 				osn.addExpectProbeAssert()
@@ -834,7 +852,7 @@ func TestBlockPullerFailures(t *testing.T) {
 		},
 		{
 			name:       "failure at verifying pulled block",
-			logTrigger: "Sending request for block 1",
+			logTrigger: "Sending request for block [1]",
 			beforeFunc: func(osn *deliverServer, bp *cluster.BlockPuller) {
 				// The first seek request asks for the latest block and succeeds
 				osn.addExpectProbeAssert()
@@ -1016,7 +1034,7 @@ func TestImpatientStreamFailure(t *testing.T) {
 
 	gt := gomega.NewGomegaWithT(t)
 	gt.Eventually(func() (bool, error) {
-		conn, err = dialer.Dial(osn.srv.Address())
+		conn, err = dialer.Dial(osn.endpointCriteria())
 		return true, err
 	}).Should(gomega.BeTrue())
 	newStream := cluster.NewImpatientStream(conn, time.Millisecond*100)
@@ -1089,7 +1107,7 @@ func TestBlockPullerMaxRetriesExhausted(t *testing.T) {
 	var exhaustedRetryAttemptsLogged bool
 
 	bp.Logger = bp.Logger.WithOptions(zap.Hooks(func(entry zapcore.Entry) error {
-		if entry.Message == "Failed pulling block 3: retry count exhausted(2)" {
+		if entry.Message == "Failed pulling block [3]: retry count exhausted(2)" {
 			exhaustedRetryAttemptsLogged = true
 		}
 		return nil

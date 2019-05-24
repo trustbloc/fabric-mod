@@ -30,7 +30,6 @@ import (
 	"github.com/hyperledger/fabric/gossip/protoext"
 	"github.com/hyperledger/fabric/gossip/util"
 	proto "github.com/hyperledger/fabric/protos/gossip"
-	"github.com/pkg/errors"
 )
 
 const DefMsgExpirationTimeout = election.DefLeaderAliveThreshold * 10
@@ -187,20 +186,25 @@ func (mf *membershipFilter) GetMembership() []discovery.NetworkMember {
 // NewGossipChannel creates a new GossipChannel
 func NewGossipChannel(pkiID common.PKIidType, org api.OrgIdentityType, mcs api.MessageCryptoService,
 	chainID common.ChainID, adapter Adapter, joinMsg api.JoinChannelMessage,
-	metrics *metrics.MembershipMetrics) GossipChannel {
+	metrics *metrics.MembershipMetrics, logger util.Logger) GossipChannel {
 	gc := &gossipChannel{
 		incTime:                   uint64(time.Now().UnixNano()),
 		selfOrg:                   org,
 		pkiID:                     pkiID,
 		mcs:                       mcs,
 		Adapter:                   adapter,
-		logger:                    util.GetLogger(util.ChannelLogger, adapter.GetConf().ID),
 		stopChan:                  make(chan struct{}, 1),
 		shouldGossipStateInfo:     int32(0),
 		stateInfoPublishScheduler: time.NewTicker(adapter.GetConf().PublishStateInfoInterval),
 		stateInfoRequestScheduler: time.NewTicker(adapter.GetConf().RequestStateInfoInterval),
 		orgs:                      []api.OrgIdentityType{},
 		chainID:                   chainID,
+	}
+
+	if logger == nil {
+		gc.logger = util.GetLogger(util.ChannelLogger, adapter.GetConf().ID)
+	} else {
+		gc.logger = logger
 	}
 
 	gc.memFilter = &membershipFilter{adapter: gc.Adapter, gossipChannel: gc}
@@ -213,8 +217,10 @@ func NewGossipChannel(pkiID common.PKIidType, org api.OrgIdentityType, mcs api.M
 		return fmt.Sprintf("%d", m.(*protoext.SignedGossipMessage).GetDataMsg().Payload.SeqNum)
 	}
 	gc.blockMsgStore = msgstore.NewMessageStoreExpirable(comparator, func(m interface{}) {
+		gc.logger.Debugf("Removing %s from the message store", seqNumFromMsg(m))
 		gc.blocksPuller.Remove(seqNumFromMsg(m))
 	}, gc.GetConf().BlockExpirationInterval, nil, nil, func(m interface{}) {
+		gc.logger.Debugf("Removing %s from the message store", seqNumFromMsg(m))
 		gc.blocksPuller.Remove(seqNumFromMsg(m))
 	})
 
@@ -259,7 +265,7 @@ func NewGossipChannel(pkiID common.PKIidType, org api.OrgIdentityType, mcs api.M
 			return false
 		}
 		if err := gc.mcs.VerifyByChannel(chainID, peerIdentity, msg.Signature, msg.Payload); err != nil {
-			gc.logger.Warningf("Peer %v isn't eligible for channel %s : %+v", peerIdentity, string(chainID), errors.WithStack(err))
+			gc.logger.Warningf("Peer %v isn't eligible for channel %s : %+v", peerIdentity, string(chainID), err)
 			return false
 		}
 		return true
@@ -298,8 +304,8 @@ func (gc *gossipChannel) reportMembershipChanges(input ...interface{}) {
 
 // Stop stop the channel operations
 func (gc *gossipChannel) Stop() {
-	gc.stopChan <- struct{}{}
-	gc.membershipTracker.stopChan <- struct{}{}
+	close(gc.stopChan)
+	close(gc.membershipTracker.stopChan)
 	gc.blocksPuller.Stop()
 	gc.stateInfoPublishScheduler.Stop()
 	gc.stateInfoRequestScheduler.Stop()
@@ -314,7 +320,6 @@ func (gc *gossipChannel) periodicalInvocation(fn func(), c <-chan time.Time) {
 		case <-c:
 			fn()
 		case <-gc.stopChan:
-			gc.stopChan <- struct{}{}
 			return
 		}
 	}
@@ -376,7 +381,7 @@ func (gc *gossipChannel) GetPeers() []discovery.NetworkMember {
 func (gc *gossipChannel) requestStateInfo() {
 	req, err := gc.createStateInfoRequest()
 	if err != nil {
-		gc.logger.Warningf("Failed creating SignedGossipMessage: %+v", errors.WithStack(err))
+		gc.logger.Warningf("Failed creating SignedGossipMessage: %+v", err)
 		return
 	}
 	endpoints := filter.SelectPeers(gc.GetConf().PullPeerNum, gc.GetMembership(), gc.IsMemberInChan)
@@ -443,7 +448,7 @@ func (gc *gossipChannel) createBlockPuller() pull.Mediator {
 		for i := range digests {
 			seqNum, err := strconv.ParseUint(string(digests[i]), 10, 64)
 			if err != nil {
-				gc.logger.Warningf("Can't parse digest %s : %+v", digests[i], errors.WithStack(err))
+				gc.logger.Warningf("Can't parse digest %s : %+v", digests[i], err)
 				continue
 			}
 			if seqNum >= height {
@@ -518,8 +523,13 @@ func (gc *gossipChannel) EligibleForChannel(member discovery.NetworkMember) bool
 // AddToMsgStore adds a given GossipMessage to the message store
 func (gc *gossipChannel) AddToMsgStore(msg *protoext.SignedGossipMessage) {
 	if protoext.IsDataMsg(msg.GossipMessage) {
-		gc.blockMsgStore.Add(msg)
-		gc.blocksPuller.Add(msg)
+		gc.Lock()
+		defer gc.Unlock()
+		added := gc.blockMsgStore.Add(msg)
+		if added {
+			gc.logger.Debugf("Adding %v to the block puller", msg)
+			gc.blocksPuller.Add(msg)
+		}
 	}
 
 	if protoext.IsStateInfoMsg(msg.GossipMessage) {
@@ -600,7 +610,13 @@ func (gc *gossipChannel) HandleMessage(msg protoext.ReceivedMessage) {
 				gc.logger.Warning("Failed verifying block", m.GetDataMsg().Payload.SeqNum)
 				return
 			}
+			gc.Lock()
 			added = gc.blockMsgStore.Add(msg.GetGossipMessage())
+			if added {
+				gc.logger.Debugf("Adding %v to the block puller", msg.GetGossipMessage())
+				gc.blocksPuller.Add(msg.GetGossipMessage())
+			}
+			gc.Unlock()
 		} else { // StateInfoMsg verification should be handled in a layer above
 			//  since we don't have access to the id mapper here
 			added = gc.stateInfoMsgStore.Add(msg.GetGossipMessage())
@@ -611,10 +627,6 @@ func (gc *gossipChannel) HandleMessage(msg protoext.ReceivedMessage) {
 			gc.Forward(msg)
 			// DeMultiplex to local subscribers
 			gc.DeMultiplex(m)
-
-			if protoext.IsDataMsg(m.GossipMessage) {
-				gc.blocksPuller.Add(msg.GetGossipMessage())
-			}
 		}
 		return
 	}
@@ -638,11 +650,13 @@ func (gc *gossipChannel) HandleMessage(msg protoext.ReceivedMessage) {
 			// Iterate over the envelopes, and filter out blocks
 			// that we already have in the blockMsgStore, or blocks that
 			// are too far in the past.
+			var msgs []*protoext.SignedGossipMessage
+			var items []*proto.Envelope
 			filteredEnvelopes := []*proto.Envelope{}
 			for _, item := range m.GetDataUpdate().Data {
 				gMsg, err := protoext.EnvelopeToGossipMessage(item)
 				if err != nil {
-					gc.logger.Warningf("Data update contains an invalid message: %+v", errors.WithStack(err))
+					gc.logger.Warningf("Data update contains an invalid message: %+v", err)
 					return
 				}
 				if !bytes.Equal(gMsg.Channel, []byte(gc.chainID)) {
@@ -650,12 +664,21 @@ func (gc *gossipChannel) HandleMessage(msg protoext.ReceivedMessage) {
 					return
 				}
 				// Would this block go into the message store if it was verified?
-				if !gc.blockMsgStore.CheckValid(msg.GetGossipMessage()) {
-					return
+				if !gc.blockMsgStore.CheckValid(gMsg) {
+					continue
 				}
 				if !gc.verifyBlock(gMsg.GossipMessage, msg.GetConnectionInfo().ID) {
 					return
 				}
+				msgs = append(msgs, gMsg)
+				items = append(items, item)
+			}
+
+			gc.Lock()
+			defer gc.Unlock()
+
+			for i, gMsg := range msgs {
+				item := items[i]
 				added := gc.blockMsgStore.Add(gMsg)
 				if !added {
 					// If this block doesn't need to be added, it means it either already
@@ -664,6 +687,7 @@ func (gc *gossipChannel) HandleMessage(msg protoext.ReceivedMessage) {
 				}
 				filteredEnvelopes = append(filteredEnvelopes, item)
 			}
+
 			// Replace the update message with just the blocks that should be processed
 			m.GetDataUpdate().Data = filteredEnvelopes
 		}
@@ -671,6 +695,18 @@ func (gc *gossipChannel) HandleMessage(msg protoext.ReceivedMessage) {
 	}
 
 	if protoext.IsLeadershipMsg(m.GossipMessage) {
+		connInfo := msg.GetConnectionInfo()
+		senderOrg := gc.GetOrgOfPeer(connInfo.ID)
+		if !bytes.Equal(gc.selfOrg, senderOrg) {
+			gc.logger.Warningf("Received leadership message from %s that belongs to a foreign organization %s",
+				connInfo.Endpoint, string(senderOrg))
+			return
+		}
+		msgCreatorOrg := gc.GetOrgOfPeer(m.GetLeadershipMsg().PkiId)
+		if !bytes.Equal(gc.selfOrg, msgCreatorOrg) {
+			gc.logger.Warningf("Received leadership message created by a foreign organization %s", string(msgCreatorOrg))
+			return
+		}
 		// Handling leadership message
 		added := gc.leaderMsgStore.Add(m)
 		if added {
@@ -684,7 +720,7 @@ func (gc *gossipChannel) handleStateInfSnapshot(m *proto.GossipMessage, sender c
 	for _, envelope := range m.GetStateSnapshot().Elements {
 		stateInf, err := protoext.EnvelopeToGossipMessage(envelope)
 		if err != nil {
-			gc.logger.Warningf("Channel %s : StateInfo snapshot contains an invalid message: %+v", chanName, errors.WithStack(err))
+			gc.logger.Warningf("Channel %s : StateInfo snapshot contains an invalid message: %+v", chanName, err)
 			return
 		}
 		if !protoext.IsStateInfoMsg(stateInf.GossipMessage) {
@@ -714,7 +750,7 @@ func (gc *gossipChannel) handleStateInfSnapshot(m *proto.GossipMessage, sender c
 		}
 		err = gc.ValidateStateInfoMessage(stateInf)
 		if err != nil {
-			gc.logger.Warningf("Channel %s: Failed validating state info message: %v sent from %v : %+v", chanName, stateInf, sender, errors.WithStack(err))
+			gc.logger.Warningf("Channel %s: Failed validating state info message: %v sent from %v : %+v", chanName, stateInf, sender, err)
 			return
 		}
 
@@ -742,7 +778,7 @@ func (gc *gossipChannel) verifyBlock(msg *proto.GossipMessage, sender common.PKI
 	rawBlock := payload.Data
 	err := gc.mcs.VerifyBlock(msg.Channel, seqNum, rawBlock)
 	if err != nil {
-		gc.logger.Warningf("Received fabricated block from %v in DataUpdate: %+v", sender, errors.WithStack(err))
+		gc.logger.Warningf("Received fabricated block from %v in DataUpdate: %+v", sender, err)
 		return false
 	}
 	return true
@@ -1061,23 +1097,19 @@ func (mt *membershipTracker) createSetOfPeers(peersToMakeSet []discovery.Network
 }
 
 func (mt *membershipTracker) trackMembershipChanges() {
-	prevSetPeers := make(map[string]struct{})
 	prev := mt.getPeersToTrack()
-	prevSetPeers = mt.createSetOfPeers(prev)
+	prevSetPeers := mt.createSetOfPeers(prev)
 	for {
-		currSetPeers := make(map[string]struct{})
 		//timeout to check changes in peers
 		select {
 		case <-mt.stopChan:
 			return
 		case <-mt.tickerChannel:
-			//get current peers
 			currPeers := mt.getPeersToTrack()
 			mt.metrics.Total.With("channel", string(mt.chainID)).Set(float64(len(currPeers)))
-			currSetPeers = mt.createSetOfPeers(currPeers)
+			currSetPeers := mt.createSetOfPeers(currPeers)
 			mt.checkIfPeersChanged(prev, currPeers, prevSetPeers, currSetPeers)
 			prev = currPeers
-			prevSetPeers = map[string]struct{}{}
 			prevSetPeers = mt.createSetOfPeers(prev)
 		}
 	}

@@ -8,6 +8,7 @@ package ledger
 
 import (
 	"fmt"
+	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric-lib-go/healthz"
@@ -22,17 +23,63 @@ import (
 
 // Initializer encapsulates dependencies for PeerLedgerProvider
 type Initializer struct {
-	StateListeners                []StateListener
-	DeployedChaincodeInfoProvider DeployedChaincodeInfoProvider
-	MembershipInfoProvider        MembershipInfoProvider
-	MetricsProvider               metrics.Provider
-	HealthCheckRegistry           HealthCheckRegistry
-	CollDataProvider              storeapi.Provider
+	StateListeners                  []StateListener
+	DeployedChaincodeInfoProvider   DeployedChaincodeInfoProvider
+	MembershipInfoProvider          MembershipInfoProvider
+	ChaincodeLifecycleEventProvider ChaincodeLifecycleEventProvider
+	MetricsProvider                 metrics.Provider
+	HealthCheckRegistry             HealthCheckRegistry
+	Config                          *Config
+	CollDataProvider                storeapi.Provider
+}
+
+// Config is a structure used to configure a ledger provider.
+type Config struct {
+	// RootFSPath is the top-level directory where ledger files are stored.
+	RootFSPath string
+	// StateDB holds the configuration parameters for the state database.
+	StateDB *StateDB
+	// PrivateData holds the configuration parameters for the private data store.
+	PrivateData *PrivateData
+	// HistoryDB holds the configuration parameters for the transaction history database.
+	HistoryDB *HistoryDB
+}
+
+// State is a structure used to configure the state parameters for the ledger.
+type StateDB struct {
+	// StateDatabase is the of database to use for storing last known state.  The
+	// two supported options are "goleveldb" and "CouchDB".
+	StateDatabase string
+	// LevelDBPath is filesystem path that is used when StateDatabase is set
+	// to "goleveldb".
+	LevelDBPath string
+	// CouchDB is the configuration for CouchDB.  It is used when StateDatabase
+	// is set to "CouchDB".
+	CouchDB *couchdb.Config
+}
+
+// PrivateData is a structure used to configure a private data storage provider.
+type PrivateData struct {
+	// StorePath is the filesystem path used by the private data store.
+	StorePath string
+	// BatchesInterval is the minimum duration (milliseconds) between batches
+	// for converting ineligible missing data entries into eligible entries.
+	BatchesInterval int
+	// MatchBatchSize is the maximum size of batches when converting ineligible
+	// missing data entries into eligible entries.
+	MaxBatchSize int
+	// PurgeInterval is the number of blocks to wait until purging expired
+	// private data entries.
+	PurgeInterval int
+}
+
+// HistoryDB is a structure used to configure the transaction history database.
+type HistoryDB struct {
+	Enabled bool
 }
 
 // PeerLedgerProvider provides handle to ledger instances
 type PeerLedgerProvider interface {
-	Initialize(initializer *Initializer) error
 	// Create creates a new ledger with the given genesis block.
 	// This function guarantees that the creation of ledger and committing the genesis block would an atomic action
 	// The chain id retrieved from the genesis block is treated as a ledger id
@@ -90,12 +137,6 @@ type PeerLedger interface {
 	CommitPvtDataOfOldBlocks(blockPvtData []*BlockPvtData) ([]*PvtdataHashMismatch, error)
 	// GetMissingPvtDataTracker return the MissingPvtDataTracker
 	GetMissingPvtDataTracker() (MissingPvtDataTracker, error)
-}
-
-// ValidatedLedger represents the 'final ledger' after filtering out invalid transactions from PeerLedger.
-// Post-v1
-type ValidatedLedger interface {
-	commonledger.Ledger
 }
 
 // SimpleQueryExecutor encapsulates basic functions
@@ -536,8 +577,43 @@ type HealthCheckRegistry interface {
 	RegisterChecker(string, healthz.HealthChecker) error
 }
 
+// ChaincodeLifecycleEventListener interface enables ledger components (mainly, intended for statedb)
+// to be able to listen to chaincode lifecycle events. 'dbArtifactsTar' represents db specific artifacts
+// (such as index specs) packaged in a tar. Note that this interface is redefined here (in addition to
+// the one defined in ledger/cceventmgmt package). Using the same interface for the new lifecycle path causes
+// a cyclic import dependency. Moreover, eventually the whole package ledger/cceventmgmt is intented to
+// be removed when migration to new lifecycle is mandated.
+type ChaincodeLifecycleEventListener interface {
+	// HandleChaincodeDeploy is invoked when chaincode installed + defined becomes true.
+	// The expected usage are to creates all the necessary statedb structures (such as indexes) and update
+	// service discovery info. This function is invoked immediately before the committing the state changes
+	// that contain chaincode definition or when a chaincode install happens
+	HandleChaincodeDeploy(chaincodeDefinition *ChaincodeDefinition, dbArtifactsTar []byte) error
+	// ChaincodeDeployDone is invoked after the chaincode deployment is finished - `succeeded` indicates
+	// whether the deploy finished successfully
+	ChaincodeDeployDone(succeeded bool)
+}
+
+// ChaincodeDefinition captures the info about chaincode
+type ChaincodeDefinition struct {
+	Name              string
+	Hash              []byte
+	Version           string
+	CollectionConfigs *common.CollectionConfigPackage
+}
+
+func (cdef *ChaincodeDefinition) String() string {
+	return fmt.Sprintf("Name=%s, Version=%s, Hash=%#v", cdef.Name, cdef.Version, cdef.Hash)
+}
+
+type ChaincodeLifecycleEventProvider interface {
+	RegisterListener(channelID string, listener ChaincodeLifecycleEventListener)
+}
+
 //go:generate counterfeiter -o mock/state_listener.go -fake-name StateListener . StateListener
 //go:generate counterfeiter -o mock/query_executor.go -fake-name QueryExecutor . QueryExecutor
+//go:generate counterfeiter -o mock/tx_simulator.go -fake-name TxSimulator . TxSimulator
 //go:generate counterfeiter -o mock/deployed_ccinfo_provider.go -fake-name DeployedChaincodeInfoProvider . DeployedChaincodeInfoProvider
 //go:generate counterfeiter -o mock/membership_info_provider.go -fake-name MembershipInfoProvider . MembershipInfoProvider
 //go:generate counterfeiter -o mock/health_check_registry.go -fake-name HealthCheckRegistry . HealthCheckRegistry
+//go:generate counterfeiter -o mock/cc_event_listener.go -fake-name ChaincodeLifecycleEventListener . ChaincodeLifecycleEventListener

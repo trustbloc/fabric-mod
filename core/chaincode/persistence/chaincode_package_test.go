@@ -10,14 +10,25 @@ import (
 	"io/ioutil"
 
 	"github.com/hyperledger/fabric/core/chaincode/persistence"
+	"github.com/hyperledger/fabric/core/chaincode/persistence/mock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/pkg/errors"
+	tm "github.com/stretchr/testify/mock"
 )
 
 var _ = Describe("ChaincodePackageParser", func() {
 	var (
-		ccpp persistence.ChaincodePackageParser
+		mockMetaProvider *mock.MetadataProvider
+		ccpp             persistence.ChaincodePackageParser
 	)
+
+	BeforeEach(func() {
+		mockMetaProvider = &mock.MetadataProvider{}
+		mockMetaProvider.On("GetDBArtifacts", tm.Anything).Return([]byte("DB artefacts"), nil)
+
+		ccpp.MetadataProvider = mockMetaProvider
+	})
 
 	Describe("ParseChaincodePackage", func() {
 		It("parses a chaincode package", func() {
@@ -27,15 +38,36 @@ var _ = Describe("ChaincodePackageParser", func() {
 			ccPackage, err := ccpp.Parse(data)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ccPackage.Metadata).To(Equal(&persistence.ChaincodePackageMetadata{
-				Type: "Fake-Type",
-				Path: "Fake-Path",
+				Type:  "Fake-Type",
+				Path:  "Fake-Path",
+				Label: "Real-Label",
 			}))
+			Expect(ccPackage.DBArtifacts).To(Equal([]byte("DB artefacts")))
 		})
 
 		Context("when the data is not gzipped", func() {
 			It("fails", func() {
 				_, err := ccpp.Parse([]byte("bad-data"))
 				Expect(err).To(MatchError("error reading as gzip stream: unexpected EOF"))
+			})
+		})
+
+		Context("when the retrieval of the DB metadata fails", func() {
+			BeforeEach(func() {
+				mockMetaProvider = &mock.MetadataProvider{}
+				mockMetaProvider.On("GetDBArtifacts", tm.Anything).Return(nil, errors.New("not good"))
+
+				ccpp.MetadataProvider = mockMetaProvider
+			})
+
+			It("fails", func() {
+				data, err := ioutil.ReadFile("testdata/good-package.tar.gz")
+				Expect(err).NotTo(HaveOccurred())
+
+				ccPackage, err := ccpp.Parse(data)
+				Expect(ccPackage).To(BeNil())
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("error retrieving DB artifacts from code package"))
 			})
 		})
 
@@ -56,6 +88,16 @@ var _ = Describe("ChaincodePackageParser", func() {
 
 				_, err = ccpp.Parse(data)
 				Expect(err).To(MatchError("could not unmarshal Chaincode-Package-Metadata.json as json: invalid character '\\n' in string literal"))
+			})
+		})
+
+		Context("when the label is empty or missing", func() {
+			It("fails", func() {
+				data, err := ioutil.ReadFile("testdata/empty-label.tar.gz")
+				Expect(err).NotTo(HaveOccurred())
+
+				_, err = ccpp.Parse(data)
+				Expect(err.Error()).To(ContainSubstring("empty label in package metadata"))
 			})
 		})
 

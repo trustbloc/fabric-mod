@@ -9,11 +9,12 @@ package idstore
 import (
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/spf13/viper"
 
-	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
+	coreconfig "github.com/hyperledger/fabric/core/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,7 +40,8 @@ func (env *StoreEnv) Cleanup() {
 }
 
 func removeStorePath(t testing.TB) {
-	dbPath := ledgerconfig.GetLedgerProviderPath()
+	tempDir, _ := ioutil.TempDir("", "idstore")
+	dbPath := filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), tempDir)
 	if err := os.RemoveAll(dbPath); err != nil {
 		t.Fatalf("Err: %s", err)
 		t.FailNow()

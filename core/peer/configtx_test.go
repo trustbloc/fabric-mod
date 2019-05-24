@@ -8,7 +8,6 @@ package peer
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"testing"
@@ -32,9 +31,7 @@ import (
 	ordererconfig "github.com/hyperledger/fabric/orderer/common/localconfig"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protoutil"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 var reset func(string)
@@ -56,28 +53,21 @@ func resetExtTestEnv() {
 	reset("testchain")
 }
 
-func setupPeerFS(t *testing.T) (cleanup func()) {
-	tempDir, err := ioutil.TempDir("", "peer-fs")
-	require.NoError(t, err)
-
-	viper.Set("peer.fileSystemPath", tempDir)
-	return func() { os.RemoveAll(tempDir) }
-}
-
 func TestConfigTxCreateLedger(t *testing.T) {
 	helper := &testHelper{t: t}
-	cleanup := setupPeerFS(t)
-	defer cleanup()
 
 	chainid := "testchain1"
-	ledgermgmt.InitializeTestEnvWithInitializer(
+	cleanup, err := ledgermgmt.InitializeTestEnvWithInitializer(
 		&ledgermgmt.Initializer{
 			CustomTxProcessors: ConfigTxProcessors,
 			CollDataProvider:   &mocks.DataProvider{},
 		},
 	)
+	if err != nil {
+		t.Fatalf("Failed to create test environment: %s", err)
+	}
 
-	defer ledgermgmt.CleanupTestEnv()
+	defer cleanup()
 
 	chanConf := helper.sampleChannelConfig(1, true)
 	genesisTx := helper.constructGenesisTx(t, chainid, chanConf)
@@ -92,21 +82,22 @@ func TestConfigTxCreateLedger(t *testing.T) {
 
 func TestConfigTxUpdateChanConfig(t *testing.T) {
 	helper := &testHelper{t: t}
-	cleanup := setupPeerFS(t)
-	defer cleanup()
 	chainid := "testchain1"
 
 	_, _, destroy := xtestutil.SetupExtTestEnv()
 	defer destroy()
 
-	ledgermgmt.InitializeTestEnvWithInitializer(
+	cleanup, err := ledgermgmt.InitializeTestEnvWithInitializer(
 		&ledgermgmt.Initializer{
 			CustomTxProcessors: ConfigTxProcessors,
 			CollDataProvider:   &mocks.DataProvider{},
 		},
 	)
+	if err != nil {
+		t.Fatalf("Failed to create test environment: %s", err)
+	}
 
-	defer ledgermgmt.CleanupTestEnv()
+	defer cleanup()
 
 	chanConf := helper.sampleChannelConfig(1, true)
 	genesisTx := helper.constructGenesisTx(t, chainid, chanConf)
@@ -136,22 +127,22 @@ func TestConfigTxUpdateChanConfig(t *testing.T) {
 }
 
 func TestGenesisBlockCreateLedger(t *testing.T) {
-	cleanup := setupPeerFS(t)
-	defer cleanup()
-
 	b, err := configtxtest.MakeGenesisBlock("testchain")
 	assert.NoError(t, err)
 
 	resetExtTestEnv()
 
-	ledgermgmt.InitializeTestEnvWithInitializer(
+	cleanup, err := ledgermgmt.InitializeTestEnvWithInitializer(
 		&ledgermgmt.Initializer{
 			CustomTxProcessors: ConfigTxProcessors,
 			CollDataProvider:   &mocks.DataProvider{},
 		},
 	)
+	if err != nil {
+		t.Fatalf("Failed to create test environment: %s", err)
+	}
 
-	defer ledgermgmt.CleanupTestEnv()
+	defer cleanup()
 
 	lgr, err := ledgermgmt.CreateLedger(b)
 	assert.NoError(t, err)
@@ -162,14 +153,15 @@ func TestGenesisBlockCreateLedger(t *testing.T) {
 }
 
 func TestCustomTxProcessors(t *testing.T) {
-	cleanup := setupPeerFS(t)
-	defer cleanup()
-
-	ledgermgmt.InitializeExistingTestEnvWithInitializer(&ledgermgmt.Initializer{
+	cleanup, err := ledgermgmt.InitializeExistingTestEnvWithInitializer(&ledgermgmt.Initializer{
 		CustomTxProcessors: ConfigTxProcessors,
 		CollDataProvider:   &mocks.DataProvider{},
 	})
-	defer ledgermgmt.CleanupTestEnv()
+	if err != nil {
+		t.Fatalf("Failed to create test environment: %s", err)
+	}
+
+	defer cleanup()
 
 	processor := customtx.GetProcessor(common.HeaderType_CONFIG)
 	assert.Equal(t, processor, configTxProcessor)

@@ -6,6 +6,13 @@ This tutorial will describe the steps required to use the CouchDB as the state
 database with Hyperledger Fabric. By now, you should be familiar with Fabric
 concepts and have explored some of the samples and tutorials.
 
+.. note:: The Fabric chaincode lifecycle that is being introduced in the v2.0
+          Alpha release does not support using indexes with CouchDB. As a
+          result, this tutorial requires the `previous lifecycle process <https://hyperledger-fabric.readthedocs.io/en/release-1.4/chaincode4noah.html>`_ to
+          install and instantiate a chaincode that includes CouchDB indexes.
+          Download the `release-1.4 version of the Fabric Samples <https://github.com/hyperledger/fabric-samples/tree/release-1.4/>`_ to
+          use this tutorial. For more information, see :ref:`cdb-add-index`.
+
 The tutorial will take you through the following steps:
 
 #. :ref:`cdb-enable-couch`
@@ -247,13 +254,13 @@ deployment by being placed alongside it in the appropriate metadata folder.
 If your chaincode installation and instantiation uses the Hyperledger
 Fabric Node SDK, the JSON index files can be located in any folder as long
 as it conforms to this `directory structure <https://fabric-sdk-node.github.io/tutorial-metadata-chaincode.html>`__.
-During the chaincode installation using the client.installChaincode() API,
+During the chaincode installation using the ``client.installChaincode()`` API,
 include the attribute (``metadataPath``) in the `installation request <https://fabric-sdk-node.github.io/global.html#ChaincodeInstallRequest>`__.
 The value of the metadataPath is a string representing the absolute path to the
 directory structure containing the JSON index file(s).
 
 Alternatively, if you are using the
-:doc:`peer-commands` to install and instantiate the chaincode, then the JSON
+:doc:`commands/peercommand` command to install and instantiate the chaincode, then the JSON
 index files must be located under the path ``META-INF/statedb/couchdb/indexes``
 which is located inside the directory where the chaincode resides.
 
@@ -275,7 +282,15 @@ This sample includes one index named indexOwnerDoc:
 Start the network
 -----------------
 
- :guilabel:`Try it yourself`
+.. note:: The following tutorial needs to be run using the
+          `release-1.4 version of the Fabric Samples <https://github.com/hyperledger/fabric-samples/tree/release-1.4/>`__.
+          If you have already downloaded release-2.0 of the Fabric Samples, you
+          can use the `git checkout` to download `release-1.4`. Navigate to the
+          `fabric-samples` directory on your local machine. Then run the command
+          `git checkout v1.4.0`.
+
+
+:guilabel:`Try it yourself`
 
  Before installing and instantiating the marbles chaincode, we need to start
  up the BYFN network. For the sake of this tutorial, we want to operate
@@ -312,7 +327,7 @@ channel. In the previous section, we demonstrated how to package the chaincode
 so they should be ready for deployment.
 
 Chaincode is installed onto a peer and then instantiated onto the channel using
-:doc:`peer-commands`.
+:doc:`commands/peercommand`.
 
 
 1. Use the `peer chaincode install <http://hyperledger-fabric.readthedocs.io/en/master/commands/peerchaincode.html?%20chaincode%20instantiate#peer-chaincode-install>`__ command to install the Marbles chaincode on a peer.
@@ -459,6 +474,7 @@ by "tom" using the ``queryMarbles`` function.
 Delving into the query command above, there are three arguments of interest:
 
 *  ``queryMarbles``
+
   Name of the function in the Marbles chaincode. Notice a `shim <https://godoc.org/github.com/hyperledger/fabric/core/chaincode/shim>`__
   ``shim.ChaincodeStubInterface`` is used to access and modify the ledger. The
   ``getQueryResultForQueryString()`` passes the queryString to the shim API ``getQueryResult()``.
@@ -483,11 +499,13 @@ Delving into the query command above, there are three arguments of interest:
   }
 
 *  ``{"selector":{"docType":"marble","owner":"tom"}``
+
   This is an example of an **ad hoc selector** string which finds all documents
   of type ``marble`` where the ``owner`` attribute has a value of ``tom``.
 
 
 *  ``"use_index":["_design/indexOwnerDoc", "indexOwner"]``
+
   Specifies both the design doc name  ``indexOwnerDoc`` and index name
   ``indexOwner``. In this example the selector query explicitly includes the
   index name, specified by using the ``use_index`` keyword. Recalling the
@@ -516,7 +534,7 @@ of data or blocks on your network.
 It is also important to plan the indexes you install with your chaincode. You
 should install only a few indexes per chaincode that support most of your queries.
 Adding too many indexes, or using an excessive number of fields in an index, will
-degrade the performance of your network. This is because the indexes are updated 
+degrade the performance of your network. This is because the indexes are updated
 after each block is committed. The more indexes need to be updated through
 "index warming", the longer it will take for transactions to complete.
 
@@ -616,7 +634,7 @@ You can use block or chaincode events from your application to write transaction
 data to an off-chain database or analytics engine. For each block received, the block
 listener application would iterate through the block transactions and build a data
 store using the key/value writes from each valid transaction's ``rwset``. The
-:doc:`peer_event_services` provide replayable events to ensure the integrity of 
+:doc:`peer_event_services` provide replayable events to ensure the integrity of
 downstream data stores.
 
 .. _cdb-pagination:
@@ -665,10 +683,11 @@ specifies the number of records to return per query.  The ``bookmark`` is an
 a unique bookmark.)
 
 *  ``queryMarblesWithPagination``
+
   Name of the function in the Marbles chaincode. Notice a `shim <https://godoc.org/github.com/hyperledger/fabric/core/chaincode/shim>`__
   ``shim.ChaincodeStubInterface`` is used to access and modify the ledger. The
   ``getQueryResultForQueryStringWithPagination()`` passes the queryString along
-    with the pagesize and bookmark to the shim API ``GetQueryResultWithPagination()``.
+  with the pagesize and bookmark to the shim API ``GetQueryResultWithPagination()``.
 
 .. code:: bash
 

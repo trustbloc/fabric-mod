@@ -28,8 +28,7 @@ import (
 )
 
 // Platform for chaincodes written in Go
-type Platform struct {
-}
+type Platform struct{}
 
 // Returns whether the given file or directory exists or not
 func pathExists(path string) (bool, error) {
@@ -88,12 +87,12 @@ func filter(vs []string, f func(string) bool) []string {
 }
 
 // Name returns the name of this platform
-func (goPlatform *Platform) Name() string {
+func (p *Platform) Name() string {
 	return pb.ChaincodeSpec_GOLANG.String()
 }
 
 // ValidateSpec validates Go chaincodes
-func (goPlatform *Platform) ValidatePath(rawPath string) error {
+func (p *Platform) ValidatePath(rawPath string) error {
 	path, err := url.Parse(rawPath)
 	if err != nil || path == nil {
 		return fmt.Errorf("invalid path: %s", err)
@@ -119,13 +118,7 @@ func (goPlatform *Platform) ValidatePath(rawPath string) error {
 	return nil
 }
 
-func (goPlatform *Platform) ValidateCodePackage(code []byte) error {
-
-	if len(code) == 0 {
-		// Nothing to validate if no CodePackage was included
-		return nil
-	}
-
+func (p *Platform) ValidateCodePackage(code []byte) error {
 	// FAB-2122: Scan the provided tarball to ensure it only contains source-code under
 	// /src/$packagename.  We do not want to allow something like ./pkg/shady.a to be installed under
 	// $GOPATH within the container.  Note, we do not look deeper than the path at this time
@@ -173,6 +166,20 @@ func (goPlatform *Platform) ValidateCodePackage(code []byte) error {
 	}
 
 	return nil
+}
+
+type Sources []SourceDescriptor
+
+func (s Sources) Len() int {
+	return len(s)
+}
+
+func (s Sources) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+func (s Sources) Less(i, j int) bool {
+	return strings.Compare(s[i].Name, s[j].Name) < 0
 }
 
 // Vendor any packages that are not already within our chaincode's primary package
@@ -244,7 +251,7 @@ func vendorDependencies(pkg string, files Sources) {
 }
 
 // Generates a deployment payload for GOLANG as a series of src/$pkg entries in .tar.gz format
-func (goPlatform *Platform) GetDeploymentPayload(path string) ([]byte, error) {
+func (p *Platform) GetDeploymentPayload(path string) ([]byte, error) {
 
 	var err error
 
@@ -365,7 +372,6 @@ func (goPlatform *Platform) GetDeploymentPayload(path string) ([]byte, error) {
 	// from the filtered list
 	// --------------------------------------------------------------------------------------
 	for dep := range deps {
-
 		logger.Debugf("processing dep: %s", dep)
 
 		// Each dependency should either be in our GOPATH or GOROOT.  We are not interested in packaging
@@ -422,15 +428,10 @@ func (goPlatform *Platform) GetDeploymentPayload(path string) ([]byte, error) {
 	tw := tar.NewWriter(gw)
 
 	for _, file := range files {
-
-		// file.Path represents os localpath
-		// file.Name represents tar packagepath
-
 		// If the file is metadata rather than golang code, remove the leading go code path, for example:
 		// original file.Name:  src/github.com/hyperledger/fabric/examples/chaincode/go/marbles02/META-INF/statedb/couchdb/indexes/indexOwner.json
 		// updated file.Name:   META-INF/statedb/couchdb/indexes/indexOwner.json
 		if file.IsMetadata {
-
 			file.Name, err = filepath.Rel(filepath.Join("src", code.Pkg), file.Name)
 			if err != nil {
 				return nil, fmt.Errorf("This error was caused by bad packaging of the metadata.  The file [%s] is marked as MetaFile, however not located under META-INF   Error:[%s]", file.Name, err)
@@ -476,16 +477,12 @@ func (goPlatform *Platform) GetDeploymentPayload(path string) ([]byte, error) {
 	return payload.Bytes(), nil
 }
 
-func (goPlatform *Platform) GenerateDockerfile() (string, error) {
-
+func (p *Platform) GenerateDockerfile() (string, error) {
 	var buf []string
-
-	buf = append(buf, "FROM "+cutil.GetDockerfileFromConfig("chaincode.golang.runtime"))
+	buf = append(buf, "FROM "+util.GetDockerfileFromConfig("chaincode.golang.runtime"))
 	buf = append(buf, "ADD binpackage.tar /usr/local/bin")
 
-	dockerFileContents := strings.Join(buf, "\n")
-
-	return dockerFileContents, nil
+	return strings.Join(buf, "\n"), nil
 }
 
 const staticLDFlagsOpts = "-ldflags \"-linkmode external -extldflags '-static'\""
@@ -498,31 +495,20 @@ func getLDFlagsOpts() string {
 	return staticLDFlagsOpts
 }
 
-func (goPlatform *Platform) GenerateDockerBuild(path string, code []byte, tw *tar.Writer) error {
+func (p *Platform) DockerBuildOptions(path string) (util.DockerBuildOptions, error) {
 	pkgname, err := decodeUrl(path)
 	if err != nil {
-		return fmt.Errorf("could not decode url: %s", err)
+		return util.DockerBuildOptions{}, fmt.Errorf("could not decode url: %s", err)
 	}
 
 	ldflagsOpt := getLDFlagsOpts()
-	logger.Infof("building chaincode with ldflagsOpt: '%s'", ldflagsOpt)
-
-	codepackage := bytes.NewReader(code)
-	binpackage := bytes.NewBuffer(nil)
-	err = util.DockerBuild(util.DockerBuildOptions{
-		Cmd:          fmt.Sprintf("GOPATH=/chaincode/input:$GOPATH go build  %s -o /chaincode/output/chaincode %s", ldflagsOpt, pkgname),
-		InputStream:  codepackage,
-		OutputStream: binpackage,
-	})
-	if err != nil {
-		return err
-	}
-
-	return cutil.WriteBytesToPackage("binpackage.tar", binpackage.Bytes(), tw)
+	return util.DockerBuildOptions{
+		Cmd: fmt.Sprintf("GOPATH=/chaincode/input:$GOPATH go build  %s -o /chaincode/output/chaincode %s", ldflagsOpt, pkgname),
+	}, nil
 }
 
 // GetMetadataProvider fetches metadata provider given deployment spec
-func (goPlatform *Platform) GetMetadataAsTarEntries(code []byte) ([]byte, error) {
+func (p *Platform) GetMetadataAsTarEntries(code []byte) ([]byte, error) {
 	metadataProvider := ccmetadata.TargzMetadataProvider{Code: code}
 	return metadataProvider.GetMetadataAsTarEntries()
 }

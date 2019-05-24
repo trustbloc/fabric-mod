@@ -22,7 +22,6 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/statecouchdb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/stateleveldb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
-	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/pkg/errors"
 )
@@ -33,6 +32,7 @@ const (
 	nsJoiner       = "$$"
 	pvtDataPrefix  = "p"
 	hashDataPrefix = "h"
+	couchDB        = "CouchDB"
 )
 
 // CommonStorageDBProvider implements interface DBProvider
@@ -43,15 +43,20 @@ type CommonStorageDBProvider struct {
 }
 
 // NewCommonStorageDBProvider constructs an instance of DBProvider
-func NewCommonStorageDBProvider(bookkeeperProvider bookkeeping.Provider, metricsProvider metrics.Provider, healthCheckRegistry ledger.HealthCheckRegistry) (DBProvider, error) {
+func NewCommonStorageDBProvider(
+	bookkeeperProvider bookkeeping.Provider,
+	metricsProvider metrics.Provider,
+	healthCheckRegistry ledger.HealthCheckRegistry,
+	stateDBConf *ledger.StateDB,
+) (DBProvider, error) {
 	var vdbProvider statedb.VersionedDBProvider
 	var err error
-	if ledgerconfig.IsCouchDBEnabled() {
-		if vdbProvider, err = statecouchdb.NewVersionedDBProvider(metricsProvider); err != nil {
+	if stateDBConf != nil && stateDBConf.StateDatabase == couchDB {
+		if vdbProvider, err = statecouchdb.NewVersionedDBProvider(stateDBConf.CouchDB, metricsProvider); err != nil {
 			return nil, err
 		}
 	} else {
-		vdbProvider = stateleveldb.NewVersionedDBProvider()
+		vdbProvider = stateleveldb.NewVersionedDBProvider(stateDBConf.LevelDBPath)
 	}
 
 	dbProvider := &CommonStorageDBProvider{privacyenabledstate.NewVersionedDBProvider(vdbProvider), healthCheckRegistry, bookkeeperProvider}

@@ -17,6 +17,7 @@ import (
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/discovery"
+	cb "github.com/hyperledger/fabric/protos/common"
 	discoveryprotos "github.com/hyperledger/fabric/protos/discovery"
 	"github.com/hyperledger/fabric/protos/gossip"
 	"github.com/hyperledger/fabric/protos/msp"
@@ -254,7 +255,7 @@ func TestPeersForEndorsement(t *testing.T) {
 		}, extractPeers(desc))
 	})
 
-	t.Run("Chaincode2Chaincode", func(t *testing.T) {
+	t.Run("Chaincode2Chaincode I", func(t *testing.T) {
 		// Scenario IX: A chaincode-to-chaincode query is made.
 		// Total organizations are 0, 2, 4, 6, 10, 12
 		// and the endorsement policies of the chaincodes are as follows:
@@ -318,6 +319,67 @@ func TestPeersForEndorsement(t *testing.T) {
 			peerIdentityString("p6"):  {},
 			peerIdentityString("p10"): {},
 			peerIdentityString("p12"): {},
+		}, extractPeers(desc))
+	})
+
+	t.Run("Chaincode2Chaincode II", func(t *testing.T) {
+		// Scenario X: A chaincode-to-chaincode query is made.
+		// and the endorsement policies of the chaincodes are as follows:
+		// cc1: OR(0, 1)
+		// cc2: AND(0, 1)
+		// Therefore, the result should be: (0, 1)
+
+		cc1 := "cc1"
+		cc2 := "cc2"
+		chanPeers := peerSet{
+			newPeer(0).withChaincode(cc1, "1.0").withChaincode(cc2, "1.0"),
+			newPeer(1).withChaincode(cc1, "1.0").withChaincode(cc2, "1.0"),
+		}.toMembers()
+
+		alivePeers := peerSet{
+			newPeer(0),
+			newPeer(1),
+		}.toMembers()
+
+		g := &gossipMock{}
+		g.On("Peers").Return(alivePeers)
+		g.On("IdentityInfo").Return(identities)
+		g.On("PeersOfChannel").Return(chanPeers).Once()
+
+		mf.On("Metadata").Return(&chaincode.Metadata{
+			Name: "cc1", Version: "1.0",
+		})
+		mf.On("Metadata").Return(&chaincode.Metadata{
+			Name: "cc2", Version: "1.0",
+		})
+
+		pb := principalBuilder{}
+		cc1policy := pb.newSet().addPrincipal(peerRole("p0")).
+			newSet().addPrincipal(peerRole("p1")).buildPolicy()
+		pf.On("PolicyByChaincode", "cc1").Return(cc1policy).Once()
+
+		cc2policy := pb.newSet().addPrincipal(peerRole("p0")).
+			addPrincipal(peerRole("p1")).buildPolicy()
+		pf.On("PolicyByChaincode", "cc2").Return(cc2policy).Once()
+
+		analyzer := NewEndorsementAnalyzer(g, pf, &principalEvaluatorMock{}, mf)
+		desc, err := analyzer.PeersForEndorsement(channel, &discoveryprotos.ChaincodeInterest{
+			Chaincodes: []*discoveryprotos.ChaincodeCall{
+				{
+					Name: "cc1",
+				},
+				{
+					Name: "cc2",
+				},
+			},
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, desc)
+		assert.Len(t, desc.Layouts, 1)
+		assert.Len(t, desc.Layouts[0].QuantitiesByGroup, 2)
+		assert.Equal(t, map[string]struct{}{
+			peerIdentityString("p0"): {},
+			peerIdentityString("p1"): {},
 		}, extractPeers(desc))
 	})
 }
@@ -506,7 +568,7 @@ func TestLoadMetadataAndFiltersInvalidCollectionData(t *testing.T) {
 	mdf := &metadataFetcher{}
 	mdf.On("Metadata").Return(&chaincode.Metadata{
 		Name:              "mycc",
-		CollectionsConfig: []byte{1, 2, 3},
+		CollectionsConfig: &cb.CollectionConfigPackage{},
 		Policy:            []byte{1, 2, 3},
 	})
 
@@ -518,7 +580,7 @@ func TestLoadMetadataAndFiltersInvalidCollectionData(t *testing.T) {
 		interest:         interest,
 	})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid collection bytes")
+	assert.Contains(t, err.Error(), "collection col1 doesn't exist in collection config for chaincode mycc")
 }
 
 type peerSet []*peerInfo

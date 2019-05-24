@@ -8,14 +8,17 @@ package lifecycle
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 
+	"github.com/hyperledger/fabric/common/chaincode"
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/chaincode/persistence"
 	"github.com/hyperledger/fabric/core/ledger"
 	lb "github.com/hyperledger/fabric/protos/peer/lifecycle"
 	"github.com/hyperledger/fabric/protoutil"
 
+	ccpersistence "github.com/hyperledger/fabric/core/chaincode/persistence/intf"
 	"github.com/pkg/errors"
 )
 
@@ -26,9 +29,10 @@ type LocalChaincodeInfo struct {
 }
 
 type ChaincodeInstallInfo struct {
-	Hash []byte
-	Type string
-	Path string
+	PackageID ccpersistence.PackageID
+	Type      string
+	Path      string
+	Label     string
 }
 
 type CachedChaincodeDefinition struct {
@@ -52,6 +56,13 @@ type ChannelCache struct {
 	InterestingHashes map[string]string
 }
 
+// MetadataHandler is the interface through which the cache drives
+// metadata updates for listeners such as gossip and service discovery
+type MetadataHandler interface {
+	InitializeMetadata(channel string, chaincodes chaincode.MetadataSet)
+	UpdateMetadata(channel string, chaincodes chaincode.MetadataSet)
+}
+
 type Cache struct {
 	definedChaincodes map[string]*ChannelCache
 	Resources         *Resources
@@ -69,6 +80,8 @@ type Cache struct {
 	// encoded hash (yes, the hash of the hash), to a set of channels, to a set of chaincode
 	// definitions which reference this local installed chaincode hash.
 	localChaincodes map[string]*LocalChaincode
+	eventBroker     *EventBroker
+	MetadataHandler MetadataHandler
 }
 
 type LocalChaincode struct {
@@ -76,12 +89,14 @@ type LocalChaincode struct {
 	References map[string]map[string]*CachedChaincodeDefinition
 }
 
-func NewCache(resources *Resources, myOrgMSPID string) *Cache {
+func NewCache(resources *Resources, myOrgMSPID string, metadataManager MetadataHandler) *Cache {
 	return &Cache{
 		definedChaincodes: map[string]*ChannelCache{},
 		localChaincodes:   map[string]*LocalChaincode{},
 		Resources:         resources,
 		MyOrgMSPID:        myOrgMSPID,
+		eventBroker:       NewEventBroker(resources.ChaincodeStore, resources.PackageParser),
+		MetadataHandler:   metadataManager,
 	}
 }
 
@@ -98,15 +113,15 @@ func (c *Cache) InitializeLocalChaincodes() error {
 	}
 
 	for _, ccPackage := range ccPackages {
-		ccPackageBytes, _, err := c.Resources.ChaincodeStore.Load(ccPackage.Id)
+		ccPackageBytes, err := c.Resources.ChaincodeStore.Load(ccPackage.PackageID)
 		if err != nil {
-			return errors.WithMessage(err, fmt.Sprintf("could not load chaincode with hash '%x'", ccPackage.Id))
+			return errors.WithMessagef(err, "could not load chaincode with pakcage ID '%s'", ccPackage.PackageID.String())
 		}
 		parsedCCPackage, err := c.Resources.PackageParser.Parse(ccPackageBytes)
 		if err != nil {
-			return errors.WithMessage(err, fmt.Sprintf("could not parse chaincode package with hash '%x'", ccPackage.Id))
+			return errors.WithMessagef(err, "could not parse chaincode with pakcage ID '%s'", ccPackage.PackageID.String())
 		}
-		c.handleChaincodeInstalledWhileLocked(parsedCCPackage.Metadata, ccPackage.Id)
+		c.handleChaincodeInstalledWhileLocked(true, parsedCCPackage.Metadata, ccPackage.PackageID)
 	}
 
 	logger.Infof("Initialized lifecycle cache with %d already installed chaincodes", len(c.localChaincodes))
@@ -159,21 +174,21 @@ func (c *Cache) Initialize(channelID string, qe ledger.SimpleQueryExecutor) erro
 		}
 	}
 
-	return c.update(channelID, dirtyChaincodes, qe)
+	return c.update(true, channelID, dirtyChaincodes, qe)
 }
 
 // HandleChaincodeInstalled should be invoked whenever a new chaincode is installed
-func (c *Cache) HandleChaincodeInstalled(md *persistence.ChaincodePackageMetadata, hash []byte) {
+func (c *Cache) HandleChaincodeInstalled(md *persistence.ChaincodePackageMetadata, packageID ccpersistence.PackageID) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	c.handleChaincodeInstalledWhileLocked(md, hash)
+	c.handleChaincodeInstalledWhileLocked(false, md, packageID)
 }
 
-func (c *Cache) handleChaincodeInstalledWhileLocked(md *persistence.ChaincodePackageMetadata, hash []byte) {
+func (c *Cache) handleChaincodeInstalledWhileLocked(initializing bool, md *persistence.ChaincodePackageMetadata, packageID ccpersistence.PackageID) {
 	// it would be nice to get this value from the serialization package, but it was not obvious
 	// how to expose this in a nice way, so we manually compute it.
 	encodedCCHash := protoutil.MarshalOrPanic(&lb.StateData{
-		Type: &lb.StateData_Bytes{Bytes: hash},
+		Type: &lb.StateData_String_{String_: packageID.String()},
 	})
 	hashOfCCHash := string(util.ComputeSHA256(encodedCCHash))
 	localChaincode, ok := c.localChaincodes[hashOfCCHash]
@@ -184,15 +199,21 @@ func (c *Cache) handleChaincodeInstalledWhileLocked(md *persistence.ChaincodePac
 		c.localChaincodes[hashOfCCHash] = localChaincode
 	}
 	localChaincode.Info = &ChaincodeInstallInfo{
-		Hash: hash,
-		Type: md.Type,
-		Path: md.Path,
+		PackageID: packageID,
+		Type:      md.Type,
+		Path:      md.Path,
+		Label:     md.Label,
 	}
 	for channelID, channelCache := range localChaincode.References {
 		for chaincodeName, cachedChaincode := range channelCache {
 			cachedChaincode.InstallInfo = localChaincode.Info
-			logger.Infof("Installed chaincode with hash %x now available on channel %s for chaincode definition %s:%s", hash, channelID, chaincodeName, cachedChaincode.Definition.EndorsementInfo.Version)
+			logger.Infof("Installed chaincode with package ID '%s' now available on channel %s for chaincode definition %s:%s", packageID, channelID, chaincodeName, cachedChaincode.Definition.EndorsementInfo.Version)
 		}
+	}
+
+	if !initializing {
+		c.eventBroker.ProcessInstallEvent(localChaincode)
+		c.handleMetadataUpdates(localChaincode)
 	}
 }
 
@@ -243,7 +264,7 @@ func (c *Cache) HandleStateUpdates(trigger *ledger.StateUpdateTrigger) error {
 		}
 	}
 
-	err := c.update(channelID, dirtyChaincodes, trigger.PostCommitQueryExecutor)
+	err := c.update(false, channelID, dirtyChaincodes, trigger.PostCommitQueryExecutor)
 	if err != nil {
 		return errors.WithMessage(err, "error updating cache")
 	}
@@ -267,9 +288,11 @@ func (c *Cache) StateCommitDone(channelName string) {
 	// potential inconsistenty between the cache and the world state which the callers
 	// must detect and cope with as necessary.  Note, the cache will always be _at least_
 	// as current as the committed state.
+	c.eventBroker.ApproveOrDefineCommitted(channelName)
 }
 
 // ChaincodeInfo returns the chaincode definition and its install info.
+// An error is returned only if either the channel or the chaincode do not exist.
 func (c *Cache) ChaincodeInfo(channelID, name string) (*LocalChaincodeInfo, error) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
@@ -291,7 +314,7 @@ func (c *Cache) ChaincodeInfo(channelID, name string) (*LocalChaincodeInfo, erro
 }
 
 // update should only be called with the write lock already held
-func (c *Cache) update(channelID string, dirtyChaincodes map[string]struct{}, qe ledger.SimpleQueryExecutor) error {
+func (c *Cache) update(initializing bool, channelID string, dirtyChaincodes map[string]struct{}, qe ledger.SimpleQueryExecutor) error {
 	channelCache, ok := c.definedChaincodes[channelID]
 	if !ok {
 		channelCache = &ChannelCache{
@@ -326,7 +349,7 @@ func (c *Cache) update(channelID string, dirtyChaincodes map[string]struct{}, qe
 
 		exists, chaincodeDefinition, err := c.Resources.ChaincodeDefinitionIfDefined(name, publicState)
 		if err != nil {
-			return errors.WithMessage(err, fmt.Sprintf("could not get chaincode definition for '%s' on channel '%s'", name, channelID))
+			return errors.WithMessagef(err, "could not get chaincode definition for '%s' on channel '%s'", name, channelID)
 		}
 
 		if !exists {
@@ -346,6 +369,7 @@ func (c *Cache) update(channelID string, dirtyChaincodes map[string]struct{}, qe
 			string(util.ComputeSHA256([]byte(FieldKey(NamespacesName, privateName, "EndorsementInfo")))),
 			string(util.ComputeSHA256([]byte(FieldKey(NamespacesName, privateName, "ValidationInfo")))),
 			string(util.ComputeSHA256([]byte(FieldKey(NamespacesName, privateName, "Collections")))),
+			string(util.ComputeSHA256([]byte(FieldKey(ChaincodeSourcesName, privateName, "PackageID")))),
 		}
 
 		for _, hash := range cachedChaincode.Hashes {
@@ -355,7 +379,7 @@ func (c *Cache) update(channelID string, dirtyChaincodes map[string]struct{}, qe
 		ok, err = c.Resources.Serializer.IsSerialized(NamespacesName, privateName, chaincodeDefinition.Parameters(), orgState)
 
 		if err != nil {
-			return errors.WithMessage(err, fmt.Sprintf("could not check opaque org state for '%s' on channel '%s'", name, channelID))
+			return errors.WithMessagef(err, "could not check opaque org state for '%s' on channel '%s'", name, channelID)
 		}
 		if !ok {
 			logger.Debugf("Channel %s for chaincode definition %s:%s does not have our org's approval", channelID, name, chaincodeDefinition.EndorsementInfo.Version)
@@ -366,7 +390,7 @@ func (c *Cache) update(channelID string, dirtyChaincodes map[string]struct{}, qe
 
 		isLocalPackage, err := c.Resources.Serializer.IsMetadataSerialized(ChaincodeSourcesName, privateName, &ChaincodeLocalPackage{}, orgState)
 		if err != nil {
-			return errors.WithMessage(err, fmt.Sprintf("could not check opaque org state for chaincode source for '%s' on channel '%s'", name, channelID))
+			return errors.WithMessagef(err, "could not check opaque org state for chaincode source for '%s' on channel '%s'", name, channelID)
 		}
 
 		if !isLocalPackage {
@@ -374,10 +398,10 @@ func (c *Cache) update(channelID string, dirtyChaincodes map[string]struct{}, qe
 			continue
 		}
 
-		hashKey := FieldKey(ChaincodeSourcesName, privateName, "Hash")
+		hashKey := FieldKey(ChaincodeSourcesName, privateName, "PackageID")
 		hashOfCCHash, err := orgState.GetStateHash(hashKey)
 		if err != nil {
-			return errors.WithMessage(err, fmt.Sprintf("could not check opaque org state for chaincode source hash for '%s' on channel '%s'", name, channelID))
+			return errors.WithMessagef(err, "could not check opaque org state for chaincode source hash for '%s' on channel '%s'", name, channelID)
 		}
 
 		localChaincode, ok := c.localChaincodes[string(hashOfCCHash)]
@@ -390,7 +414,7 @@ func (c *Cache) update(channelID string, dirtyChaincodes map[string]struct{}, qe
 
 		cachedChaincode.InstallInfo = localChaincode.Info
 		if localChaincode.Info != nil {
-			logger.Infof("Chaincode with hash %x now available on channel %s for chaincode definition %s:%s", localChaincode.Info.Hash, channelID, name, cachedChaincode.Definition.EndorsementInfo.Version)
+			logger.Infof("Chaincode with package ID '%s' now available on channel %s for chaincode definition %s:%s", localChaincode.Info.PackageID, channelID, name, cachedChaincode.Definition.EndorsementInfo.Version)
 		} else {
 			logger.Debugf("Chaincode definition for chaincode '%s' on channel '%s' is approved, but not installed", name, channelID)
 		}
@@ -402,7 +426,79 @@ func (c *Cache) update(channelID string, dirtyChaincodes map[string]struct{}, qe
 		}
 
 		channelReferences[name] = cachedChaincode
+		if !initializing {
+			c.eventBroker.ProcessApproveOrDefineEvent(channelID, name, cachedChaincode)
+		}
+	}
+
+	if !initializing {
+		c.handleMetadataUpdatesForChannel(channelID)
 	}
 
 	return nil
+}
+
+// RegisterListener registers an event listener for recieving an event when a chaincode becomes invokable
+func (c *Cache) RegisterListener(channelID string, listener ledger.ChaincodeLifecycleEventListener) {
+	c.eventBroker.RegisterListener(channelID, listener)
+}
+
+func (c *Cache) InitializeMetadata(channel string) {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+
+	ms, err := c.retrieveChaincodesMetadataSetWhileLocked(channel)
+	if err != nil {
+		logger.Warningf("no metadata found on channel '%s', err %s", channel, err)
+		return
+	}
+
+	c.MetadataHandler.InitializeMetadata(channel, ms)
+}
+
+func (c *Cache) retrieveChaincodesMetadataSetWhileLocked(channelID string) (chaincode.MetadataSet, error) {
+	channelChaincodes, ok := c.definedChaincodes[channelID]
+	if !ok {
+		return nil, errors.Errorf("unknown channel '%s'", channelID)
+	}
+
+	keys := make([]string, 0, len(channelChaincodes.Chaincodes))
+	for name := range channelChaincodes.Chaincodes {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+
+	metadataSet := chaincode.MetadataSet{}
+	for _, name := range keys {
+		def := channelChaincodes.Chaincodes[name]
+
+		metadataSet = append(metadataSet,
+			chaincode.Metadata{
+				Name:              name,
+				Version:           def.Definition.EndorsementInfo.Version,
+				Policy:            def.Definition.ValidationInfo.ValidationParameter,
+				CollectionsConfig: def.Definition.Collections,
+				Approved:          def.Approved,
+				Installed:         def.InstallInfo != nil,
+			},
+		)
+	}
+
+	return metadataSet, nil
+}
+
+func (c *Cache) handleMetadataUpdates(localChaincode *LocalChaincode) {
+	for channelID := range localChaincode.References {
+		c.handleMetadataUpdatesForChannel(channelID)
+	}
+}
+
+func (c *Cache) handleMetadataUpdatesForChannel(channelID string) {
+	ms, err := c.retrieveChaincodesMetadataSetWhileLocked(channelID)
+	if err != nil {
+		logger.Warningf("no metadata found on channel '%s': %s", channelID, err)
+		return
+	}
+
+	c.MetadataHandler.UpdateMetadata(channelID, ms)
 }

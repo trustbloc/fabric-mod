@@ -1130,66 +1130,6 @@ func TestNewGossipStateProvider_SendingManyMessages(t *testing.T) {
 	}, 60*time.Second)
 }
 
-func TestGossipStateProvider_TestStateMessages(t *testing.T) {
-	t.Parallel()
-	bootPeer, bootPort := newBootNode(0, newCommitter(), noopPeerIdentityAcceptor)
-	defer bootPeer.shutdown()
-
-	peer := newPeerNode(1, newCommitter(), noopPeerIdentityAcceptor, bootPort)
-	defer peer.shutdown()
-
-	naiveStateMsgPredicate := func(message interface{}) bool {
-		return protoext.IsRemoteStateMessage(message.(protoext.ReceivedMessage).GetGossipMessage().GossipMessage)
-	}
-
-	_, bootCh := bootPeer.g.Accept(naiveStateMsgPredicate, true)
-	_, peerCh := peer.g.Accept(naiveStateMsgPredicate, true)
-
-	wg := sync.WaitGroup{}
-	wg.Add(2)
-
-	go func() {
-		msg := <-bootCh
-		t.Log("Bootstrap node got message, ", msg)
-		assert.True(t, msg.GetGossipMessage().GetStateRequest() != nil)
-		msg.Respond(&proto.GossipMessage{
-			Content: &proto.GossipMessage_StateResponse{StateResponse: &proto.RemoteStateResponse{Payloads: nil}},
-		})
-		wg.Done()
-	}()
-
-	go func() {
-		msg, ok := <-peerCh
-		if !ok {
-			t.Log("Peer receiving channel was closed before getting response from bootstrap peer")
-			t.FailNow()
-		}
-		t.Log("Peer node got an answer, ", msg)
-		if msg.GetGossipMessage() == nil {
-			t.Log("Peer got nil GossipMessage")
-			if msg.GetConnectionInfo() != nil {
-				t.Logf("Connection info %+v", msg.GetConnectionInfo())
-			}
-			t.FailNow()
-		}
-		assert.True(t, msg.GetGossipMessage().GetStateResponse() != nil)
-		wg.Done()
-	}()
-
-	chainID := common.ChainID(util.GetTestChainID())
-	waitUntilTrueOrTimeout(t, func() bool {
-		return len(peer.g.PeersOfChannel(chainID)) == 1 && len(bootPeer.g.PeersOfChannel(chainID)) == 1
-	}, 30*time.Second)
-
-	t.Log("Sending gossip message with remote state request")
-	peer.g.Send(&proto.GossipMessage{
-		Content: &proto.GossipMessage_StateRequest{StateRequest: &proto.RemoteStateRequest{StartSeqNum: 0, EndSeqNum: 1}},
-	}, &comm.RemotePeer{Endpoint: peer.g.PeersOfChannel(chainID)[0].Endpoint, PKIID: peer.g.PeersOfChannel(chainID)[0].PKIid})
-	t.Log("Waiting until peers exchange messages")
-
-	wg.Wait()
-}
-
 // Start one bootstrap peer and submit defAntiEntropyBatchSize + 5 messages into
 // local ledger, next spawning a new peer waiting for anti-entropy procedure to
 // complete missing blocks. Since state transfer messages now batched, it is expected
@@ -1692,21 +1632,21 @@ func TestStateRequestValidator(t *testing.T) {
 	err := validator.validate(&proto.RemoteStateRequest{
 		StartSeqNum: 10,
 		EndSeqNum:   5,
-	})
+	}, defAntiEntropyBatchSize)
 	assert.Contains(t, err.Error(), "Invalid sequence interval [10...5).")
 	assert.Error(t, err)
 
 	err = validator.validate(&proto.RemoteStateRequest{
 		StartSeqNum: 10,
 		EndSeqNum:   30,
-	})
+	}, defAntiEntropyBatchSize)
 	assert.Contains(t, err.Error(), "Requesting blocks range [10-30) greater than configured")
 	assert.Error(t, err)
 
 	err = validator.validate(&proto.RemoteStateRequest{
 		StartSeqNum: 10,
 		EndSeqNum:   20,
-	})
+	}, defAntiEntropyBatchSize)
 	assert.NoError(t, err)
 }
 

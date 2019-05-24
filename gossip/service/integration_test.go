@@ -50,12 +50,12 @@ func (*transientStoreMock) PurgeByTxids(txids []string) error {
 type embeddingDeliveryService struct {
 	startOnce sync.Once
 	stopOnce  sync.Once
-	deliverclient.DeliverService
+	deliverservice.DeliverService
 	startSignal sync.WaitGroup
 	stopSignal  sync.WaitGroup
 }
 
-func newEmbeddingDeliveryService(ds deliverclient.DeliverService) *embeddingDeliveryService {
+func newEmbeddingDeliveryService(ds deliverservice.DeliverService) *embeddingDeliveryService {
 	eds := &embeddingDeliveryService{
 		DeliverService: ds,
 	}
@@ -94,7 +94,7 @@ type embeddingDeliveryServiceFactory struct {
 	DeliveryServiceFactory
 }
 
-func (edsf *embeddingDeliveryServiceFactory) Service(g GossipService, endpoints []string, mcs api.MessageCryptoService) (deliverclient.DeliverService, error) {
+func (edsf *embeddingDeliveryServiceFactory) Service(g GossipService, endpoints []string, mcs api.MessageCryptoService) (deliverservice.DeliverService, error) {
 	ds, _ := edsf.DeliveryServiceFactory.Service(g, endpoints, mcs)
 	return newEmbeddingDeliveryService(ds), nil
 }
@@ -127,7 +127,7 @@ func TestLeaderYield(t *testing.T) {
 	// Add peers to the channel
 	addPeersToChannel(t, n, channelName, gossips, peerIndexes)
 	// Prime the membership view of the peers
-	waitForFullMembership(t, gossips, n, time.Second*30, time.Millisecond*100)
+	waitForFullMembershipOrFailNow(t, gossips, n, time.Second*30, time.Millisecond*100)
 
 	endpoint, socket := getAvailablePort(t)
 	socket.Close()

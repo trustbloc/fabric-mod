@@ -53,7 +53,7 @@ func (s SysCCRegisteredErr) Error() string {
 // It implements container.VMProvider and scc.Registrar
 type Registry struct {
 	mutex        sync.Mutex
-	typeRegistry map[string]*inprocContainer
+	typeRegistry map[ccintf.CCID]*inprocContainer
 	instRegistry map[string]*inprocContainer
 
 	ChaincodeSupport ccintf.CCSupport
@@ -66,36 +66,35 @@ type Registry struct {
 // it is being made an explicit part of the startup.
 func NewRegistry() *Registry {
 	return &Registry{
-		typeRegistry: make(map[string]*inprocContainer),
+		typeRegistry: make(map[ccintf.CCID]*inprocContainer),
 		instRegistry: make(map[string]*inprocContainer),
 	}
 }
 
 // NewVM creates an inproc VM instance
 func (r *Registry) NewVM() container.VM {
-	return NewInprocVM(r)
+	return &InprocVM{registry: r}
 }
 
 // Register registers system chaincode with given path. The deploy should be called to initialize
-func (r *Registry) Register(ccid *ccintf.CCID, cc shim.Chaincode) error {
+func (r *Registry) Register(ccid ccintf.CCID, cc shim.Chaincode) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
-	name := ccid.GetName()
-	inprocLogger.Debugf("Registering chaincode instance: %s", name)
-	tmp := r.typeRegistry[name]
+	inprocLogger.Debugf("Registering chaincode instance: %s", ccid)
+	tmp := r.typeRegistry[ccid]
 	if tmp != nil {
-		return SysCCRegisteredErr(name)
+		return SysCCRegisteredErr(ccid.String())
 	}
 
-	r.typeRegistry[name] = &inprocContainer{chaincode: cc}
+	r.typeRegistry[ccid] = &inprocContainer{chaincode: cc}
 	return nil
 }
 
-func (r *Registry) getType(name string) *inprocContainer {
+func (r *Registry) getType(ccid ccintf.CCID) *inprocContainer {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	return r.typeRegistry[name]
+	return r.typeRegistry[ccid]
 }
 
 func (r *Registry) getInstance(name string) *inprocContainer {
@@ -119,13 +118,6 @@ func (r *Registry) removeInstance(name string) {
 // InprocVM is a vm. It is identified by a executable name
 type InprocVM struct {
 	registry *Registry
-}
-
-// NewInprocVM creates a new InprocVM
-func NewInprocVM(r *Registry) *InprocVM {
-	return &InprocVM{
-		registry: r,
-	}
 }
 
 func (vm *InprocVM) getInstance(ipctemplate *inprocContainer, instName string, args []string, env []string) (*inprocContainer, error) {
@@ -205,11 +197,9 @@ func (ipc *inprocContainer) launchInProc(id string, args []string, env []string)
 
 //Start starts a previously registered system codechain
 func (vm *InprocVM) Start(ccid ccintf.CCID, args []string, env []string, filesToUpload map[string][]byte, builder container.Builder) error {
-	path := ccid.GetName()
-
-	ipctemplate := vm.registry.getType(path)
+	ipctemplate := vm.registry.getType(ccid)
 	if ipctemplate == nil {
-		return fmt.Errorf(fmt.Sprintf("%s not registered", path))
+		return fmt.Errorf(fmt.Sprintf("%s not registered", ccid))
 	}
 
 	instName := vm.GetVMName(ccid)
@@ -221,7 +211,7 @@ func (vm *InprocVM) Start(ccid ccintf.CCID, args []string, env []string, filesTo
 	}
 
 	if ipc.running {
-		return fmt.Errorf(fmt.Sprintf("chaincode running %s", path))
+		return fmt.Errorf(fmt.Sprintf("chaincode running %s", ccid))
 	}
 
 	ipc.running = true
@@ -240,11 +230,9 @@ func (vm *InprocVM) Start(ccid ccintf.CCID, args []string, env []string, filesTo
 
 //Stop stops a system codechain
 func (vm *InprocVM) Stop(ccid ccintf.CCID, timeout uint, dontkill bool, dontremove bool) error {
-	path := ccid.GetName()
-
-	ipctemplate := vm.registry.getType(path)
+	ipctemplate := vm.registry.getType(ccid)
 	if ipctemplate == nil {
-		return fmt.Errorf("%s not registered", path)
+		return fmt.Errorf("%s not registered", ccid)
 	}
 
 	instName := vm.GetVMName(ccid)
@@ -289,5 +277,5 @@ func (vm *InprocVM) Wait(ccid ccintf.CCID) (int, error) {
 // process.  It accepts a format function parameter to allow different
 // formatting based on the desired use of the name.
 func (vm *InprocVM) GetVMName(ccid ccintf.CCID) string {
-	return ccid.GetName()
+	return ccid.String()
 }

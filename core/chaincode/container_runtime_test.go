@@ -12,6 +12,7 @@ import (
 	"github.com/hyperledger/fabric/core/chaincode"
 	"github.com/hyperledger/fabric/core/chaincode/accesscontrol"
 	"github.com/hyperledger/fabric/core/chaincode/mock"
+	persistence "github.com/hyperledger/fabric/core/chaincode/persistence/intf"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/container"
 	"github.com/hyperledger/fabric/core/container/ccintf"
@@ -168,6 +169,7 @@ func TestContainerRuntimeStart(t *testing.T) {
 		Name:          "chaincode-name",
 		Version:       "chaincode-version",
 		ContainerType: "container-type",
+		PackageID:     "chaincode-name:chaincode-version",
 	}
 
 	err := cr.Start(ccci, nil)
@@ -183,10 +185,7 @@ func TestContainerRuntimeStart(t *testing.T) {
 	assert.Equal(t, startReq.Args, []string{"chaincode", "-peer.address=peer.example.com"})
 	assert.Equal(t, startReq.Env, []string{"CORE_CHAINCODE_ID_NAME=chaincode-name:chaincode-version", "CORE_PEER_TLS_ENABLED=false"})
 	assert.Nil(t, startReq.FilesToUpload)
-	assert.Equal(t, startReq.CCID, ccintf.CCID{
-		Name:    "chaincode-name",
-		Version: "chaincode-version",
-	})
+	assert.Equal(t, startReq.CCID, ccintf.CCID("chaincode-name:chaincode-version"))
 }
 
 func TestContainerRuntimeStartErrors(t *testing.T) {
@@ -230,6 +229,7 @@ func TestContainerRuntimeStop(t *testing.T) {
 		Name:          "chaincode-id-name",
 		Version:       "chaincode-version",
 		ContainerType: "container-type",
+		PackageID:     "chaincode-id-name:chaincode-version",
 	}
 
 	err := cr.Stop(ccci)
@@ -243,10 +243,7 @@ func TestContainerRuntimeStop(t *testing.T) {
 
 	assert.Equal(t, stopReq.Timeout, uint(0))
 	assert.Equal(t, stopReq.Dontremove, false)
-	assert.Equal(t, stopReq.CCID, ccintf.CCID{
-		Name:    "chaincode-id-name",
-		Version: "chaincode-version",
-	})
+	assert.Equal(t, stopReq.CCID, ccintf.CCID("chaincode-id-name:chaincode-version"))
 }
 
 func TestContainerRuntimeStopErrors(t *testing.T) {
@@ -297,6 +294,7 @@ func TestContainerRuntimeWait(t *testing.T) {
 		Name:          "chaincode-id-name",
 		Version:       "chaincode-version",
 		ContainerType: "container-type",
+		PackageID:     persistence.PackageID("chaincode-id-name:chaincode-version"),
 	}
 
 	exitCode, err := cr.Wait(ccci)
@@ -308,7 +306,7 @@ func TestContainerRuntimeWait(t *testing.T) {
 	assert.Equal(t, vmType, "container-type")
 	waitReq, ok := req.(container.WaitContainerReq)
 	assert.True(t, ok)
-	assert.Equal(t, ccintf.CCID{Name: "chaincode-id-name", Version: "chaincode-version"}, waitReq.CCID)
+	assert.Equal(t, ccintf.CCID("chaincode-id-name:chaincode-version"), waitReq.CCID)
 
 	fakeProcessor.ProcessReturns(errors.New("moles-and-trolls"))
 	_, err = cr.Wait(ccci)

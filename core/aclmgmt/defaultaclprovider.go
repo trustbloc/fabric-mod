@@ -67,6 +67,7 @@ func (d *defaultACLProviderImpl) initialize() {
 	d.cResourcePolicyMap[resources.Lifecycle_CommitChaincodeDefinition] = CHANNELWRITERS
 	d.cResourcePolicyMap[resources.Lifecycle_QueryChaincodeDefinition] = CHANNELWRITERS
 	d.cResourcePolicyMap[resources.Lifecycle_QueryNamespaceDefinitions] = CHANNELWRITERS
+	d.cResourcePolicyMap[resources.Lifecycle_QueryApprovalStatus] = CHANNELWRITERS
 
 	//-------------- LSCC --------------
 	//p resources (implemented by the chaincode currently)
@@ -113,17 +114,6 @@ func (d *defaultACLProviderImpl) initialize() {
 	//Event resources
 	d.cResourcePolicyMap[resources.Event_Block] = CHANNELREADERS
 	d.cResourcePolicyMap[resources.Event_FilteredBlock] = CHANNELREADERS
-}
-
-//this should cover an exhaustive list of everything called from the peer
-func (d *defaultACLProviderImpl) defaultPolicy(resName string, cprovider bool) string {
-	var pol string
-	if cprovider {
-		pol = d.cResourcePolicyMap[resName]
-	} else {
-		pol = d.pResourcePolicyMap[resName]
-	}
-	return pol
 }
 
 func (d *defaultACLProviderImpl) IsPtypePolicy(resName string) bool {

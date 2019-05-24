@@ -17,7 +17,6 @@ import (
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
-	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 	"github.com/pkg/errors"
 )
@@ -37,11 +36,9 @@ type VersionedDBProvider struct {
 }
 
 // NewVersionedDBProvider instantiates VersionedDBProvider
-func NewVersionedDBProvider(metricsProvider metrics.Provider) (*VersionedDBProvider, error) {
+func NewVersionedDBProvider(config *couchdb.Config, metricsProvider metrics.Provider) (*VersionedDBProvider, error) {
 	logger.Debugf("constructing CouchDB VersionedDBProvider")
-	couchDBDef := couchdb.GetCouchDBDefinition()
-	couchInstance, err := couchdb.CreateCouchInstance(couchDBDef.URL, couchDBDef.Username, couchDBDef.Password,
-		couchDBDef.MaxRetries, couchDBDef.MaxRetriesOnStartup, couchDBDef.RequestTimeout, couchDBDef.CreateGlobalChangesDB, metricsProvider)
+	couchInstance, err := couchdb.CreateCouchInstance(config, metricsProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +47,7 @@ func NewVersionedDBProvider(metricsProvider metrics.Provider) (*VersionedDBProvi
 			databases:          make(map[string]*VersionedDB),
 			mux:                sync.Mutex{},
 			openCounts:         0,
-			redoLoggerProvider: newRedoLoggerProvider(ledgerconfig.GetCouchdbRedologsPath()),
+			redoLoggerProvider: newRedoLoggerProvider(config.RedoLogPath),
 		},
 		nil
 }
@@ -234,8 +231,7 @@ func (vdb *VersionedDB) ProcessIndexesForChaincodeDeploy(namespace string, fileE
 		filename := fileEntry.FileHeader.Name
 		_, err = db.CreateIndex(string(indexData))
 		if err != nil {
-			return errors.WithMessage(err, fmt.Sprintf(
-				"error creating index from file [%s] for channel [%s]", filename, namespace))
+			return errors.WithMessagef(err, "error creating index from file [%s] for channel [%s]", filename, namespace)
 		}
 	}
 	return nil
@@ -382,7 +378,7 @@ const optionLimit = "limit"
 func (vdb *VersionedDB) GetStateRangeScanIteratorWithMetadata(namespace string, startKey string, endKey string, metadata map[string]interface{}) (statedb.QueryResultsIterator, error) {
 	logger.Debugf("Entering GetStateRangeScanIteratorWithMetadata  namespace: %s  startKey: %s  endKey: %s  metadata: %v", namespace, startKey, endKey, metadata)
 	// Get the internalQueryLimit from core.yaml
-	internalQueryLimit := int32(ledgerconfig.GetInternalQueryLimit())
+	internalQueryLimit := vdb.couchInstance.InternalQueryLimit()
 	requestedLimit := int32(0)
 	// if metadata is provided, validate and apply options
 	if metadata != nil {
@@ -475,7 +471,7 @@ func (vdb *VersionedDB) ExecuteQuery(namespace, query string) (statedb.ResultsIt
 func (vdb *VersionedDB) ExecuteQueryWithMetadata(namespace, query string, metadata map[string]interface{}) (statedb.QueryResultsIterator, error) {
 	logger.Debugf("Entering ExecuteQueryWithMetadata  namespace: %s,  query: %s,  metadata: %v", namespace, query, metadata)
 	// Get the querylimit from core.yaml
-	internalQueryLimit := int32(ledgerconfig.GetInternalQueryLimit())
+	internalQueryLimit := vdb.couchInstance.InternalQueryLimit()
 	bookmark := ""
 	requestedLimit := int32(0)
 	// if metadata is provided, then validate and set provided options
@@ -555,7 +551,7 @@ func validateQueryMetadata(metadata map[string]interface{}) error {
 
 // ApplyUpdates implements method in VersionedDB interface
 func (vdb *VersionedDB) ApplyUpdates(updates *statedb.UpdateBatch, height *version.Height) error {
-	if height != nil {
+	if height != nil && updates.ContainsPostOrderWrites {
 		// height is passed nil when commiting missing private data for previously committed blocks
 		r := &redoRecord{
 			UpdateBatch: updates,

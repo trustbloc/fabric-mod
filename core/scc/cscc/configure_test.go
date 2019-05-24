@@ -17,7 +17,6 @@ import (
 	"github.com/hyperledger/fabric/common/config"
 	"github.com/hyperledger/fabric/common/configtx"
 	configtxtest "github.com/hyperledger/fabric/common/configtx/test"
-	"github.com/hyperledger/fabric/common/crypto/tlsgen"
 	"github.com/hyperledger/fabric/common/genesis"
 	"github.com/hyperledger/fabric/common/metrics/disabled"
 	"github.com/hyperledger/fabric/common/mocks/scc"
@@ -26,18 +25,10 @@ import (
 	aclmocks "github.com/hyperledger/fabric/core/aclmgmt/mocks"
 	"github.com/hyperledger/fabric/core/aclmgmt/resources"
 	"github.com/hyperledger/fabric/core/chaincode"
-	"github.com/hyperledger/fabric/core/chaincode/accesscontrol"
-	"github.com/hyperledger/fabric/core/chaincode/platforms"
-	"github.com/hyperledger/fabric/core/chaincode/platforms/golang"
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
-	"github.com/hyperledger/fabric/core/container"
-	"github.com/hyperledger/fabric/core/container/inproccontroller"
 	"github.com/hyperledger/fabric/core/deliverservice"
 	"github.com/hyperledger/fabric/core/deliverservice/blocksprovider"
-	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
-	ledgermock "github.com/hyperledger/fabric/core/ledger/mock"
-	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
 	"github.com/hyperledger/fabric/core/peer"
 	"github.com/hyperledger/fabric/core/policy"
 	policymocks "github.com/hyperledger/fabric/core/policy/mocks"
@@ -48,10 +39,10 @@ import (
 	"github.com/hyperledger/fabric/internal/configtxgen/configtxgentest"
 	"github.com/hyperledger/fabric/internal/configtxgen/encoder"
 	genesisconfig "github.com/hyperledger/fabric/internal/configtxgen/localconfig"
+	peergossip "github.com/hyperledger/fabric/internal/peer/gossip"
+	"github.com/hyperledger/fabric/internal/peer/gossip/mocks"
 	"github.com/hyperledger/fabric/msp/mgmt"
-	"github.com/hyperledger/fabric/msp/mgmt/testtools"
-	peergossip "github.com/hyperledger/fabric/peer/gossip"
-	"github.com/hyperledger/fabric/peer/gossip/mocks"
+	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
 	cb "github.com/hyperledger/fabric/protos/common"
 	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
@@ -107,16 +98,13 @@ func (*mockDeliveryClient) Stop() {
 type mockDeliveryClientFactory struct {
 }
 
-func (*mockDeliveryClientFactory) Service(g service.GossipService, endpoints []string, mcs api.MessageCryptoService) (deliverclient.DeliverService, error) {
+func (*mockDeliveryClientFactory) Service(g service.GossipService, endpoints []string, mcs api.MessageCryptoService) (deliverservice.DeliverService, error) {
 	return &mockDeliveryClient{}, nil
 }
 
 var mockAclProvider *aclmocks.MockACLProvider
 
 func TestMain(m *testing.M) {
-	// Read the core.yaml file for default config.
-	ledgertestutil.SetupCoreYAMLConfig()
-
 	//setup extension test environment
 	_, _, destroy := xtestutil.SetupExtTestEnv()
 
@@ -217,47 +205,32 @@ func TestConfigerInvokeJoinChainWrongParams(t *testing.T) {
 	}
 }
 
+type PackageProviderWrapper struct {
+	FS *ccprovider.CCInfoFSImpl
+}
+
+func (p *PackageProviderWrapper) GetChaincodeCodePackage(ccci *ccprovider.ChaincodeContainerInfo) ([]byte, error) {
+	return p.FS.GetChaincodeCodePackage(ccci.Name, ccci.Version)
+}
+
 func TestConfigerInvokeJoinChainCorrectParams(t *testing.T) {
 	mp := (&scc.MocksccProviderFactory{}).NewSystemChaincodeProvider()
 
-	viper.Set("peer.fileSystemPath", "/tmp/hyperledgertest/")
 	viper.Set("chaincode.executetimeout", "3s")
-	os.Mkdir("/tmp/hyperledgertest", 0755)
 
-	peer.MockInitialize()
-	ledgermgmt.InitializeTestEnv()
-	defer ledgermgmt.CleanupTestEnv()
-	defer os.RemoveAll("/tmp/hyperledgertest/")
+	cleanup, err := peer.MockInitialize()
+	if err != nil {
+		t.Fatalf("Failed to initialize peer: %s", err)
+	}
+	defer cleanup()
 
 	e := New(mp, mockAclProvider, nil, nil, nil)
 	stub := shim.NewMockStub("PeerConfiger", e)
 
 	peerEndpoint := "127.0.0.1:13611"
 
-	ca, _ := tlsgen.NewCA()
-	certGenerator := accesscontrol.NewAuthenticator(ca)
 	config := chaincode.GlobalConfig()
 	config.StartupTimeout = 30 * time.Second
-	chaincode.NewChaincodeSupport(
-		config,
-		peerEndpoint,
-		false,
-		ca.CertBytes(),
-		certGenerator,
-		&ccprovider.CCInfoFSImpl{},
-		nil,
-		mockAclProvider,
-		container.NewVMController(
-			map[string]container.VMProvider{
-				inproccontroller.ContainerType: inproccontroller.NewRegistry(),
-			},
-		),
-		mp,
-		platforms.NewRegistry(&golang.Platform{}),
-		peer.DefaultSupport,
-		&disabled.Provider{},
-		&ledgermock.DeployedChaincodeInfoProvider{},
-	)
 
 	// Init the policy checker
 	policyManagerGetter := &policymocks.MockChannelPolicyManagerGetter{
@@ -289,8 +262,6 @@ func TestConfigerInvokeJoinChainCorrectParams(t *testing.T) {
 	require.NoError(t, err)
 
 	signer := mgmt.GetLocalSigningIdentityOrPanic()
-	identity, err := signer.Serialize()
-	assert.NoError(t, err)
 	messageCryptoService := peergossip.NewMCS(&mocks.ChannelPolicyManagerGetter{}, signer, mgmt.NewDeserializersManager())
 	secAdv := peergossip.NewSecurityAdvisor(mgmt.NewDeserializersManager())
 	var defaultSecureDialOpts = func() []grpc.DialOption {
@@ -298,7 +269,7 @@ func TestConfigerInvokeJoinChainCorrectParams(t *testing.T) {
 		dialOpts = append(dialOpts, grpc.WithInsecure())
 		return dialOpts
 	}
-	err = service.InitGossipServiceCustomDeliveryFactory(identity, &disabled.Provider{}, peerEndpoint, grpcServer, nil,
+	err = service.InitGossipServiceCustomDeliveryFactory(signer, &disabled.Provider{}, peerEndpoint, grpcServer, nil,
 		&mockDeliveryClientFactory{}, messageCryptoService, secAdv, defaultSecureDialOpts)
 	assert.NoError(t, err)
 

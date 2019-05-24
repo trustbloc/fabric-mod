@@ -4,12 +4,13 @@ Copyright IBM Corp All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-package e2e
+package sbe
 
 import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -32,6 +33,7 @@ var _ = Describe("SBE_E2E", func() {
 		network   *nwo.Network
 		chaincode nwo.Chaincode
 		process   ifrit.Process
+		tempDir   string
 	)
 
 	BeforeEach(func() {
@@ -49,6 +51,8 @@ var _ = Describe("SBE_E2E", func() {
 			Ctor:              `{"Args":["init"]}`,
 			CollectionsConfig: "testdata/collection_config.json",
 		}
+
+		tempDir, err = ioutil.TempDir("", "nwo")
 	})
 
 	AfterEach(func() {
@@ -89,6 +93,46 @@ var _ = Describe("SBE_E2E", func() {
 			By("deploying a second instance of the chaincode")
 			chaincode.Name = "mycc2"
 			nwo.DeployChaincode(network, "testchannel", orderer, chaincode)
+
+			RunSBE(network, orderer, "pub")
+			RunSBE(network, orderer, "priv")
+		})
+
+		It("executes a basic solo network with 2 orgs and SBE checks with new lifecycle", func() {
+			chaincode = nwo.Chaincode{
+				Name:              "mycc",
+				Version:           "0.0",
+				Path:              "github.com/hyperledger/fabric/integration/chaincode/keylevelep/cmd",
+				Lang:              "golang",
+				PackageFile:       filepath.Join(tempDir, "simplecc.tar.gz"),
+				Ctor:              `{"Args":["init"]}`,
+				SignaturePolicy:   `OR('Org1MSP.member','Org2MSP.member')`,
+				Sequence:          "1",
+				InitRequired:      true,
+				Label:             "my_simple_chaincode",
+				CollectionsConfig: "testdata/collection_config.json",
+			}
+
+			By("getting the orderer by name")
+			orderer := network.Orderer("orderer")
+
+			By("setting up the channel")
+			network.CreateAndJoinChannel(orderer, "testchannel")
+
+			By("updating the anchor peers")
+			network.UpdateChannelAnchors(orderer, "testchannel")
+
+			By("enabling 2.0 capabilities")
+			network.VerifyMembership(network.PeersWithChannel("testchannel"), "testchannel")
+			nwo.EnableV2_0Capabilities(network, "testchannel", orderer, network.Peer("Org1", "peer0"), network.Peer("Org2", "peer0"))
+
+			By("deploying the chaincode")
+			nwo.DeployChaincodeNewLifecycle(network, "testchannel", orderer, chaincode)
+
+			By("deploying a second instance of the chaincode")
+			chaincode.Name = "mycc2"
+			chaincode.Label = "my_other_simple_chaincode"
+			nwo.DeployChaincodeNewLifecycle(network, "testchannel", orderer, chaincode)
 
 			RunSBE(network, orderer, "pub")
 			RunSBE(network, orderer, "priv")
@@ -188,7 +232,8 @@ func RunSBE(n *nwo.Network, orderer *nwo.Orderer, mode string) {
 		WaitForEvent: true,
 	})
 	Expect(err).NotTo(HaveOccurred())
-	Eventually(sess, time.Minute).Should(gexec.Exit(0))
+	Eventually(sess, time.Minute).Should(gexec.Exit(1))
+	Expect(sess.Err).To(gbytes.Say(`\Qcommitted with status (ENDORSEMENT_POLICY_FAILURE)\E`))
 
 	By("org2 checks that setting the value was not successful by reading it")
 	sess, err = n.PeerUserSession(peerOrg2, "User1", commands.ChaincodeQuery{
@@ -243,7 +288,8 @@ func RunSBE(n *nwo.Network, orderer *nwo.Orderer, mode string) {
 		WaitForEvent: true,
 	})
 	Expect(err).NotTo(HaveOccurred())
-	Eventually(sess, time.Minute).Should(gexec.Exit(0))
+	Eventually(sess, time.Minute).Should(gexec.Exit(1))
+	Expect(sess.Err).To(gbytes.Say(`\Qcommitted with status (ENDORSEMENT_POLICY_FAILURE)\E`))
 
 	By("org2 checks that seting the value was not successful by reading it")
 	sess, err = n.PeerUserSession(peerOrg2, "User1", commands.ChaincodeQuery{
@@ -296,7 +342,8 @@ func RunSBE(n *nwo.Network, orderer *nwo.Orderer, mode string) {
 		WaitForEvent: true,
 	})
 	Expect(err).NotTo(HaveOccurred())
-	Eventually(sess, time.Minute).Should(gexec.Exit(0))
+	Eventually(sess, time.Minute).Should(gexec.Exit(1))
+	Expect(sess.Err).To(gbytes.Say(`\Qcommitted with status (ENDORSEMENT_POLICY_FAILURE)\E`))
 
 	By("org2 lists the orgs of the key to check that deleting org1 did not succeed")
 	sess, err = n.PeerUserSession(peerOrg2, "User1", commands.ChaincodeQuery{
@@ -373,7 +420,8 @@ func RunSBE(n *nwo.Network, orderer *nwo.Orderer, mode string) {
 		WaitForEvent: true,
 	})
 	Expect(err).NotTo(HaveOccurred())
-	Eventually(sess, n.EventuallyTimeout).Should(gexec.Exit(0))
+	Eventually(sess, n.EventuallyTimeout).Should(gexec.Exit(1))
+	Expect(sess.Err).To(gbytes.Say(`\Qcommitted with status (ENDORSEMENT_POLICY_FAILURE)\E`))
 
 	By("org1 reads the value of the key to check that setting it was not successful")
 	sess, err = n.PeerUserSession(peerOrg1, "User1", commands.ChaincodeQuery{

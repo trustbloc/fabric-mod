@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package tests
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,8 +15,9 @@ import (
 )
 
 func TestRebuildComponents(t *testing.T) {
-	env := newEnv(defaultConfig, t)
+	env := newEnv(t)
 	defer env.cleanup()
+	env.initLedgerMgmt()
 
 	h1, h2 := newTestHelperCreateLgr("ledger1", t), newTestHelperCreateLgr("ledger2", t)
 	dataHelper := newSampleDataHelper(t)
@@ -48,7 +50,7 @@ func TestRebuildComponents(t *testing.T) {
 		func(t *testing.T) {
 
 			flag := rebuildableStatedb + rebuildableBlockIndex
-			_, err := util.DirEmpty(getBlockIndexDBPath())
+			_, err := util.DirEmpty(filepath.Join(env.rootPath, "ledgersData", "stateLeveldb"))
 			if err != nil && strings.Contains(err.Error(), "no such file or directory") {
 				//couch db index, no need to attempt to delete index file
 				flag = rebuildableStatedb

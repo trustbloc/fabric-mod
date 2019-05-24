@@ -8,6 +8,7 @@ package confighistory
 
 import (
 	"fmt"
+	"io/ioutil"
 	"math"
 	"os"
 	"testing"
@@ -26,13 +27,43 @@ func TestMain(m *testing.M) {
 }
 
 func TestWithNoCollectionConfig(t *testing.T) {
-	dbPath := "/tmp/fabric/core/ledger/confighistory"
+	dbPath, err := ioutil.TempDir("", "confighistory")
+	if err != nil {
+		t.Fatalf("Failed to create config history directory: %s", err)
+	}
+	defer os.RemoveAll(dbPath)
 	mockCCInfoProvider := &mock.DeployedChaincodeInfoProvider{}
-	env := newTestEnv(t, dbPath, mockCCInfoProvider)
-	mgr := env.mgr
-	defer env.cleanup()
+	mgr := NewMgr(dbPath, mockCCInfoProvider)
 	testutilEquipMockCCInfoProviderToReturnDesiredCollConfig(mockCCInfoProvider, "chaincode1", nil)
-	err := mgr.HandleStateUpdates(&ledger.StateUpdateTrigger{
+	err = mgr.HandleStateUpdates(&ledger.StateUpdateTrigger{
+		LedgerID:           "ledger1",
+		CommittingBlockNum: 50},
+	)
+	assert.NoError(t, err)
+	dummyLedgerInfoRetriever := &dummyLedgerInfoRetriever{
+		info: &common.BlockchainInfo{Height: 100},
+		qe:   &mock.QueryExecutor{},
+	}
+	retriever := mgr.GetRetriever("ledger1", dummyLedgerInfoRetriever)
+	collConfig, err := retriever.MostRecentCollectionConfigBelow(90, "chaincode1")
+	assert.NoError(t, err)
+	assert.Nil(t, collConfig)
+}
+
+func TestWithEmptyCollectionConfig(t *testing.T) {
+	dbPath, err := ioutil.TempDir("", "confighistory")
+	if err != nil {
+		t.Fatalf("Failed to create config history directory: %s", err)
+	}
+	defer os.RemoveAll(dbPath)
+	mockCCInfoProvider := &mock.DeployedChaincodeInfoProvider{}
+	mgr := NewMgr(dbPath, mockCCInfoProvider)
+	testutilEquipMockCCInfoProviderToReturnDesiredCollConfig(
+		mockCCInfoProvider,
+		"chaincode1",
+		&common.CollectionConfigPackage{},
+	)
+	err = mgr.HandleStateUpdates(&ledger.StateUpdateTrigger{
 		LedgerID:           "ledger1",
 		CommittingBlockNum: 50},
 	)
@@ -48,11 +79,13 @@ func TestWithNoCollectionConfig(t *testing.T) {
 }
 
 func TestMgr(t *testing.T) {
-	dbPath := "/tmp/fabric/core/ledger/confighistory"
+	dbPath, err := ioutil.TempDir("", "confighistory")
+	if err != nil {
+		t.Fatalf("Failed to create config history directory: %s", err)
+	}
+	defer os.RemoveAll(dbPath)
 	mockCCInfoProvider := &mock.DeployedChaincodeInfoProvider{}
-	env := newTestEnv(t, dbPath, mockCCInfoProvider)
-	mgr := env.mgr
-	defer env.cleanup()
+	mgr := NewMgr(dbPath, mockCCInfoProvider)
 	chaincodeName := "chaincode1"
 	maxBlockNumberInLedger := uint64(2000)
 	dummyLedgerInfoRetriever := &dummyLedgerInfoRetriever{
@@ -123,7 +156,11 @@ func TestMgr(t *testing.T) {
 }
 
 func TestWithImplicitColls(t *testing.T) {
-	dbPath := "/tmp/fabric/core/ledger/confighistory"
+	dbPath, err := ioutil.TempDir("", "confighistory")
+	if err != nil {
+		t.Fatalf("Failed to create config history directory: %s", err)
+	}
+	defer os.RemoveAll(dbPath)
 	collConfigPackage := testutilCreateCollConfigPkg([]string{"Explicit-coll-1", "Explicit-coll-2"})
 	mockCCInfoProvider := &mock.DeployedChaincodeInfoProvider{}
 	mockCCInfoProvider.ImplicitCollectionsReturns(
@@ -137,9 +174,11 @@ func TestWithImplicitColls(t *testing.T) {
 		},
 		nil,
 	)
-	env := newTestEnv(t, dbPath, mockCCInfoProvider)
-	defer env.cleanup()
-	mgr := env.mgr
+
+	mgr := &mgr{
+		ccInfoProvider: mockCCInfoProvider,
+		dbProvider:     newDBProvider(dbPath),
+	}
 
 	// add explicit collections at height 20
 	batch, err := prepareDBBatch(
@@ -209,24 +248,6 @@ func TestWithImplicitColls(t *testing.T) {
 		assert.True(t, proto.Equal(retrievedConfig.CollectionConfig, explicitAndImplicitCollections))
 	})
 
-}
-
-type testEnv struct {
-	dbPath string
-	mgr    *mgr
-	t      *testing.T
-}
-
-func newTestEnv(t *testing.T, dbPath string, ccInfoProvider ledger.DeployedChaincodeInfoProvider) *testEnv {
-	env := &testEnv{dbPath: dbPath, t: t}
-	env.cleanup()
-	env.mgr = newMgr(ccInfoProvider, dbPath).(*mgr)
-	return env
-}
-
-func (env *testEnv) cleanup() {
-	err := os.RemoveAll(env.dbPath)
-	assert.NoError(env.t, err)
 }
 
 func sampleCollectionConfigPackage(collNamePart1 string, collNamePart2 uint64) *common.CollectionConfigPackage {

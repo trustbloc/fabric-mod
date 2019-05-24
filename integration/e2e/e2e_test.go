@@ -23,11 +23,9 @@ import (
 	docker "github.com/fsouza/go-dockerclient"
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric-lib-go/healthz"
-	"github.com/hyperledger/fabric/core/aclmgmt/resources"
 	"github.com/hyperledger/fabric/integration/nwo"
 	"github.com/hyperledger/fabric/integration/nwo/commands"
 	"github.com/hyperledger/fabric/protos/orderer/etcdraft"
-	"github.com/hyperledger/fabric/protoutil"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
@@ -164,154 +162,7 @@ var _ = Describe("EndToEnd", func() {
 		})
 	})
 
-	Describe("basic single node etcdraft network with 2 orgs", func() {
-		BeforeEach(func() {
-			network = nwo.New(nwo.BasicEtcdRaft(), testDir, client, StartPort(), components)
-			network.GenerateConfigTree()
-			network.Bootstrap()
-
-			networkRunner := network.NetworkGroupRunner()
-			process = ifrit.Invoke(networkRunner)
-			Eventually(process.Ready(), network.EventuallyTimeout).Should(BeClosed())
-		})
-
-		It("executes a basic etcdraft network with 2 orgs and a single node", func() {
-			orderer := network.Orderer("orderer")
-			peer := network.Peer("Org1", "peer1")
-
-			network.CreateAndJoinChannel(orderer, "testchannel")
-			nwo.DeployChaincode(network, "testchannel", orderer, chaincode)
-			RunQueryInvokeQuery(network, orderer, peer, "testchannel")
-		})
-	})
-
-	Describe("three node etcdraft network with 2 orgs", func() {
-		BeforeEach(func() {
-			network = nwo.New(nwo.MultiNodeEtcdRaft(), testDir, client, StartPort(), components)
-			network.GenerateConfigTree()
-			network.Bootstrap()
-
-			networkRunner := network.NetworkGroupRunner()
-			process = ifrit.Invoke(networkRunner)
-			Eventually(process.Ready(), network.EventuallyTimeout).Should(BeClosed())
-		})
-
-		// This tests:
-		//
-		// 1. channel creation with raft orderer,
-		// 2. all the nodes on three-node raft cluster are in sync wrt blocks,
-		// 3. raft orderer processes type A config updates and delivers the
-		//    config blocks to the peers.
-		It("executes an etcdraft network with 2 orgs and three orderer nodes", func() {
-			orderer1 := network.Orderer("orderer1")
-			orderer2 := network.Orderer("orderer2")
-			orderer3 := network.Orderer("orderer3")
-			peer := network.Peer("Org1", "peer1")
-			org1Peer0 := network.Peer("Org1", "peer0")
-			blockFile1 := filepath.Join(testDir, "newest_orderer1_block.pb")
-			blockFile2 := filepath.Join(testDir, "newest_orderer2_block.pb")
-			blockFile3 := filepath.Join(testDir, "newest_orderer3_block.pb")
-
-			fetchLatestBlock := func(targetOrderer *nwo.Orderer, blockFile string) {
-				c := commands.ChannelFetch{
-					ChannelID:  "testchannel",
-					Block:      "newest",
-					OutputFile: blockFile,
-				}
-				if targetOrderer != nil {
-					c.Orderer = network.OrdererAddress(targetOrderer, nwo.ListenPort)
-				}
-				sess, err := network.PeerAdminSession(org1Peer0, c)
-				Expect(err).NotTo(HaveOccurred())
-				Eventually(sess, network.EventuallyTimeout).Should(gexec.Exit(0))
-			}
-
-			By("creating a new chain and having the peers join it to test for channel creation")
-			network.CreateAndJoinChannel(orderer1, "testchannel")
-			nwo.DeployChaincode(network, "testchannel", orderer1, chaincode)
-			RunQueryInvokeQuery(network, orderer1, peer, "testchannel")
-
-			// the above can work even if the orderer nodes are not in the same Raft
-			// cluster; we need to verify all the three orderer nodes are in sync wrt
-			// blocks.
-			By("fetching the latest blocks from all the orderer nodes and testing them for equality")
-			fetchLatestBlock(orderer1, blockFile1)
-			fetchLatestBlock(orderer2, blockFile2)
-			fetchLatestBlock(orderer3, blockFile3)
-			b1 := nwo.UnmarshalBlockFromFile(blockFile1)
-			b2 := nwo.UnmarshalBlockFromFile(blockFile2)
-			b3 := nwo.UnmarshalBlockFromFile(blockFile3)
-			Expect(protoutil.BlockHeaderBytes(b1.Header)).To(Equal(protoutil.BlockHeaderBytes(b2.Header)))
-			Expect(protoutil.BlockHeaderBytes(b2.Header)).To(Equal(protoutil.BlockHeaderBytes(b3.Header)))
-
-			By("updating ACL policies to test for type A configuration updates")
-			invokeChaincode := commands.ChaincodeInvoke{
-				ChannelID:    "testchannel",
-				Orderer:      network.OrdererAddress(orderer1, nwo.ListenPort),
-				Name:         chaincode.Name,
-				Ctor:         `{"Args":["invoke","a","b","10"]}`,
-				WaitForEvent: true,
-			}
-			// setting the filtered block event ACL policy to org2/Admins
-			policyName := resources.Event_FilteredBlock
-			policy := "/Channel/Application/org2/Admins"
-			SetACLPolicy(network, "testchannel", policyName, policy, "orderer1")
-			// invoking chaincode as a forbidden Org1 Admin identity
-			sess, err := network.PeerAdminSession(org1Peer0, invokeChaincode)
-			Expect(err).NotTo(HaveOccurred())
-			Eventually(sess.Err, network.EventuallyTimeout).Should(gbytes.Say(`\Qdeliver completed with status (FORBIDDEN)\E`))
-		})
-	})
-
-	Describe("etcd raft, checking valid configuration update of type B", func() {
-		BeforeEach(func() {
-			network = nwo.New(nwo.BasicEtcdRaft(), testDir, client, StartPort(), components)
-			network.GenerateConfigTree()
-			network.Bootstrap()
-
-			networkRunner := network.NetworkGroupRunner()
-			process = ifrit.Invoke(networkRunner)
-			Eventually(process.Ready(), network.EventuallyTimeout).Should(BeClosed())
-		})
-
-		It("executes a basic etcdraft network with a single Raft node", func() {
-			orderer := network.Orderer("orderer")
-			peer := network.Peer("Org1", "peer1")
-
-			channel := "testchannel"
-			network.CreateAndJoinChannel(orderer, channel)
-			nwo.DeployChaincode(network, "testchannel", orderer, chaincode)
-			RunQueryInvokeQuery(network, orderer, peer, "testchannel")
-
-			snapDir := path.Join(network.RootDir, "orderers", orderer.ID(), "etcdraft", "snapshot", channel)
-			files, err := ioutil.ReadDir(snapDir)
-			Expect(err).NotTo(HaveOccurred())
-			numOfSnaps := len(files)
-
-			nwo.UpdateConsensusMetadata(network, peer, orderer, channel, func(originalMetadata []byte) []byte {
-				metadata := &etcdraft.Metadata{}
-				err := proto.Unmarshal(originalMetadata, metadata)
-				Expect(err).NotTo(HaveOccurred())
-
-				// update max in flight messages
-				metadata.Options.MaxInflightMsgs = 1000
-				metadata.Options.MaxSizePerMsg = 512
-				metadata.Options.SnapshotInterval = 100 * 1024 * 1024 // 100 MB
-
-				// write metadata back
-				newMetadata, err := proto.Marshal(metadata)
-				Expect(err).NotTo(HaveOccurred())
-				return newMetadata
-			})
-
-			// assert that no new snapshot is taken because SnapshotInterval has just enlarged
-			files, err = ioutil.ReadDir(snapDir)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(len(files)).To(Equal(numOfSnaps))
-		})
-	})
-
-	Describe("basic single node etcdraft network with 2 orgs and 2 channels", func() {
+	Describe("basic single node etcdraft network", func() {
 		BeforeEach(func() {
 			network = nwo.New(nwo.MultiChannelEtcdRaft(), testDir, client, StartPort(), components)
 			network.GenerateConfigTree()
@@ -322,18 +173,46 @@ var _ = Describe("EndToEnd", func() {
 			Eventually(process.Ready(), network.EventuallyTimeout).Should(BeClosed())
 		})
 
-		It("executes a basic etcdraft network with 2 orgs and 2 channels", func() {
+		It("creates two channels with two orgs trying to reconfigure and update metadata", func() {
 			orderer := network.Orderer("orderer")
 			peer := network.Peer("Org1", "peer1")
 
+			By("Create first channel and deploy the chaincode")
 			network.CreateAndJoinChannel(orderer, "testchannel1")
 			nwo.DeployChaincode(network, "testchannel1", orderer, chaincode)
+			RunQueryInvokeQuery(network, orderer, peer, "testchannel1")
 
+			By("Create second channel and deploy chaincode")
 			network.CreateAndJoinChannel(orderer, "testchannel2")
 			nwo.InstantiateChaincode(network, "testchannel2", orderer, chaincode, peer, network.PeersWithChannel("testchannel2")...)
-
 			RunQueryInvokeQuery(network, orderer, peer, "testchannel2")
-			RunQueryInvokeQuery(network, orderer, peer, "testchannel1")
+
+			By("Update consensus metadata to increase snapshot interval")
+			snapDir := path.Join(network.RootDir, "orderers", orderer.ID(), "etcdraft", "snapshot", "testchannel1")
+			files, err := ioutil.ReadDir(snapDir)
+			Expect(err).NotTo(HaveOccurred())
+			numOfSnaps := len(files)
+
+			nwo.UpdateConsensusMetadata(network, peer, orderer, "testchannel1", func(originalMetadata []byte) []byte {
+				metadata := &etcdraft.ConfigMetadata{}
+				err := proto.Unmarshal(originalMetadata, metadata)
+				Expect(err).NotTo(HaveOccurred())
+
+				// update max in flight messages
+				metadata.Options.MaxInflightBlocks = 1000
+				metadata.Options.SnapshotIntervalSize = 10 * 1024 * 1024 // 10 MB
+
+				// write metadata back
+				newMetadata, err := proto.Marshal(metadata)
+				Expect(err).NotTo(HaveOccurred())
+				return newMetadata
+			})
+
+			// assert that no new snapshot is taken because SnapshotIntervalSize has just enlarged
+			files, err = ioutil.ReadDir(snapDir)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(files)).To(Equal(numOfSnaps))
+
 		})
 	})
 })
@@ -382,6 +261,7 @@ func RunRespondWith(n *nwo.Network, orderer *nwo.Orderer, peer *nwo.Peer, channe
 		Name:      "mycc",
 		Ctor:      `{"Args":["respond","300","response-message","response-payload"]}`,
 		PeerAddresses: []string{
+			n.PeerAddress(n.Peer("Org1", "peer1"), nwo.ListenPort),
 			n.PeerAddress(n.Peer("Org2", "peer1"), nwo.ListenPort),
 		},
 		WaitForEvent: true,
@@ -397,6 +277,7 @@ func RunRespondWith(n *nwo.Network, orderer *nwo.Orderer, peer *nwo.Peer, channe
 		Name:      "mycc",
 		Ctor:      `{"Args":["respond","400","response-message","response-payload"]}`,
 		PeerAddresses: []string{
+			n.PeerAddress(n.Peer("Org1", "peer1"), nwo.ListenPort),
 			n.PeerAddress(n.Peer("Org2", "peer1"), nwo.ListenPort),
 		},
 		WaitForEvent: true,

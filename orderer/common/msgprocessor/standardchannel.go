@@ -11,7 +11,10 @@ import (
 	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/internal/pkg/identity"
 	cb "github.com/hyperledger/fabric/protos/common"
+	"github.com/hyperledger/fabric/protos/orderer"
 	"github.com/hyperledger/fabric/protoutil"
+
+	"github.com/pkg/errors"
 )
 
 //go:generate counterfeiter -o mocks/signer_serializer.go --fake-name SignerSerializer . signerSerializer
@@ -34,6 +37,8 @@ type StandardChannelSupport interface {
 	// ProposeConfigUpdate takes in an Envelope of type CONFIG_UPDATE and produces a
 	// ConfigEnvelope to be used as the Envelope Payload Data of a CONFIG message
 	ProposeConfigUpdate(configtx *cb.Envelope) (*cb.ConfigEnvelope, error)
+
+	OrdererConfig() (channelconfig.Orderer, bool)
 }
 
 // StandardChannel implements the Processor interface for standard extant channels
@@ -50,7 +55,10 @@ func NewStandardChannel(support StandardChannelSupport, filters *RuleSet) *Stand
 	}
 }
 
-// CreateStandardChannelFilters creates the set of filters for a normal (non-system) chain
+// CreateStandardChannelFilters creates the set of filters for a normal (non-system) chain.
+//
+// In maintenance mode, require the signature of /Channel/Orderer/Writer. This will filter out configuration
+// changes that are not related to consensus-type migration (e.g on /Channel/Application).
 func CreateStandardChannelFilters(filterSupport channelconfig.Resources) *RuleSet {
 	ordererConfig, ok := filterSupport.OrdererConfig()
 	if !ok {
@@ -60,7 +68,7 @@ func CreateStandardChannelFilters(filterSupport channelconfig.Resources) *RuleSe
 		EmptyRejectRule,
 		NewExpirationRejectRule(filterSupport),
 		NewSizeFilter(ordererConfig),
-		NewSigFilter(policies.ChannelWriters, filterSupport),
+		NewSigFilter(policies.ChannelWriters, policies.ChannelOrdererWriters, filterSupport),
 	})
 }
 
@@ -83,6 +91,17 @@ func (s *StandardChannel) ClassifyMsg(chdr *cb.ChannelHeader) Classification {
 // ProcessNormalMsg will check the validity of a message based on the current configuration.  It returns the current
 // configuration sequence number and nil on success, or an error if the message is not valid
 func (s *StandardChannel) ProcessNormalMsg(env *cb.Envelope) (configSeq uint64, err error) {
+	oc, ok := s.support.OrdererConfig()
+	if !ok {
+		logger.Panicf("Missing orderer config")
+	}
+	if oc.Capabilities().ConsensusTypeMigration() {
+		if oc.ConsensusState() != orderer.ConsensusType_STATE_NORMAL {
+			return 0, errors.WithMessage(
+				ErrMaintenanceMode, "normal transactions are rejected")
+		}
+	}
+
 	configSeq = s.support.Sequence()
 	err = s.filters.Apply(env)
 	return
@@ -104,7 +123,7 @@ func (s *StandardChannel) ProcessConfigUpdateMsg(env *cb.Envelope) (config *cb.E
 
 	configEnvelope, err := s.support.ProposeConfigUpdate(env)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, errors.WithMessagef(err, "error applying config update to existing channel '%s'", s.support.ChainID())
 	}
 
 	config, err = protoutil.CreateSignedEnvelope(cb.HeaderType_CONFIG, s.support.ChainID(), s.support.Signer(), configEnvelope, msgVersion, epoch)

@@ -25,13 +25,13 @@ import (
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/aclmgmt/mocks"
 	"github.com/hyperledger/fabric/core/aclmgmt/resources"
+	"github.com/hyperledger/fabric/core/chaincode/lifecycle"
 	"github.com/hyperledger/fabric/core/chaincode/platforms"
 	"github.com/hyperledger/fabric/core/chaincode/platforms/golang"
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	cutil "github.com/hyperledger/fabric/core/container/util"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
-	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
 	"github.com/hyperledger/fabric/core/mocks/scc/lscc"
 	"github.com/hyperledger/fabric/core/policy"
 	policymocks "github.com/hyperledger/fabric/core/policy/mocks"
@@ -102,8 +102,8 @@ func constructDeploymentSpec(name string, path string, version string, initArgs 
 // TestInstall tests the install function with various inputs
 func TestInstall(t *testing.T) {
 	// Initialize ledgermgmt that inturn initializes internal components (such as cceventmgmt on which this test depends)
-	ledgermgmt.InitializeTestEnv()
-	defer ledgermgmt.CleanupTestEnv()
+	cleanup := ledgermgmt.InitializeTestEnv(t)
+	defer cleanup()
 	scc := New(NewMockProvider(), mockAclProvider, platforms.NewRegistry(&golang.Platform{}))
 	scc.Support = &lscc.MockSupport{}
 	stub := shim.NewMockStub("lscc", scc)
@@ -141,42 +141,44 @@ func TestInstall(t *testing.T) {
 }
 
 func testInstall(t *testing.T, ccname string, version string, path string, createInvalidIndex bool, expectedErrorMsg string, caller string, scc *LifeCycleSysCC, stub *shim.MockStub, aclErr error) {
-	identityDeserializer := &policymocks.MockIdentityDeserializer{
-		Identity: []byte("Alice"),
-		Msg:      []byte("msg1"),
-	}
-	policyManagerGetter := &policymocks.MockChannelPolicyManagerGetter{
-		Managers: map[string]policies.Manager{
-			"test": &policymocks.MockChannelPolicyManager{MockPolicy: &policymocks.MockPolicy{Deserializer: identityDeserializer}},
-		},
-	}
-	scc.PolicyChecker = policy.NewPolicyChecker(
-		policyManagerGetter,
-		identityDeserializer,
-		&policymocks.MockMSPPrincipalGetter{Principal: []byte("Alice")},
-	)
+	t.Run(ccname+":"+version, func(t *testing.T) {
+		identityDeserializer := &policymocks.MockIdentityDeserializer{
+			Identity: []byte("Alice"),
+			Msg:      []byte("msg1"),
+		}
+		policyManagerGetter := &policymocks.MockChannelPolicyManagerGetter{
+			Managers: map[string]policies.Manager{
+				"test": &policymocks.MockChannelPolicyManager{MockPolicy: &policymocks.MockPolicy{Deserializer: identityDeserializer}},
+			},
+		}
+		scc.PolicyChecker = policy.NewPolicyChecker(
+			policyManagerGetter,
+			identityDeserializer,
+			&policymocks.MockMSPPrincipalGetter{Principal: []byte("Alice")},
+		)
 
-	cds, err := constructDeploymentSpec(ccname, path, version, [][]byte{[]byte("init"), []byte("a"), []byte("100"), []byte("b"), []byte("200")}, createInvalidIndex, false, scc)
-	assert.NoError(t, err)
-	cdsBytes := protoutil.MarshalOrPanic(cds)
+		cds, err := constructDeploymentSpec(ccname, path, version, [][]byte{[]byte("init"), []byte("a"), []byte("100"), []byte("b"), []byte("200")}, createInvalidIndex, false, scc)
+		assert.NoError(t, err)
+		cdsBytes := protoutil.MarshalOrPanic(cds)
 
-	// constructDeploymentSpec puts the depspec on the FS. This should succeed
-	args := [][]byte{[]byte("install"), cdsBytes}
+		// constructDeploymentSpec puts the depspec on the FS. This should succeed
+		args := [][]byte{[]byte("install"), cdsBytes}
 
-	sProp, _ := protoutil.MockSignedEndorserProposalOrPanic("", &pb.ChaincodeSpec{}, []byte(caller), []byte("msg1"))
-	identityDeserializer.Msg = sProp.ProposalBytes
-	sProp.Signature = sProp.ProposalBytes
+		sProp, _ := protoutil.MockSignedEndorserProposalOrPanic("", &pb.ChaincodeSpec{}, []byte(caller), []byte("msg1"))
+		identityDeserializer.Msg = sProp.ProposalBytes
+		sProp.Signature = sProp.ProposalBytes
 
-	mockAclProvider.Reset()
-	mockAclProvider.On("CheckACL", resources.Lscc_Install, "", sProp).Return(aclErr)
+		mockAclProvider.Reset()
+		mockAclProvider.On("CheckACL", resources.Lscc_Install, "", sProp).Return(aclErr)
 
-	if expectedErrorMsg == "" {
-		res := stub.MockInvokeWithSignedProposal("1", args, sProp)
-		assert.Equal(t, int32(shim.OK), res.Status, res.Message)
-	} else {
-		res := stub.MockInvokeWithSignedProposal("1", args, sProp)
-		assert.True(t, strings.HasPrefix(string(res.Message), expectedErrorMsg), res.Message)
-	}
+		if expectedErrorMsg == "" {
+			res := stub.MockInvokeWithSignedProposal("1", args, sProp)
+			assert.Equal(t, int32(shim.OK), res.Status, res.Message)
+		} else {
+			res := stub.MockInvokeWithSignedProposal("1", args, sProp)
+			assert.True(t, strings.HasPrefix(string(res.Message), expectedErrorMsg), res.Message)
+		}
+	})
 }
 
 func TestNewLifecycleEnabled(t *testing.T) {
@@ -586,66 +588,68 @@ func TestUpgrade(t *testing.T) {
 }
 
 func testUpgrade(t *testing.T, ccname string, version string, newccname string, newversion string, path string, expectedErrorMsg string, scc *LifeCycleSysCC, stub *shim.MockStub, collectionConfigBytes []byte) {
-	if scc == nil {
-		scc = New(NewMockProvider(), mockAclProvider, platforms.NewRegistry(&golang.Platform{}))
-		scc.Support = &lscc.MockSupport{}
-		stub = shim.NewMockStub("lscc", scc)
-		res := stub.MockInit("1", nil)
-		assert.Equal(t, int32(shim.OK), res.Status, res.Message)
-		scc.Support.(*lscc.MockSupport).GetInstantiationPolicyRv = []byte("instantiation policy")
-	}
-
-	cds, err := constructDeploymentSpec(ccname, path, version, [][]byte{[]byte("init"), []byte("a"), []byte("100"), []byte("b"), []byte("200")}, false, true, scc)
-	assert.NoError(t, err)
-	cdsBytes := protoutil.MarshalOrPanic(cds)
-
-	sProp, _ := protoutil.MockSignedEndorserProposal2OrPanic(chainid, &pb.ChaincodeSpec{}, id)
-	args := [][]byte{[]byte("deploy"), []byte("test"), cdsBytes}
-	saved1 := scc.Support.(*lscc.MockSupport).GetInstantiationPolicyErr
-	saved2 := scc.Support.(*lscc.MockSupport).CheckInstantiationPolicyMap
-	scc.Support.(*lscc.MockSupport).GetInstantiationPolicyErr = nil
-	scc.Support.(*lscc.MockSupport).CheckInstantiationPolicyMap = nil
-	res := stub.MockInvokeWithSignedProposal("1", args, sProp)
-	assert.Equal(t, int32(shim.OK), res.Status, res.Message)
-	scc.Support.(*lscc.MockSupport).GetInstantiationPolicyErr = saved1
-	scc.Support.(*lscc.MockSupport).CheckInstantiationPolicyMap = saved2
-
-	newCds, err := constructDeploymentSpec(newccname, path, newversion, [][]byte{[]byte("init"), []byte("a"), []byte("100"), []byte("b"), []byte("200")}, false, true, scc)
-	assert.NoError(t, err)
-	newCdsBytes := protoutil.MarshalOrPanic(newCds)
-
-	if len(collectionConfigBytes) > 0 {
-		if bytes.Compare(collectionConfigBytes, []byte("nil")) == 0 {
-			args = [][]byte{[]byte("upgrade"), []byte("test"), newCdsBytes, nil, []byte("escc"), []byte("vscc"), nil}
-		} else {
-			args = [][]byte{[]byte("upgrade"), []byte("test"), newCdsBytes, nil, []byte("escc"), []byte("vscc"), collectionConfigBytes}
+	t.Run(ccname+":"+version+"->"+newccname+":"+newversion, func(t *testing.T) {
+		if scc == nil {
+			scc = New(NewMockProvider(), mockAclProvider, platforms.NewRegistry(&golang.Platform{}))
+			scc.Support = &lscc.MockSupport{}
+			stub = shim.NewMockStub("lscc", scc)
+			res := stub.MockInit("1", nil)
+			assert.Equal(t, int32(shim.OK), res.Status, res.Message)
+			scc.Support.(*lscc.MockSupport).GetInstantiationPolicyRv = []byte("instantiation policy")
 		}
-	} else {
-		args = [][]byte{[]byte("upgrade"), []byte("test"), newCdsBytes}
-	}
 
-	res = stub.MockInvokeWithSignedProposal("1", args, sProp)
-	if expectedErrorMsg == "" {
+		cds, err := constructDeploymentSpec(ccname, path, version, [][]byte{[]byte("init"), []byte("a"), []byte("100"), []byte("b"), []byte("200")}, false, true, scc)
+		assert.NoError(t, err)
+		cdsBytes := protoutil.MarshalOrPanic(cds)
+
+		sProp, _ := protoutil.MockSignedEndorserProposal2OrPanic(chainid, &pb.ChaincodeSpec{}, id)
+		args := [][]byte{[]byte("deploy"), []byte("test"), cdsBytes}
+		saved1 := scc.Support.(*lscc.MockSupport).GetInstantiationPolicyErr
+		saved2 := scc.Support.(*lscc.MockSupport).CheckInstantiationPolicyMap
+		scc.Support.(*lscc.MockSupport).GetInstantiationPolicyErr = nil
+		scc.Support.(*lscc.MockSupport).CheckInstantiationPolicyMap = nil
+		res := stub.MockInvokeWithSignedProposal("1", args, sProp)
 		assert.Equal(t, int32(shim.OK), res.Status, res.Message)
+		scc.Support.(*lscc.MockSupport).GetInstantiationPolicyErr = saved1
+		scc.Support.(*lscc.MockSupport).CheckInstantiationPolicyMap = saved2
 
-		cd := &ccprovider.ChaincodeData{}
-		err = proto.Unmarshal(res.Payload, cd)
+		newCds, err := constructDeploymentSpec(newccname, path, newversion, [][]byte{[]byte("init"), []byte("a"), []byte("100"), []byte("b"), []byte("200")}, false, true, scc)
 		assert.NoError(t, err)
+		newCdsBytes := protoutil.MarshalOrPanic(newCds)
 
-		newVer := cd.Version
+		if len(collectionConfigBytes) > 0 {
+			if bytes.Compare(collectionConfigBytes, []byte("nil")) == 0 {
+				args = [][]byte{[]byte("upgrade"), []byte("test"), newCdsBytes, nil, []byte("escc"), []byte("vscc"), nil}
+			} else {
+				args = [][]byte{[]byte("upgrade"), []byte("test"), newCdsBytes, nil, []byte("escc"), []byte("vscc"), collectionConfigBytes}
+			}
+		} else {
+			args = [][]byte{[]byte("upgrade"), []byte("test"), newCdsBytes}
+		}
 
-		expectVer := "1"
-		assert.Equal(t, newVer, expectVer, fmt.Sprintf("Upgrade chaincode version error, expected %s, got %s", expectVer, newVer))
+		res = stub.MockInvokeWithSignedProposal("1", args, sProp)
+		if expectedErrorMsg == "" {
+			assert.Equal(t, int32(shim.OK), res.Status, res.Message)
 
-		chaincodeEvent := <-stub.ChaincodeEventsChannel
-		assert.Equal(t, "upgrade", chaincodeEvent.EventName)
-		lifecycleEvent := &pb.LifecycleEvent{}
-		err = proto.Unmarshal(chaincodeEvent.Payload, lifecycleEvent)
-		assert.NoError(t, err)
-		assert.Equal(t, newccname, lifecycleEvent.ChaincodeName)
-	} else {
-		assert.Equal(t, expectedErrorMsg, string(res.Message))
-	}
+			cd := &ccprovider.ChaincodeData{}
+			err = proto.Unmarshal(res.Payload, cd)
+			assert.NoError(t, err)
+
+			newVer := cd.Version
+
+			expectVer := "1"
+			assert.Equal(t, newVer, expectVer, fmt.Sprintf("Upgrade chaincode version error, expected %s, got %s", expectVer, newVer))
+
+			chaincodeEvent := <-stub.ChaincodeEventsChannel
+			assert.Equal(t, "upgrade", chaincodeEvent.EventName)
+			lifecycleEvent := &pb.LifecycleEvent{}
+			err = proto.Unmarshal(chaincodeEvent.Payload, lifecycleEvent)
+			assert.NoError(t, err)
+			assert.Equal(t, newccname, lifecycleEvent.ChaincodeName)
+		} else {
+			assert.Equal(t, expectedErrorMsg, string(res.Message))
+		}
+	})
 }
 
 func TestFunctionsWithAliases(t *testing.T) {
@@ -1114,31 +1118,45 @@ func TestCheckCollectionMemberPolicy(t *testing.T) {
 }
 
 func TestCheckChaincodeName(t *testing.T) {
+	lscc := &LifeCycleSysCC{}
+
 	/*allowed naming*/
-	result := isValidCCNameOrVersion("a-b", allowedChaincodeName)
-	assert.True(t, result)
-	result = isValidCCNameOrVersion("a_b", allowedChaincodeName)
-	assert.True(t, result)
-	result = isValidCCNameOrVersion("a_b-c", allowedChaincodeName)
-	assert.True(t, result)
-	result = isValidCCNameOrVersion("a-b_c", allowedChaincodeName)
-	assert.True(t, result)
+	err := lscc.isValidChaincodeName("a-b")
+	assert.NoError(t, err)
+	err = lscc.isValidChaincodeName("a_b")
+	assert.NoError(t, err)
+	err = lscc.isValidChaincodeName("a_b-c")
+	assert.NoError(t, err)
+	err = lscc.isValidChaincodeName("a-b_c")
+	assert.NoError(t, err)
 
 	/*invalid naming*/
-	result = isValidCCNameOrVersion("-ab", allowedChaincodeName)
-	assert.False(t, result)
-	result = isValidCCNameOrVersion("_ab", allowedChaincodeName)
-	assert.False(t, result)
-	result = isValidCCNameOrVersion("ab-", allowedChaincodeName)
-	assert.False(t, result)
-	result = isValidCCNameOrVersion("ab_", allowedChaincodeName)
-	assert.False(t, result)
-	result = isValidCCNameOrVersion("a__b", allowedChaincodeName)
-	assert.False(t, result)
-	result = isValidCCNameOrVersion("a--b", allowedChaincodeName)
-	assert.False(t, result)
-	result = isValidCCNameOrVersion("a-_b", allowedChaincodeName)
-	assert.False(t, result)
+	err = lscc.isValidChaincodeName("-ab")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid chaincode name '-ab'")
+	err = lscc.isValidChaincodeName("_ab")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid chaincode name '_ab'")
+	err = lscc.isValidChaincodeName("ab-")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid chaincode name 'ab-'")
+	err = lscc.isValidChaincodeName("ab_")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid chaincode name 'ab_'")
+	err = lscc.isValidChaincodeName("a__b")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid chaincode name 'a__b'")
+	err = lscc.isValidChaincodeName("a--b")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid chaincode name 'a--b'")
+	err = lscc.isValidChaincodeName("a-_b")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid chaincode name 'a-_b'")
+}
+
+func TestLifecycleChaincodeRegularExpressionsMatch(t *testing.T) {
+	assert.Equal(t, chaincodeNameRegExp.String(), lifecycle.ChaincodeNameRegExp.String())
+	assert.Equal(t, chaincodeVersionRegExp.String(), lifecycle.ChaincodeVersionRegExp.String())
 }
 
 var id msp.SigningIdentity
@@ -1155,9 +1173,6 @@ func NewMockProvider() *mscc.MocksccProviderImpl {
 }
 
 func TestMain(m *testing.M) {
-	// Read the core.yaml file for default config.
-	ledgertestutil.SetupCoreYAMLConfig()
-
 	//setup extension test environment
 	_, _, destroy := xtestutil.SetupExtTestEnv()
 	viper.Set("peer.fileSystemPath", "/tmp/fabric/core/ledger")

@@ -20,12 +20,10 @@ import (
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/queryresult"
 	"github.com/hyperledger/fabric/protos/peer"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestMain(m *testing.M) {
-	viper.Set("peer.fileSystemPath", "/tmp/fabric/ledgertests/kvledger/history/historydb/historyleveldb")
 	flogging.ActivateSpec("leveldbhelper,historyleveldb=debug")
 	os.Exit(m.Run())
 }
@@ -235,18 +233,6 @@ func TestHistoryForInvalidTran(t *testing.T) {
 	// test that there are no history values, since the tran was marked as invalid
 	kmod, _ := itr.Next()
 	assert.Nil(t, kmod)
-}
-
-//TestSavepoint tests that save points get written after each block and get returned via GetBlockNumfromSavepoint
-func TestHistoryDisabled(t *testing.T) {
-	env := newTestHistoryEnv(t)
-	defer env.cleanup()
-	viper.Set("ledger.history.enableHistoryDatabase", "false")
-	//no need to pass blockstore into history executore, it won't be used in this test
-	qhistory, err := env.testHistoryDB.NewHistoryQueryExecutor(nil)
-	assert.NoError(t, err, "Error upon NewHistoryQueryExecutor")
-	_, err2 := qhistory.GetHistoryForKey("ns1", "key7")
-	assert.Error(t, err2, "Error should have been returned for GetHistoryForKey() when history disabled")
 }
 
 //TestGenesisBlockNoError tests that Genesis blocks are ignored by history processing

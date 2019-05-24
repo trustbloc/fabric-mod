@@ -8,7 +8,6 @@ package etcdraft
 
 import (
 	"bytes"
-	"encoding/hex"
 	"path"
 	"reflect"
 	"time"
@@ -120,25 +119,9 @@ func (c *Consenter) detectSelfID(consenters map[uint64]*etcdraft.Consenter) (uin
 
 // HandleChain returns a new Chain instance or an error upon failure
 func (c *Consenter) HandleChain(support consensus.ConsenterSupport, metadata *common.Metadata) (consensus.Chain, error) {
-
-	if support.SharedConfig().Capabilities().Kafka2RaftMigration() {
-		c.Logger.Debugf("SharedConfig.ConsensusType fields: Type=%s, ConsensusMigrationState=%s, ConsensusMigrationContext=%d, ConsensusMetadata length=%d",
-			support.SharedConfig().ConsensusType(), support.SharedConfig().ConsensusMigrationState(),
-			support.SharedConfig().ConsensusMigrationContext(), len(support.SharedConfig().ConsensusMetadata()))
-		if support.SharedConfig().ConsensusMigrationState() != orderer.ConsensusType_MIG_STATE_NONE {
-			c.Logger.Debugf("SharedConfig.ConsensusType: ConsensusMetadata dump:\n%s", hex.Dump(support.SharedConfig().ConsensusMetadata()))
-		}
-	}
-
-	m := &etcdraft.Metadata{}
+	m := &etcdraft.ConfigMetadata{}
 	if err := proto.Unmarshal(support.SharedConfig().ConsensusMetadata(), m); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal consensus metadata")
-	}
-
-	if support.SharedConfig().Capabilities().Kafka2RaftMigration() &&
-		support.SharedConfig().ConsensusMigrationState() != orderer.ConsensusType_MIG_STATE_NONE {
-		c.Logger.Debugf("SharedConfig().ConsensusMetadata(): %s", m.String())
-		c.Logger.Debugf("block metadata.Value dump: \n%s", hex.Dump(metadata.Value))
 	}
 
 	if m.Options == nil {
@@ -151,12 +134,17 @@ func (c *Consenter) HandleChain(support consensus.ConsenterSupport, metadata *co
 	// In case chain has been restarted we restore raft metadata
 	// information from the recently committed block meta data
 	// field.
-	raftMetadata, err := ReadRaftMetadata(metadata, m)
+	blockMetadata, err := ReadBlockMetadata(metadata, m)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to read Raft metadata")
 	}
 
-	id, err := c.detectSelfID(raftMetadata.Consenters)
+	consenters := map[uint64]*etcdraft.Consenter{}
+	for i, consenter := range m.Consenters {
+		consenters[blockMetadata.ConsenterIds[i]] = consenter
+	}
+
+	id, err := c.detectSelfID(consenters)
 	if err != nil {
 		c.InactiveChainRegistry.TrackChain(support.ChainID(), support.Block(0), func() {
 			c.CreateChain(support.ChainID())
@@ -186,14 +174,15 @@ func (c *Consenter) HandleChain(support consensus.ConsenterSupport, metadata *co
 		MemoryStorage: raft.NewMemoryStorage(),
 		Logger:        c.Logger,
 
-		TickInterval:    tickInterval,
-		ElectionTick:    int(m.Options.ElectionTick),
-		HeartbeatTick:   int(m.Options.HeartbeatTick),
-		MaxInflightMsgs: int(m.Options.MaxInflightMsgs),
-		MaxSizePerMsg:   m.Options.MaxSizePerMsg,
-		SnapInterval:    m.Options.SnapshotInterval,
+		TickInterval:         tickInterval,
+		ElectionTick:         int(m.Options.ElectionTick),
+		HeartbeatTick:        int(m.Options.HeartbeatTick),
+		MaxInflightBlocks:    int(m.Options.MaxInflightBlocks),
+		MaxSizePerMsg:        uint64(support.SharedConfig().BatchSize().PreferredMaxBytes),
+		SnapshotIntervalSize: m.Options.SnapshotIntervalSize,
 
-		RaftMetadata: raftMetadata,
+		BlockMetadata: blockMetadata,
+		Consenters:    consenters,
 
 		WALDir:            path.Join(c.EtcdRaftConfig.WALDir, support.ChainID()),
 		SnapDir:           path.Join(c.EtcdRaftConfig.SnapDir, support.ChainID()),
@@ -219,23 +208,24 @@ func (c *Consenter) HandleChain(support consensus.ConsenterSupport, metadata *co
 	)
 }
 
-// ReadRaftMetadata attempts to read raft metadata from block metadata, if available.
+// ReadBlockMetadata attempts to read raft metadata from block metadata, if available.
 // otherwise, it reads raft metadata from config metadata supplied.
-func ReadRaftMetadata(blockMetadata *common.Metadata, configMetadata *etcdraft.Metadata) (*etcdraft.RaftMetadata, error) {
-	m := &etcdraft.RaftMetadata{
-		Consenters:      map[uint64]*etcdraft.Consenter{},
-		NextConsenterId: 1,
-	}
+func ReadBlockMetadata(blockMetadata *common.Metadata, configMetadata *etcdraft.ConfigMetadata) (*etcdraft.BlockMetadata, error) {
 	if blockMetadata != nil && len(blockMetadata.Value) != 0 { // we have consenters mapping from block
+		m := &etcdraft.BlockMetadata{}
 		if err := proto.Unmarshal(blockMetadata.Value, m); err != nil {
 			return nil, errors.Wrap(err, "failed to unmarshal block's metadata")
 		}
 		return m, nil
 	}
 
+	m := &etcdraft.BlockMetadata{
+		NextConsenterId: 1,
+		ConsenterIds:    make([]uint64, len(configMetadata.Consenters)),
+	}
 	// need to read consenters from the configuration
-	for _, consenter := range configMetadata.Consenters {
-		m.Consenters[m.NextConsenterId] = consenter
+	for i := range m.ConsenterIds {
+		m.ConsenterIds[i] = m.NextConsenterId
 		m.NextConsenterId++
 	}
 
@@ -275,9 +265,11 @@ func New(
 		ChainSelector: consenter,
 	}
 
-	comm := createComm(clusterDialer, consenter, conf.General.Cluster.SendBufferSize, metricsProvider)
+	comm := createComm(clusterDialer, consenter, conf.General.Cluster, metricsProvider)
 	consenter.Communication = comm
 	svc := &cluster.Service{
+		CertExpWarningThreshold:          conf.General.Cluster.CertExpirationWarningThreshold,
+		MinimumExpirationWarningInterval: cluster.MinimumExpirationWarningInterval,
 		StreamCountReporter: &cluster.StreamCountReporter{
 			Metrics: comm.Metrics,
 		},
@@ -289,16 +281,18 @@ func New(
 	return consenter
 }
 
-func createComm(clusterDialer *cluster.PredicateDialer, c *Consenter, sendBuffSize int, p metrics.Provider) *cluster.Comm {
+func createComm(clusterDialer *cluster.PredicateDialer, c *Consenter, config localconfig.Cluster, p metrics.Provider) *cluster.Comm {
 	metrics := cluster.NewMetrics(p)
 	comm := &cluster.Comm{
-		SendBufferSize: sendBuffSize,
-		Logger:         flogging.MustGetLogger("orderer.common.cluster"),
-		Chan2Members:   make(map[string]cluster.MemberMapping),
-		Connections:    cluster.NewConnectionStore(clusterDialer, metrics.EgressTLSConnectionCount),
-		Metrics:        metrics,
-		ChanExt:        c,
-		H:              c,
+		MinimumExpirationWarningInterval: cluster.MinimumExpirationWarningInterval,
+		CertExpWarningThreshold:          config.CertExpirationWarningThreshold,
+		SendBufferSize:                   config.SendBufferSize,
+		Logger:                           flogging.MustGetLogger("orderer.common.cluster"),
+		Chan2Members:                     make(map[string]cluster.MemberMapping),
+		Connections:                      cluster.NewConnectionStore(clusterDialer, metrics.EgressTLSConnectionCount),
+		Metrics:                          metrics,
+		ChanExt:                          c,
+		H:                                c,
 	}
 	c.Communication = comm
 	return comm
