@@ -29,7 +29,6 @@ import (
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -101,9 +100,8 @@ func TestDetectTXIdDuplicates(t *testing.T) {
 }
 
 func TestBlockValidationDuplicateTXId(t *testing.T) {
-	viper.Set("peer.fileSystemPath", "/tmp/fabric/txvalidatortest")
-	ledgermgmt.InitializeTestEnv()
-	defer ledgermgmt.CleanupTestEnv()
+	cleanup := ledgermgmt.InitializeTestEnv(t)
+	defer cleanup()
 
 	gb, _ := test.MakeGenesisBlock("TestLedger")
 	gbHash := protoutil.BlockHeaderHash(gb.Header)
@@ -165,9 +163,8 @@ func TestBlockValidation(t *testing.T) {
 	_, _, destroy := xtestutil.SetupExtTestEnv()
 	defer destroy()
 
-	viper.Set("peer.fileSystemPath", "/tmp/fabric/txvalidatortest")
-	ledgermgmt.InitializeTestEnv()
-	defer ledgermgmt.CleanupTestEnv()
+	cleanup := ledgermgmt.InitializeTestEnv(t)
+	defer cleanup()
 
 	gb, _ := test.MakeGenesisBlock("TestLedger")
 	gbHash := protoutil.BlockHeaderHash(gb.Header)
@@ -182,9 +179,8 @@ func TestParallelBlockValidation(t *testing.T) {
 	_, _, destroy := xtestutil.SetupExtTestEnv()
 	defer destroy()
 
-	viper.Set("peer.fileSystemPath", "/tmp/fabric/txvalidatortest")
-	ledgermgmt.InitializeTestEnv()
-	defer ledgermgmt.CleanupTestEnv()
+	cleanup := ledgermgmt.InitializeTestEnv(t)
+	defer cleanup()
 
 	gb, _ := test.MakeGenesisBlock("TestLedger")
 	gbHash := protoutil.BlockHeaderHash(gb.Header)
@@ -199,9 +195,8 @@ func TestVeryLargeParallelBlockValidation(t *testing.T) {
 	_, _, destroy := xtestutil.SetupExtTestEnv()
 	defer destroy()
 
-	viper.Set("peer.fileSystemPath", "/tmp/fabric/txvalidatortest")
-	ledgermgmt.InitializeTestEnv()
-	defer ledgermgmt.CleanupTestEnv()
+	cleanup := ledgermgmt.InitializeTestEnv(t)
+	defer cleanup()
 
 	gb, _ := test.MakeGenesisBlock("TestLedger")
 	gbHash := protoutil.BlockHeaderHash(gb.Header)
@@ -218,9 +213,8 @@ func TestTxValidationFailure_InvalidTxid(t *testing.T) {
 	_, _, destroy := xtestutil.SetupExtTestEnv()
 	defer destroy()
 
-	viper.Set("peer.fileSystemPath", "/tmp/fabric/txvalidatortest")
-	ledgermgmt.InitializeTestEnv()
-	defer ledgermgmt.CleanupTestEnv()
+	cleanup := ledgermgmt.InitializeTestEnv(t)
+	defer cleanup()
 
 	gb, _ := test.MakeGenesisBlock("TestLedger")
 	ledger, _ := ledgermgmt.CreateLedger(gb)

@@ -6,7 +6,9 @@ SPDX-License-Identifier: Apache-2.0
 
 package node
 
+import "github.com/hyperledger/fabric/internal/peer/node"
+
 // Start starts the peer
 func Start() error {
-	return serve([]string{})
+	return node.Serve([]string{})
 }

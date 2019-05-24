@@ -8,19 +8,16 @@ package peer
 
 import (
 	"runtime/debug"
-	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/common/deliver"
 	"github.com/hyperledger/fabric/common/flogging"
-	"github.com/hyperledger/fabric/common/metrics"
 	"github.com/hyperledger/fabric/core/aclmgmt/resources"
 	"github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
-	"github.com/spf13/viper"
 )
 
 var logger = flogging.MustGetLogger("common.deliverevents")
@@ -29,10 +26,10 @@ var logger = flogging.MustGetLogger("common.deliverevents")
 // given resource name
 type PolicyCheckerProvider func(resourceName string) deliver.PolicyCheckerFunc
 
-// server holds the dependencies necessary to create a deliver server
-type server struct {
-	dh                    *deliver.Handler
-	policyCheckerProvider PolicyCheckerProvider
+// Server holds the dependencies necessary to create a deliver server
+type DeliverServer struct {
+	DeliverHandler        *deliver.Handler
+	PolicyCheckerProvider PolicyCheckerProvider
 }
 
 // blockResponseSender structure used to send block responses
@@ -97,53 +94,37 @@ type transactionActions []*peer.TransactionAction
 // extend with auxiliary functionality
 type blockEvent common.Block
 
-// Deliver sends a stream of blocks to a client after commitment
-func (s *server) DeliverFiltered(srv peer.Deliver_DeliverFilteredServer) error {
+// DeliverFiltered sends a stream of blocks to a client after commitment
+func (s *DeliverServer) DeliverFiltered(srv peer.Deliver_DeliverFilteredServer) error {
 	logger.Debugf("Starting new DeliverFiltered handler")
 	defer dumpStacktraceOnPanic()
 	// getting policy checker based on resources.Event_FilteredBlock resource name
 	deliverServer := &deliver.Server{
 		Receiver:      srv,
-		PolicyChecker: s.policyCheckerProvider(resources.Event_FilteredBlock),
+		PolicyChecker: s.PolicyCheckerProvider(resources.Event_FilteredBlock),
 		ResponseSender: &filteredBlockResponseSender{
 			Deliver_DeliverFilteredServer: srv,
 		},
 	}
-	return s.dh.Handle(srv.Context(), deliverServer)
+	return s.DeliverHandler.Handle(srv.Context(), deliverServer)
 }
 
 // Deliver sends a stream of blocks to a client after commitment
-func (s *server) Deliver(srv peer.Deliver_DeliverServer) (err error) {
+func (s *DeliverServer) Deliver(srv peer.Deliver_DeliverServer) (err error) {
 	logger.Debugf("Starting new Deliver handler")
 	defer dumpStacktraceOnPanic()
 	// getting policy checker based on resources.Event_Block resource name
 	deliverServer := &deliver.Server{
-		PolicyChecker: s.policyCheckerProvider(resources.Event_Block),
+		PolicyChecker: s.PolicyCheckerProvider(resources.Event_Block),
 		Receiver:      srv,
 		ResponseSender: &blockResponseSender{
 			Deliver_DeliverServer: srv,
 		},
 	}
-	return s.dh.Handle(srv.Context(), deliverServer)
+	return s.DeliverHandler.Handle(srv.Context(), deliverServer)
 }
 
-// NewDeliverEventsServer creates a peer.Deliver server to deliver block and
-// filtered block events
-func NewDeliverEventsServer(mutualTLS bool, policyCheckerProvider PolicyCheckerProvider, chainManager deliver.ChainManager, metricsProvider metrics.Provider) peer.DeliverServer {
-	timeWindow := viper.GetDuration("peer.authentication.timewindow")
-	if timeWindow == 0 {
-		defaultTimeWindow := 15 * time.Minute
-		logger.Warningf("`peer.authentication.timewindow` not set; defaulting to %s", defaultTimeWindow)
-		timeWindow = defaultTimeWindow
-	}
-	metrics := deliver.NewMetrics(metricsProvider)
-	return &server{
-		dh:                    deliver.NewHandler(chainManager, timeWindow, mutualTLS, metrics),
-		policyCheckerProvider: policyCheckerProvider,
-	}
-}
-
-func (s *server) sendProducer(srv peer.Deliver_DeliverFilteredServer) func(msg proto.Message) error {
+func (s *DeliverServer) sendProducer(srv peer.Deliver_DeliverFilteredServer) func(msg proto.Message) error {
 	return func(msg proto.Message) error {
 		response, ok := msg.(*peer.DeliverResponse)
 		if !ok {
@@ -165,8 +146,7 @@ func (block *blockEvent) toFilteredBlock() (*peer.FilteredBlock, error) {
 		var err error
 
 		if ebytes == nil {
-			logger.Debugf("got nil data bytes for tx index %d, "+
-				"block num %d", txIndex, block.Header.Number)
+			logger.Debugf("got nil data bytes for tx index %d, block num %d", txIndex, block.Header.Number)
 			continue
 		}
 
@@ -183,8 +163,7 @@ func (block *blockEvent) toFilteredBlock() (*peer.FilteredBlock, error) {
 		}
 
 		if payload.Header == nil {
-			logger.Debugf("transaction payload header is nil, %d, block num %d",
-				txIndex, block.Header.Number)
+			logger.Debugf("transaction payload header is nil, %d, block num %d", txIndex, block.Header.Number)
 			continue
 		}
 		chdr, err := protoutil.UnmarshalChannelHeader(payload.Header.ChannelHeader)

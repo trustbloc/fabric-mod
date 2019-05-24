@@ -15,13 +15,17 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/storageutil"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/txmgr"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
-	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/hyperledger/fabric/extensions/collections/pvtdatahandler"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/queryresult"
 	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
 	"github.com/pkg/errors"
+)
+
+const (
+	queryReadsHashingEnabled   = true
+	maxDegreeQueryReadsHashing = uint32(50)
 )
 
 type pvtDataHandler interface {
@@ -39,9 +43,9 @@ type queryHelper struct {
 	pvtDataHandler    pvtDataHandler
 }
 
-func newQueryHelper(txmgr *LockBasedTxMgr, rwsetBuilder *rwsetutil.RWSetBuilder) *queryHelper {
+func newQueryHelper(txmgr *LockBasedTxMgr, rwsetBuilder *rwsetutil.RWSetBuilder, performCollCheck bool) *queryHelper {
 	helper := &queryHelper{txmgr: txmgr, rwsetBuilder: rwsetBuilder}
-	validator := newCollNameValidator(txmgr.ledgerid, txmgr.ccInfoProvider, &lockBasedQueryExecutor{helper: helper})
+	validator := newCollNameValidator(txmgr.ledgerid, txmgr.ccInfoProvider, &lockBasedQueryExecutor{helper: helper}, !performCollCheck)
 	helper.collNameValidator = validator
 	helper.pvtDataHandler = pvtdatahandler.New(txmgr.ledgerid, txmgr.collDataProvider)
 	return helper
@@ -85,8 +89,16 @@ func (h *queryHelper) getStateRangeScanIterator(namespace string, startKey strin
 	if err := h.checkDone(); err != nil {
 		return nil, err
 	}
-	itr, err := newResultsItr(namespace, startKey, endKey, nil, h.txmgr.db, h.rwsetBuilder,
-		ledgerconfig.IsQueryReadsHashingEnabled(), ledgerconfig.GetMaxDegreeQueryReadsHashing())
+	itr, err := newResultsItr(
+		namespace,
+		startKey,
+		endKey,
+		nil,
+		h.txmgr.db,
+		h.rwsetBuilder,
+		queryReadsHashingEnabled,
+		maxDegreeQueryReadsHashing,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -98,8 +110,16 @@ func (h *queryHelper) getStateRangeScanIteratorWithMetadata(namespace string, st
 	if err := h.checkDone(); err != nil {
 		return nil, err
 	}
-	itr, err := newResultsItr(namespace, startKey, endKey, metadata, h.txmgr.db, h.rwsetBuilder,
-		ledgerconfig.IsQueryReadsHashingEnabled(), ledgerconfig.GetMaxDegreeQueryReadsHashing())
+	itr, err := newResultsItr(
+		namespace,
+		startKey,
+		endKey,
+		metadata,
+		h.txmgr.db,
+		h.rwsetBuilder,
+		queryReadsHashingEnabled,
+		maxDegreeQueryReadsHashing,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +174,7 @@ func (h *queryHelper) getPrivateData(ns, coll, key string) ([]byte, error) {
 	}
 	if !version.AreSame(hashVersion, ver) {
 		return nil, &txmgr.ErrPvtdataNotAvailable{Msg: fmt.Sprintf(
-			"private data matching public hash version is not available. Public hash version = %#v, Private data version = %#v",
+			"private data matching public hash version is not available. Public hash version = %s, Private data version = %s",
 			hashVersion, ver)}
 	}
 	if h.rwsetBuilder != nil {

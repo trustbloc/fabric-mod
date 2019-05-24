@@ -18,7 +18,6 @@ import (
 	"github.com/hyperledger/fabric/gossip/util"
 	proto "github.com/hyperledger/fabric/protos/gossip"
 	"github.com/pkg/errors"
-	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 )
 
@@ -133,16 +132,6 @@ func (cs *connectionStore) connNum() int {
 	return len(cs.pki2Conn)
 }
 
-func (cs *connectionStore) closeConn(peer *RemotePeer) {
-	cs.Lock()
-	defer cs.Unlock()
-
-	if conn, exists := cs.pki2Conn[string(peer.PKIID)]; exists {
-		conn.close()
-		delete(cs.pki2Conn, string(conn.pkiID))
-	}
-}
-
 func (cs *connectionStore) shutdown() {
 	cs.Lock()
 	cs.isClosing = true
@@ -158,7 +147,7 @@ func (cs *connectionStore) shutdown() {
 	for _, conn := range connections2Close {
 		wg.Add(1)
 		go func(conn *connection) {
-			cs.closeByPKIid(conn.pkiID)
+			cs.closeConnByPKIid(conn.pkiID)
 			wg.Done()
 		}(conn)
 	}
@@ -183,11 +172,12 @@ func (cs *connectionStore) registerConn(connInfo *protoext.ConnectionInfo,
 	conn.pkiID = connInfo.ID
 	conn.info = connInfo
 	conn.logger = cs.logger
+	// Assuming that cs.Lock has already been taken by the caller of this method
 	cs.pki2Conn[string(connInfo.ID)] = conn
 	return conn
 }
 
-func (cs *connectionStore) closeByPKIid(pkiID common.PKIidType) {
+func (cs *connectionStore) closeConnByPKIid(pkiID common.PKIidType) {
 	cs.Lock()
 	defer cs.Unlock()
 	if conn, exists := cs.pki2Conn[string(pkiID)]; exists {
@@ -247,7 +237,7 @@ func (conn *connection) close() {
 		return
 	}
 
-	conn.stopChan <- struct{}{}
+	close(conn.stopChan)
 
 	conn.drainOutputBuffer()
 	conn.Lock()
@@ -272,7 +262,7 @@ func (conn *connection) toDie() bool {
 
 func (conn *connection) send(msg *protoext.SignedGossipMessage, onErr func(error), shouldBlock blockingBehavior) {
 	if conn.toDie() {
-		conn.logger.Debug("Aborting send() to ", conn.info.Endpoint, "because connection is closing")
+		conn.logger.Debugf("Aborting send() to %s because connection is closing", conn.info.Endpoint)
 		return
 	}
 
@@ -281,38 +271,36 @@ func (conn *connection) send(msg *protoext.SignedGossipMessage, onErr func(error
 		onErr:    onErr,
 	}
 
-	if len(conn.outBuff) == cap(conn.outBuff) {
-		if conn.logger.IsEnabledFor(zapcore.DebugLevel) {
-			conn.logger.Debug("Buffer to", conn.info.Endpoint, "overflowed, dropping message", msg.String())
+	select {
+	case conn.outBuff <- m:
+		// room in channel, successfully sent message, nothing to do
+	default: // did not send
+		if shouldBlock {
+			conn.outBuff <- m // try again, and wait to send
+		} else {
 			conn.metrics.BufferOverflow.Add(1)
-		}
-		if !shouldBlock {
-			return
+			conn.logger.Debugf("Buffer to %s overflowed, dropping message %s", conn.info.Endpoint, msg)
 		}
 	}
-
-	conn.outBuff <- m
 }
 
 func (conn *connection) serviceConnection() error {
 	errChan := make(chan error, 1)
 	msgChan := make(chan *protoext.SignedGossipMessage, conn.recvBuffSize)
-	quit := make(chan struct{})
 	// Call stream.Recv() asynchronously in readFromStream(),
 	// and wait for either the Recv() call to end,
 	// or a signal to close the connection, which exits
 	// the method and makes the Recv() call to fail in the
 	// readFromStream() method
-	go conn.readFromStream(errChan, quit, msgChan)
+	go conn.readFromStream(errChan, msgChan)
 
 	conn.stopWG.Add(1) // wait for write to finish before closing it
 	go conn.writeToStream()
 
 	for !conn.toDie() {
 		select {
-		case stop := <-conn.stopChan:
+		case <-conn.stopChan:
 			conn.logger.Debug("Closing reading from stream")
-			conn.stopChan <- stop
 			return nil
 		case err := <-errChan:
 			return err
@@ -339,22 +327,26 @@ func (conn *connection) writeToStream() {
 				return
 			}
 			conn.metrics.SentMessages.Add(1)
-		case stop := <-conn.stopChan:
+		case <-conn.stopChan:
 			conn.logger.Debug("Closing writing to stream")
-			conn.stopChan <- stop
 			return
 		}
 	}
 }
 
 func (conn *connection) drainOutputBuffer() {
-	// Drain the output buffer
-	for len(conn.outBuff) > 0 {
-		<-conn.outBuff
+	// Read from the buffer until it is empty.
+	// There may be multiple concurrent readers.
+	for {
+		select {
+		case <-conn.outBuff:
+		default:
+			return
+		}
 	}
 }
 
-func (conn *connection) readFromStream(errChan chan error, quit chan struct{}, msgChan chan *protoext.SignedGossipMessage) {
+func (conn *connection) readFromStream(errChan chan error, msgChan chan *protoext.SignedGossipMessage) {
 	for !conn.toDie() {
 		stream := conn.getStream()
 		if stream == nil {
@@ -363,10 +355,6 @@ func (conn *connection) readFromStream(errChan chan error, quit chan struct{}, m
 			return
 		}
 		envelope, err := stream.Recv()
-		if conn.toDie() {
-			conn.logger.Debug(conn.pkiID, "canceling read because closing")
-			return
-		}
 		if err != nil {
 			errChan <- err
 			conn.logger.Debugf("Got error, aborting: %v", err)
@@ -378,11 +366,7 @@ func (conn *connection) readFromStream(errChan chan error, quit chan struct{}, m
 			errChan <- err
 			conn.logger.Warningf("Got error, aborting: %v", err)
 		}
-		select {
-		case msgChan <- msg:
-		case <-quit:
-			return
-		}
+		msgChan <- msg
 	}
 }
 

@@ -21,7 +21,6 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/privacyenabledstate"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/txmgr"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/txmgr/lockbasedtxmgr"
-	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/core/ledger/ledgerstorage"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatapolicy"
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
@@ -54,6 +53,7 @@ func newKVLedger(
 	stateListeners []ledger.StateListener,
 	bookkeeperProvider bookkeeping.Provider,
 	ccInfoProvider ledger.DeployedChaincodeInfoProvider,
+	ccLifecycleEventProvider ledger.ChaincodeLifecycleEventProvider,
 	stats *ledgerStats,
 	collDataProvider storeapi.Provider,
 ) (*kvLedger, error) {
@@ -62,6 +62,13 @@ func newKVLedger(
 	// id store, blockstore, txmgr (state database), history database
 	l := &kvLedger{ledgerID: ledgerID, blockStore: blockStore, historyDB: historyDB, blockAPIsRWLock: &sync.RWMutex{}}
 
+	btlPolicy := pvtdatapolicy.ConstructBTLPolicy(&collectionInfoRetriever{ledgerID, l, ccInfoProvider})
+	if err := l.initTxMgr(versionedDB, stateListeners, btlPolicy, bookkeeperProvider, ccInfoProvider, collDataProvider); err != nil {
+		return nil, err
+	}
+
+	l.initBlockStore(btlPolicy)
+
 	// TODO Move the function `GetChaincodeEventListener` to ledger interface and
 	// this functionality of regiserting for events to ledgermgmt package so that this
 	// is reused across other future ledger implementations
@@ -69,12 +76,9 @@ func newKVLedger(
 	logger.Debugf("Register state db for chaincode lifecycle events: %t", ccEventListener != nil)
 	if ccEventListener != nil {
 		cceventmgmt.GetMgr().Register(ledgerID, ccEventListener)
+		ccLifecycleEventProvider.RegisterListener(l.ledgerID, &ccEventListenerAdaptor{ccEventListener})
 	}
-	btlPolicy := pvtdatapolicy.ConstructBTLPolicy(&collectionInfoRetriever{ledgerID, l, ccInfoProvider})
-	if err := l.initTxMgr(versionedDB, stateListeners, btlPolicy, bookkeeperProvider, ccInfoProvider, collDataProvider); err != nil {
-		return nil, err
-	}
-	l.initBlockStore(btlPolicy)
+
 	//Recover both state DB and history DB if they are out of sync with block storage
 	if err := l.recoverDBs(); err != nil {
 		panic(errors.WithMessage(err, "error during state DB recovery"))
@@ -95,8 +99,14 @@ func (l *kvLedger) initTxMgr(versionedDB privacyenabledstate.DB, stateListeners 
 	btlPolicy pvtdatapolicy.BTLPolicy, bookkeeperProvider bookkeeping.Provider, ccInfoProvider ledger.DeployedChaincodeInfoProvider,
 	collDataProvider storeapi.Provider) error {
 	var err error
-	l.txtmgmt, err = lockbasedtxmgr.NewLockBasedTxMgr(l.ledgerID, versionedDB, stateListeners, btlPolicy, bookkeeperProvider, ccInfoProvider, collDataProvider)
-	qe, err := l.NewQueryExecutor()
+	txmgr, err := lockbasedtxmgr.NewLockBasedTxMgr(l.ledgerID, versionedDB, stateListeners, btlPolicy, bookkeeperProvider, ccInfoProvider, collDataProvider)
+	if err != nil {
+		return err
+	}
+	l.txtmgmt = txmgr
+	// This is a workaround for populating lifecycle cache.
+	// See comments on this function for deatils
+	qe, err := txmgr.NewQueryExecutorNoCollChecks()
 	if err != nil {
 		return err
 	}
@@ -134,7 +144,10 @@ func (l *kvLedger) syncStateAndHistoryDBWithBlockstore() error {
 		return nil
 	}
 	lastAvailableBlockNum := info.Height - 1
-	recoverables := []recoverable{l.txtmgmt, l.historyDB}
+	recoverables := []recoverable{l.txtmgmt}
+	if l.historyDB != nil {
+		recoverables = append(recoverables, l.historyDB)
+	}
 	recoverers := []*recoverer{}
 	for _, recoverable := range recoverables {
 		recoverFlag, firstBlockNum, err := recoverable.ShouldRecover(lastAvailableBlockNum)
@@ -296,7 +309,10 @@ func (l *kvLedger) NewQueryExecutor() (ledger.QueryExecutor, error) {
 // Any synchronization should be performed at the implementation level if required
 // Pass the ledger blockstore so that historical values can be looked up from the chain
 func (l *kvLedger) NewHistoryQueryExecutor() (ledger.HistoryQueryExecutor, error) {
-	return l.historyDB.NewHistoryQueryExecutor(l.blockStore)
+	if l.historyDB != nil {
+		return l.historyDB.NewHistoryQueryExecutor(l.blockStore)
+	}
+	return nil, nil
 }
 
 // CommitWithPvtData commits the block and the corresponding pvt data in an atomic operation
@@ -331,7 +347,7 @@ func (l *kvLedger) CommitWithPvtData(pvtdataAndBlock *ledger.BlockAndPvtData) er
 
 	// History database could be written in parallel with state and/or async as a future optimization,
 	// although it has not been a bottleneck...no need to clutter the log with elapsed duration.
-	if ledgerconfig.IsHistoryDBEnabled() {
+	if l.historyDB != nil {
 		logger.Debugf("[%s] Committing block [%d] transactions to history database", l.ledgerID, blockNo)
 		if err := l.historyDB.Commit(block); err != nil {
 			panic(errors.WithMessage(err, "Error during commit to history db"))
@@ -468,4 +484,23 @@ func (r *collectionInfoRetriever) CollectionInfo(chaincodeName, collectionName s
 	}
 	defer qe.Done()
 	return r.infoProvider.CollectionInfo(r.ledgerID, chaincodeName, collectionName, qe)
+}
+
+type ccEventListenerAdaptor struct {
+	legacyEventListener cceventmgmt.ChaincodeLifecycleEventListener
+}
+
+func (a *ccEventListenerAdaptor) HandleChaincodeDeploy(chaincodeDefinition *ledger.ChaincodeDefinition, dbArtifactsTar []byte) error {
+	return a.legacyEventListener.HandleChaincodeDeploy(&cceventmgmt.ChaincodeDefinition{
+		Name:              chaincodeDefinition.Name,
+		Hash:              chaincodeDefinition.Hash,
+		Version:           chaincodeDefinition.Version,
+		CollectionConfigs: chaincodeDefinition.CollectionConfigs,
+	},
+		dbArtifactsTar,
+	)
+}
+
+func (a *ccEventListenerAdaptor) ChaincodeDeployDone(succeeded bool) {
+	a.legacyEventListener.ChaincodeDeployDone(succeeded)
 }

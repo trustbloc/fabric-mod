@@ -19,6 +19,11 @@ type Issuer struct {
 
 // RequestIssue creates an issue request with the token owners, types, and quantities specified in tokensToIssue.
 func (i *Issuer) RequestIssue(tokensToIssue []*token.Token) (*token.TokenTransaction, error) {
+
+	if len(tokensToIssue) == 0 {
+		return nil, errors.Errorf("invalid tokensToIssue")
+	}
+
 	var outputs []*token.Token
 	for _, tti := range tokensToIssue {
 		err := i.TokenOwnerValidator.Validate(tti.Owner)
@@ -50,20 +55,19 @@ func (i *Issuer) RequestIssue(tokensToIssue []*token.Token) (*token.TokenTransac
 	}, nil
 }
 
-// RequestExpectation allows indirect import based on the expectation.
-// It creates a token transaction with the outputs as specified in the expectation.
-func (i *Issuer) RequestExpectation(request *token.ExpectationRequest) (*token.TokenTransaction, error) {
-	if request.GetExpectation() == nil {
-		return nil, errors.New("no token expectation in ExpectationRequest")
+// RequestTokenOperation returns a token transaction matching the requested issue operation
+func (i *Issuer) RequestTokenOperation(request *token.TokenOperation) (*token.TokenTransaction, error) {
+	if request.GetAction() == nil {
+		return nil, errors.New("no action in request")
 	}
-	if request.GetExpectation().GetPlainExpectation() == nil {
-		return nil, errors.New("no plain expectation in ExpectationRequest")
+	if request.GetAction().GetIssue() == nil {
+		return nil, errors.New("no issue in action")
 	}
-	if request.GetExpectation().GetPlainExpectation().GetImportExpectation() == nil {
-		return nil, errors.New("no import expectation in ExpectationRequest")
+	if request.GetAction().GetIssue().GetSender() == nil {
+		return nil, errors.New("no sender in issue")
 	}
 
-	outputs := request.GetExpectation().GetPlainExpectation().GetImportExpectation().GetOutputs()
+	outputs := request.GetAction().GetIssue().GetOutputs()
 	if len(outputs) == 0 {
 		return nil, errors.New("no outputs in ExpectationRequest")
 	}

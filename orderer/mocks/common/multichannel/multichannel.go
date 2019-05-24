@@ -22,6 +22,9 @@ type ConsenterSupport struct {
 	// SharedConfigVal is the value returned by SharedConfig()
 	SharedConfigVal *mockconfig.Orderer
 
+	// SharedConfigVal is the value returned by ChannelConfig()
+	ChannelConfigVal *mockconfig.Channel
+
 	// BlockCutterVal is the value returned by BlockCutter()
 	BlockCutterVal *mockblockcutter.Receiver
 
@@ -66,8 +69,6 @@ type ConsenterSupport struct {
 
 	// BlockVerificationErr is returned by VerifyBlockSignature
 	BlockVerificationErr error
-
-	SystemChannelVal bool
 }
 
 // Block returns the block with the given number or nil if not found
@@ -83,6 +84,11 @@ func (mcs *ConsenterSupport) BlockCutter() blockcutter.Receiver {
 // SharedConfig returns SharedConfigVal
 func (mcs *ConsenterSupport) SharedConfig() channelconfig.Orderer {
 	return mcs.SharedConfigVal
+}
+
+// ChannelConfig returns ChannelConfigVal
+func (mcs *ConsenterSupport) ChannelConfig() channelconfig.Channel {
+	return mcs.ChannelConfigVal
 }
 
 // CreateNextBlock creates a simple block structure with the given data
@@ -102,8 +108,7 @@ func (mcs *ConsenterSupport) WriteBlock(block *cb.Block, encodedMetadataValue []
 	if encodedMetadataValue != nil {
 		block.Metadata.Metadata[cb.BlockMetadataIndex_ORDERER] = protoutil.MarshalOrPanic(&cb.Metadata{Value: encodedMetadataValue})
 	}
-	mcs.HeightVal++
-	mcs.Blocks <- block
+	mcs.Append(block)
 }
 
 // WriteConfigBlock calls WriteBlock
@@ -166,7 +171,14 @@ func (mcs *ConsenterSupport) VerifyBlockSignature(_ []*protoutil.SignedData, _ *
 	return mcs.BlockVerificationErr
 }
 
-// IsSystemChannel returns true if this is the system channel
-func (mcs *ConsenterSupport) IsSystemChannel() bool {
-	return mcs.SystemChannelVal
+// Append appends a new block to the ledger in its raw form,
+// unlike WriteBlock that also mutates its metadata.
+func (mcs *ConsenterSupport) Append(block *cb.Block) error {
+	mcs.HeightVal++
+	mcs.Blocks <- block
+	return nil
+}
+
+func (mcs *ConsenterSupport) DetectConsensusMigration() bool {
+	return false
 }

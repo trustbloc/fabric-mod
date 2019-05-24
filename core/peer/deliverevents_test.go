@@ -11,6 +11,7 @@ import (
 	"io"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/common/deliver"
@@ -22,7 +23,6 @@ import (
 	"github.com/hyperledger/fabric/protos/orderer"
 	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"google.golang.org/grpc/metadata"
@@ -168,7 +168,6 @@ func TestFilteredBlockResponseSenderIsFiltered(t *testing.T) {
 }
 
 func TestEventsServer_DeliverFiltered(t *testing.T) {
-	viper.Set("peer.authentication.timewindow", "1s")
 	tests := []testCase{
 		{
 			name: "Testing deliver of the filtered block events",
@@ -379,12 +378,12 @@ func TestEventsServer_DeliverFiltered(t *testing.T) {
 			wg := &sync.WaitGroup{}
 			chainManager, deliverServer := test.prepare(wg)
 
-			server := NewDeliverEventsServer(
-				false,
-				defaultPolicyCheckerProvider,
-				chainManager,
-				&disabled.Provider{},
-			)
+			metrics := deliver.NewMetrics(&disabled.Provider{})
+			server := &DeliverServer{
+				DeliverHandler:        deliver.NewHandler(chainManager, time.Second, false, metrics),
+				PolicyCheckerProvider: defaultPolicyCheckerProvider,
+			}
+
 			err := server.DeliverFiltered(deliverServer)
 			wg.Wait()
 			// no error expected

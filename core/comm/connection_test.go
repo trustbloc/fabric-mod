@@ -9,7 +9,6 @@ package comm
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -21,7 +20,6 @@ import (
 	"github.com/hyperledger/fabric/core/comm/testpb"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 )
 
 const (
@@ -45,93 +43,6 @@ BwwNU2FuIEZyYW5jaXNjbzEYMBYGA1UECgwPTGludXhGb3VuZGF0aW9uMRQwEgYD
 VQQLDAtIeXBlcmxlZGdlcjESMBAGA1UEAwwJbG9jYWxob3N0MFkwEwYHKoZIzj0C
 -----END CERTIFICATE-----
 `
-
-func TestClientConnections(t *testing.T) {
-	t.Parallel()
-
-	//use Org1 test crypto material
-	fileBase := "Org1"
-	certPEMBlock, _ := ioutil.ReadFile(filepath.Join("testdata", "certs", fileBase+"-server1-cert.pem"))
-	keyPEMBlock, _ := ioutil.ReadFile(filepath.Join("testdata", "certs", fileBase+"-server1-key.pem"))
-	caPEMBlock, _ := ioutil.ReadFile(filepath.Join("testdata", "certs", fileBase+"-cert.pem"))
-	certPool := x509.NewCertPool()
-	certPool.AppendCertsFromPEM(caPEMBlock)
-
-	var tests = []struct {
-		name       string
-		sc         ServerConfig
-		creds      credentials.TransportCredentials
-		clientPort int
-		fail       bool
-	}{
-		{
-			name: "ValidConnection",
-			sc: ServerConfig{
-				SecOpts: &SecureOptions{
-					UseTLS: false}},
-		},
-		{
-			name: "InvalidConnection",
-			sc: ServerConfig{
-				SecOpts: &SecureOptions{
-					UseTLS: false}},
-			clientPort: 20040,
-			fail:       true,
-		},
-		{
-			name: "ValidConnectionTLS",
-			sc: ServerConfig{
-				SecOpts: &SecureOptions{
-					UseTLS:      true,
-					Certificate: certPEMBlock,
-					Key:         keyPEMBlock}},
-			creds: credentials.NewClientTLSFromCert(certPool, ""),
-		},
-		{
-			name: "InvalidConnectionTLS",
-			sc: ServerConfig{
-				SecOpts: &SecureOptions{
-					UseTLS:      true,
-					Certificate: certPEMBlock,
-					Key:         keyPEMBlock}},
-			creds: credentials.NewClientTLSFromCert(nil, ""),
-			fail:  true,
-		},
-	}
-
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			t.Logf("Running test %s ...", test.name)
-			lis, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatalf("failed to create listener for test server: %v", err)
-			}
-			clientAddress := lis.Addr().String()
-			if test.clientPort > 0 {
-				clientAddress = fmt.Sprintf("127.0.0.1:%d", test.clientPort)
-			}
-			srv, err := NewGRPCServerFromListener(lis, test.sc)
-			//check for error
-			if err != nil {
-				t.Fatalf("Error [%s] creating test server for address [%s]",
-					err, lis.Addr().String())
-			}
-			//start the server
-			go srv.Start()
-			defer srv.Stop()
-			testConn, err := NewClientConnectionWithAddress(clientAddress,
-				true, test.sc.SecOpts.UseTLS, test.creds, nil)
-			if test.fail {
-				assert.Error(t, err)
-			} else {
-				testConn.Close()
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
 
 // utility function to load up our test root certificates from testdata/certs
 func loadRootCAs() [][]byte {
@@ -204,7 +115,6 @@ func TestCredentialSupport(t *testing.T) {
 }
 
 type srv struct {
-	port    int
 	address string
 	*GRPCServer
 	caCert   []byte
@@ -274,9 +184,7 @@ func TestImpersonation(t *testing.T) {
 	// 4) Invocation with GetDeliverServiceCredentials("B") to srvA fails
 
 	osA := newServer("orgA")
-	defer osA.Stop()
 	osB := newServer("orgB")
-	defer osB.Stop()
 	time.Sleep(time.Second)
 
 	cs := &CredentialSupport{
@@ -289,11 +197,50 @@ func TestImpersonation(t *testing.T) {
 	cs.OrdererRootCAsByChain["A"] = [][]byte{osA.caCert}
 	cs.OrdererRootCAsByChain["B"] = [][]byte{osB.caCert}
 
-	testInvoke(t, "A", osA, cs, true)
-	testInvoke(t, "B", osB, cs, true)
-	testInvoke(t, "A", osB, cs, false)
-	testInvoke(t, "B", osA, cs, false)
-
+	var tests = []struct {
+		channel string
+		server  *srv
+		creds   *CredentialSupport
+		success bool
+	}{
+		{
+			channel: "A",
+			server:  osA,
+			creds:   cs,
+			success: true,
+		},
+		{
+			channel: "B",
+			server:  osB,
+			creds:   cs,
+			success: true,
+		},
+		{
+			channel: "A",
+			server:  osB,
+			creds:   cs,
+			success: false,
+		},
+		{
+			channel: "B",
+			server:  osA,
+			creds:   cs,
+			success: false,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run("", func(t *testing.T) {
+			t.Parallel()
+			testInvoke(
+				t,
+				test.channel,
+				test.server,
+				test.creds,
+				test.success,
+			)
+		})
+	}
 }
 
 func testInvoke(
@@ -307,7 +254,7 @@ func testInvoke(
 	assert.NoError(t, err)
 
 	endpoint := s.address
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
 	conn, err := grpc.DialContext(ctx, endpoint, grpc.WithTransportCredentials(creds), grpc.WithBlock())
 	if shouldSucceed {

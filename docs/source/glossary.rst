@@ -1,4 +1,3 @@
-
 Glossary
 ===========================
 
@@ -22,13 +21,13 @@ communication is constant, and because peers always ask to be told about the exi
 of any peer they don't know about, a common view of membership can be established for
 a channel.
 
-For example, let's assume we have three organizations---`A`, `B`, `C`--- in the channel
-and a single anchor peer---`peer0.orgC`--- defined for organization `C`. When `peer1.orgA`
-(from organization `A`) contacts `peer0.orgC`, it will tell it about `peer0.orgA`. And
-when at a later time `peer1.orgB` contacts `peer0.orgC`, the latter would tell the
-former about `peer0.orgA`. From that point forward, organizations `A` and `B` would
-start exchanging membership information directly without any assistance from
-`peer0.orgC`.
+For example, let's assume we have three organizations --- ``A``, ``B``, ``C`` --- in the channel
+and a single anchor peer --- ``peer0.orgC`` --- defined for organization ``C``.
+When ``peer1.orgA`` (from organization ``A``) contacts ``peer0.orgC``, it will
+tell ``peer0.orgC`` about ``peer0.orgA``. And when at a later time ``peer1.orgB``
+contacts ``peer0.orgC``, the latter would tell the former about ``peer0.orgA``.
+From that point forward, organizations ``A`` and ``B`` would start exchanging
+membership information directly without any assistance from ``peer0.orgC``.
 
 As communication across organizations depends on gossip in order to work, there must
 be at least one anchor peer defined in the channel configuration. It is strongly
@@ -61,7 +60,6 @@ in the top level "Application" section of ``configtx.yaml`` or overridden
 on a per profile basis in the "Profiles" section.
 
 .. _Block:
-
 
 Block
 -----
@@ -112,7 +110,6 @@ Chaincode
 See Smart-Contract_.
 
 .. _Channel:
-
 
 Channel
 -------
@@ -168,7 +165,7 @@ channel or overall network (e.g. a member leaving or joining) will result
 in a new configuration block being appended to the appropriate chain. This
 block will contain the contents of the genesis block, plus the delta.
 
-.. Consensus
+.. _Consensus:
 
 Consensus
 ---------
@@ -177,7 +174,17 @@ A broader term overarching the entire transactional flow, which serves to genera
 an agreement on the order and to confirm the correctness of the set of transactions
 constituting a block.
 
-.. Consortium
+.. _Consenter-Set:
+
+Consenter set
+-------------
+
+In a Raft ordering service, these are the ordering nodes actively participating
+in the consensus mechanism on a channel. If other ordering nodes exist on the
+system channel, but are not a part of a channel, they are not part of that
+channel's consenter set.
+
+.. _Consortium:
 
 Consortium
 ----------
@@ -188,6 +195,21 @@ peers. While a blockchain network can have multiple consortia, most blockchain
 networks have a single consortium. At channel creation time, all organizations
 added to the channel must be part of a consortium. However, an organization
 that is not defined in a consortium may be added to an existing channel.
+
+.. _Chaincode-definition:
+
+Chaincode definition
+--------------------
+
+A chaincode definition is used by organizations to agree on the parameters of a
+chaincode before it can be used on a channel. Each channel member that wants to
+use the chaincode to endorse transactions or query the ledger needs to approve
+a chaincode definition for their organization. Once enough channel members have
+approved a chaincode definition to meet the Lifecycle Endorsement policy (which
+is set to a majority of organizations in the channel by default), the chaincode
+definition can be committed to the channel. After the definition is committed,
+the first invoke of the chaincode (or, if requested, the execution of the Init
+function) will start the chaincode on the channel.
 
 .. _Current-State:
 
@@ -231,17 +253,37 @@ peers that are assigned to a specific chaincode application. Policies can be
 curated based on the application and the desired level of resilience against
 misbehavior (deliberate or not) by the endorsing peers. A transaction that is submitted
 must satisfy the endorsement policy before being marked as valid by committing peers.
-A distinct endorsement policy for install and instantiate transactions is also required.
 
-.. _Fabric-ca:
+.. _FabToken:
 
-Hyperledger Fabric CA
----------------------
+FabToken
+--------
 
-Hyperledger Fabric CA is the default Certificate Authority component, which
-issues PKI-based certificates to network member organizations and their users.
-The CA issues one root certificate (rootCert) to each member and one enrollment
-certificate (ECert) to each authorized user.
+FabToken is an Unspent Transaction Output (UTXO) based token management system
+that allows users to issue, transfer, and redeem tokens on channels. FabToken
+uses the membership services of Fabric to authenticate the identity of token
+owners and manage their public and private keys.
+
+.. _FabToken:
+
+FabToken
+--------
+
+FabToken is an Unspent Transaction Output (UTXO) based token management system
+that allows users to issue, transfer, and redeem tokens on channels. FabToken
+uses the membership services of Fabric to authenticate the identity of token
+owners and manage their public and private keys.
+
+.. _Follower:
+
+Follower
+--------
+
+In a leader based consensus protocol, such as Raft, these are the nodes which
+replicate log entries produced by the leader. In Raft, the followers also receive
+"heartbeat" messages from the leader. In the event that the leader stops sending
+those message for a configurable amount of time, the followers will initiate a
+leader election and one of them will be elected leader.
 
 .. _Genesis-Block:
 
@@ -262,12 +304,25 @@ The gossip data dissemination protocol performs three functions:
 3) syncs ledger state across all peers on the channel.
 Refer to the :doc:`Gossip <gossip>` topic for more details.
 
-.. _Initialize:
+.. _Fabric-ca:
 
-Initialize
-----------
+Hyperledger Fabric CA
+---------------------
 
-A method to initialize a chaincode application.
+Hyperledger Fabric CA is the default Certificate Authority component, which
+issues PKI-based certificates to network member organizations and their users.
+The CA issues one root certificate (rootCert) to each member and one enrollment
+certificate (ECert) to each authorized user.
+
+.. _Init:
+
+Init
+----
+
+A method to initialize a chaincode application. All chaincodes need to have an
+an Init function. By default, this function is never executed. However you can
+use the chaincode definition to request the execution of the Init function in
+order to initialize the chaincode.
 
 Install
 -------
@@ -277,9 +332,12 @@ The process of placing a chaincode on a peer's file system.
 Instantiate
 -----------
 
-The process of starting and initializing a chaincode application on a specific channel.
-After instantiation, peers that have the chaincode installed can accept chaincode
-invocations.
+The process of starting and initializing a chaincode application on a specific
+channel. After instantiation, peers that have the chaincode installed can accept
+chaincode invocations. This method was used in the previous version of the chaincode
+lifecycle. For the current procedure used to start a chaincode on a channel with
+the new Fabric chaincode lifecycle introduced as part of the Fabric v2.0 Alpha,
+see Chaincode-definition_.
 
 .. _Invoke:
 
@@ -297,6 +355,17 @@ submit the read-only transaction, unless there is desire to log the read on the 
 for audit purpose. The invoke includes a channel identifier, the chaincode function to
 invoke, and an array of arguments.
 
+.. _Leader
+
+Leader
+------
+
+In a leader based consensus protocol, like Raft, the leader is responsible for
+ingesting new log entries, replicating them to follower ordering nodes, and
+managing when an entry is considered committed. This is not a special **type**
+of orderer. It is only a role that an orderer may have at certain times, and
+then not others, as circumstances determine.
+
 .. _Leading-Peer:
 
 Leading Peer
@@ -310,7 +379,6 @@ leading peer(s) on a channel, who then distribute them to other peers within
 the same organization.
 
 .. _Ledger:
-
 
 Ledger
 ------
@@ -339,6 +407,16 @@ process called **consensus**. The term **Distributed Ledger Technology**
 (**DLT**) is often associated with this kind of ledger -- one that is logically
 singular, but has many identical copies distributed across a set of network
 nodes (peers and the ordering service).
+
+.. _Log-entry
+
+Log entry
+---------
+
+The primary unit of work in a Raft ordering service, log entries are distributed
+from the leader orderer to the followers. The full sequence of such entries known
+as the "log". The log is considered to be consistent if all members agree on the
+entries and their order.
 
 .. _Member:
 
@@ -386,8 +464,8 @@ PKI-based implementation of the Membership Services Provider (MSP) abstraction.
 Ordering Service
 ----------------
 
-A defined collective of nodes that orders transactions into a block.  The ordering
-service exists independent of the peer processes and orders transactions on a
+Also known as **orderer**. A defined collective of nodes that orders transactions into a block.
+The ordering service exists independent of the peer processes and orders transactions on a
 first-come-first-serve basis for all channel's on the network.  The ordering service is
 designed to support pluggable implementations beyond the out-of-the-box SOLO and Kafka varieties.
 The ordering service is a common binding for the overall network; it contains the cryptographic
@@ -482,7 +560,22 @@ Proposal
 --------
 
 A request for endorsement that is aimed at specific peers on a channel. Each
-proposal is either an instantiate or an invoke (read/write) request.
+proposal is either an Init or an invoke (read/write) request.
+
+.. _Prover-peer:
+
+Prover peer
+-----------
+
+A trusted peer used by the FabToken client to assemble a token transaction and
+list the unspent tokens owned by a given authorized party.
+
+.. _Prover-peer:
+
+Prover peer
+-----------
+
+A trusted peer used by the FabToken client to assemble a token transaction.
 
 .. _Query:
 
@@ -497,6 +590,32 @@ validation, and commit. Although not typical, the client application can choose 
 submit the read-only transaction for ordering, validation, and commit, for example if the
 client wants auditable proof on the ledger chain that it had knowledge of specific ledger
 state at a certain point in time.
+
+.. _Quorum:
+
+Quorum
+------
+
+This describes the minimum number of members of the cluster that need to
+affirm a proposal so that transactions can be ordered. For every consenter set,
+this is a **majority** of nodes. In a cluster with five nodes, three must be
+available for there to be a quorum. If a quorum of nodes is unavailable for any
+reason, the cluster becomes unavailable for both read and write operations and
+no new logs can be committed.
+
+.. _Raft:
+
+Raft
+----
+
+New for v1.4.1, Raft is a crash fault tolerant (CFT) ordering service
+implementation based on the `etcd library <https://coreos.com/etcd/>`_
+of the `Raft protocol` <https://raft.github.io/raft.pdf>`_. Raft follows a
+"leader and follower" model, where a leader node is elected (per channel) and
+its decisions are replicated by the followers. Raft ordering services should
+be easier to set up and manage than Kafka-based ordering services, and their
+design allows organizations to contribute nodes to a distributed ordering
+service.
 
 .. _SDK:
 
@@ -523,7 +642,7 @@ A smart contract is code -- invoked by a client application external to the
 blockchain network -- that manages access and modifications to a set of
 key-value pairs in the :ref:`World-State`. In Hyperledger Fabric, smart
 contracts are referred to as chaincode. Smart contract chaincode is installed
-onto peer nodes and instantiated to one or more channels.
+onto peer nodes and then defined and used on one or more channels.
 
 .. _State-DB:
 
@@ -563,11 +682,13 @@ Transaction
 
    A transaction, 'T'
 
-Invoke or instantiate results that are submitted for ordering, validation, and commit.
-Invokes are requests to read/write data from the ledger. Instantiate is a request to
-start and initialize a chaincode on a channel. Application clients gather invoke or
-instantiate responses from endorsing peers and package the results and endorsements
-into a transaction that is submitted for ordering, validation, and commit.
+Transactions are created when a chaincode or FabToken client is used to read or
+write to data from the ledger. If you are invoking a chaincode, application
+clients gather the responses from endorsing peers and then package the results
+and endorsements into a transaction that is submitted for ordering, validation,
+and commit. If using FabToken to create a token transaction, the FabToken client
+uses a prover peer to create a transaction that is submitted to the ordering
+service and then validated by committing peers.
 
 .. _World-State:
 

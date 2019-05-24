@@ -28,29 +28,24 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/privacyenabledstate"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/txmgr"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/txmgr/lockbasedtxmgr"
-	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/core/ledger/mock"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
 /////// levelDBLockBasedHistoryEnv //////
 
 type levelDBLockBasedHistoryEnv struct {
-	t                   testing.TB
-	testBlockStorageEnv *testBlockStoreEnv
-
-	testDBEnv          privacyenabledstate.TestEnv
-	testBookkeepingEnv *bookkeeping.TestEnv
-
-	txmgr txmgr.TxMgr
-
+	t                     testing.TB
+	testBlockStorageEnv   *testBlockStoreEnv
+	testDBEnv             privacyenabledstate.TestEnv
+	testBookkeepingEnv    *bookkeeping.TestEnv
+	txmgr                 txmgr.TxMgr
 	testHistoryDBProvider historydb.HistoryDBProvider
 	testHistoryDB         historydb.HistoryDB
+	testHistoryDBPath     string
 }
 
 func newTestHistoryEnv(t *testing.T) *levelDBLockBasedHistoryEnv {
-	viper.Set("ledger.history.enableHistoryDatabase", "true")
 	testLedgerID := "TestLedger"
 
 	blockStorageTestEnv := newBlockStorageTestEnv(t)
@@ -60,15 +55,27 @@ func newTestHistoryEnv(t *testing.T) *levelDBLockBasedHistoryEnv {
 	testDB := testDBEnv.GetDBHandle(testLedgerID)
 	testBookkeepingEnv := bookkeeping.NewTestEnv(t)
 
+	testHistoryDBPath, err := ioutil.TempDir("", "historyldb")
+	if err != nil {
+		t.Fatalf("Failed to create history database directory: %s", err)
+	}
+
 	txMgr, err := lockbasedtxmgr.NewLockBasedTxMgr(testLedgerID, testDB, nil, nil, testBookkeepingEnv.TestProvider, &mock.DeployedChaincodeInfoProvider{}, nil)
 	assert.NoError(t, err)
-	testHistoryDBProvider := NewHistoryDBProvider()
+	testHistoryDBProvider := NewHistoryDBProvider(testHistoryDBPath)
 	testHistoryDB, err := testHistoryDBProvider.GetDBHandle("TestHistoryDB")
 	assert.NoError(t, err)
 
-	return &levelDBLockBasedHistoryEnv{t,
-		blockStorageTestEnv, testDBEnv, testBookkeepingEnv,
-		txMgr, testHistoryDBProvider, testHistoryDB}
+	return &levelDBLockBasedHistoryEnv{
+		t,
+		blockStorageTestEnv,
+		testDBEnv,
+		testBookkeepingEnv,
+		txMgr,
+		testHistoryDBProvider,
+		testHistoryDB,
+		testHistoryDBPath,
+	}
 }
 
 func (env *levelDBLockBasedHistoryEnv) cleanup() {
@@ -78,18 +85,7 @@ func (env *levelDBLockBasedHistoryEnv) cleanup() {
 	env.testBookkeepingEnv.Cleanup()
 	// clean up history
 	env.testHistoryDBProvider.Close()
-	removeDBPath(env.t)
-}
-
-func removeDBPath(t testing.TB) {
-	removePath(t, ledgerconfig.GetHistoryLevelDBPath())
-}
-
-func removePath(t testing.TB, path string) {
-	if err := os.RemoveAll(path); err != nil {
-		t.Fatalf("Err: %s", err)
-		t.FailNow()
-	}
+	os.RemoveAll(env.testHistoryDBPath)
 }
 
 /////// testBlockStoreEnv//////

@@ -15,6 +15,7 @@ import (
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	lb "github.com/hyperledger/fabric/protos/peer/lifecycle"
 
+	persistence "github.com/hyperledger/fabric/core/chaincode/persistence/intf"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -65,9 +66,9 @@ var _ = Describe("ChaincodeEndorsementInfo", func() {
 				},
 			},
 			InstallInfo: &lifecycle.ChaincodeInstallInfo{
-				Path: "fake-path",
-				Type: "fake-type",
-				Hash: []byte("hash"),
+				Path:      "fake-path",
+				Type:      "fake-type",
+				PackageID: persistence.PackageID("hash"),
 			},
 			Approved: true,
 		}
@@ -101,9 +102,9 @@ var _ = Describe("ChaincodeEndorsementInfo", func() {
 					},
 				},
 				InstallInfo: &lifecycle.ChaincodeInstallInfo{
-					Type: "fake-type",
-					Path: "fake-path",
-					Hash: []byte("hash"),
+					Type:      "fake-type",
+					Path:      "fake-path",
+					PackageID: persistence.PackageID("hash"),
 				},
 				Approved: true,
 			}))
@@ -164,7 +165,14 @@ var _ = Describe("ChaincodeEndorsementInfo", func() {
 
 			It("wraps and returns an error", func() {
 				_, _, err := cei.CachedChaincodeInfo("channel-id", "name", fakeQueryExecutor)
-				Expect(err).To(MatchError("could not get current sequence: could not get state for key namespaces/fields/name/Sequence: state-error"))
+				Expect(err).To(MatchError("could not get current sequence for chaincode 'name' on channel 'channel-id': could not get state for key namespaces/fields/name/Sequence: state-error"))
+			})
+		})
+
+		Context("when the query executor is nil", func() {
+			It("uses the dummy query executor and returns an error", func() {
+				_, _, err := cei.CachedChaincodeInfo("", "name", nil)
+				Expect(err).To(MatchError("could not get current sequence for chaincode 'name' on channel '': could not get state for key namespaces/fields/name/Sequence: invalid channel-less operation"))
 			})
 		})
 	})
@@ -231,6 +239,7 @@ var _ = Describe("ChaincodeEndorsementInfo", func() {
 				Path:          "fake-path",
 				Type:          "FAKE-TYPE",
 				ContainerType: "DOCKER",
+				PackageID:     "hash",
 			}))
 		})
 

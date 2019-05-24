@@ -4,7 +4,7 @@ Copyright IBM Corp. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-package deliverclient
+package deliverservice
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"github.com/hyperledger/fabric/core/deliverservice/blocksprovider"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/util"
+	"github.com/hyperledger/fabric/internal/pkg/identity"
 	"github.com/hyperledger/fabric/protos/orderer"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
@@ -78,18 +79,64 @@ type deliverServiceImpl struct {
 // how it verifies messages received from it,
 // and how it disseminates the messages to other peers
 type Config struct {
-	// ConnFactory returns a function that creates a connection to an endpoint
+	// ConnFactory returns a function that creates a connection to an endpoint.
 	ConnFactory func(channelID string) func(endpoint string) (*grpc.ClientConn, error)
-	// ABCFactory creates an AtomicBroadcastClient out of a connection
+	// ABCFactory creates an AtomicBroadcastClient out of a connection.
 	ABCFactory func(*grpc.ClientConn) orderer.AtomicBroadcastClient
 	// CryptoSvc performs cryptographic actions like message verification and signing
-	// and identity validation
+	// and identity validation.
 	CryptoSvc api.MessageCryptoService
 	// Gossip enables to enumerate peers in the channel, send a message to peers,
-	// and add a block to the gossip state transfer layer
+	// and add a block to the gossip state transfer layer.
 	Gossip blocksprovider.GossipServiceAdapter
-	// Endpoints specifies the endpoints of the ordering service
+	// Endpoints specifies the endpoints of the ordering service.
 	Endpoints []string
+	// Signer is the identity used to sign requests.
+	Signer identity.SignerSerializer
+}
+
+// ConnectionCriteria defines how to connect to ordering service nodes.
+type ConnectionCriteria struct {
+	// Endpoints specifies the endpoints of the ordering service.
+	OrdererEndpoints []string
+	// Organizations denotes a list of organizations
+	Organizations []string
+	// OrdererEndpointsByOrg specifies the endpoints of the ordering service grouped by orgs.
+	OrdererEndpointsByOrg map[string][]string
+}
+
+func (cc ConnectionCriteria) toEndpointCriteria() []comm.EndpointCriteria {
+	var res []comm.EndpointCriteria
+
+	// Iterate over per org criteria
+	for _, org := range cc.Organizations {
+		endpoints := cc.OrdererEndpointsByOrg[org]
+		if len(endpoints) == 0 {
+			// No endpoints for that org
+			continue
+		}
+
+		for _, endpoint := range endpoints {
+			res = append(res, comm.EndpointCriteria{
+				Organizations: []string{org},
+				Endpoint:      endpoint,
+			})
+		}
+	}
+
+	// If we have some per organization endpoint, don't continue further.
+	if len(res) > 0 {
+		return res
+	}
+
+	for _, endpoint := range cc.OrdererEndpoints {
+		res = append(res, comm.EndpointCriteria{
+			Organizations: cc.Organizations,
+			Endpoint:      endpoint,
+		})
+	}
+
+	return res
 }
 
 // NewDeliverService construction function to create and initialize
@@ -214,6 +261,7 @@ func (d *deliverServiceImpl) newClient(chainID string, ledgerInfoProvider blocks
 	requester := &blocksRequester{
 		tls:     viper.GetBool("peer.tls.enabled"),
 		chainID: chainID,
+		signer:  d.conf.Signer,
 	}
 	broadcastSetup := func(bd blocksprovider.BlocksDeliverer) error {
 		return requester.RequestBlocks(ledgerInfoProvider)

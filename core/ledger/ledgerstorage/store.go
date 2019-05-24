@@ -7,12 +7,12 @@ SPDX-License-Identifier: Apache-2.0
 package ledgerstorage
 
 import (
+	"path/filepath"
 	"sync"
 
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatapolicy"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatastorage"
 	lutil "github.com/hyperledger/fabric/core/ledger/util"
@@ -21,6 +21,8 @@ import (
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/pkg/errors"
 )
+
+const maxBlockFileSize = 64 * 1024 * 1024
 
 var logger = flogging.MustGetLogger("ledgerstorage")
 
@@ -38,7 +40,7 @@ type Store struct {
 }
 
 // NewProvider returns the handle to the provider
-func NewProvider() *Provider {
+func NewProvider(storeDir string, conf *ledger.PrivateData) *Provider {
 	// Initialize the block storage
 	attrsToIndex := []blkstorage.IndexableAttr{
 		blkstorage.IndexableAttrBlockHash,
@@ -50,10 +52,13 @@ func NewProvider() *Provider {
 	}
 	indexConfig := &blkstorage.IndexConfig{AttrsToIndex: attrsToIndex}
 	blockStoreProvider := blkstorageext.NewProvider(
-		blkstorageext.NewConf(ledgerconfig.GetBlockStorePath(), ledgerconfig.GetMaxBlockfileSize()),
+		blkstorageext.NewConf(
+			filepath.Join(storeDir, "chains"),
+			maxBlockFileSize,
+		),
 		indexConfig)
 
-	pvtStoreProvider := pvtdatastorageext.NewProvider()
+	pvtStoreProvider := pvtdatastorageext.NewProvider(conf)
 	return &Provider{blockStoreProvider, pvtStoreProvider}
 }
 

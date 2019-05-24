@@ -13,15 +13,15 @@ import (
 	"github.com/golang/protobuf/proto"
 	commonerrors "github.com/hyperledger/fabric/common/errors"
 	"github.com/hyperledger/fabric/core/chaincode/platforms"
-	"github.com/hyperledger/fabric/core/chaincode/platforms/car"
 	"github.com/hyperledger/fabric/core/chaincode/platforms/ccmetadata"
 	"github.com/hyperledger/fabric/core/chaincode/platforms/golang"
 	"github.com/hyperledger/fabric/core/chaincode/platforms/java"
 	"github.com/hyperledger/fabric/core/chaincode/platforms/node"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/common/privdata"
-	. "github.com/hyperledger/fabric/core/handlers/validation/api/capabilities"
-	. "github.com/hyperledger/fabric/core/handlers/validation/api/state"
+	vc "github.com/hyperledger/fabric/core/handlers/validation/api/capabilities"
+	vs "github.com/hyperledger/fabric/core/handlers/validation/api/state"
+	"github.com/hyperledger/fabric/core/handlers/validation/builtin/internal/car"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
 	"github.com/hyperledger/fabric/core/scc/lscc"
 	"github.com/hyperledger/fabric/protos/common"
@@ -92,7 +92,7 @@ func validateNewCollectionConfigs(newCollectionConfigs []*common.CollectionConfi
 		// make sure that the signature policy is meaningful (only consists of ORs)
 		err := validateSpOrConcat(newCollection.MemberOrgsPolicy.GetSignaturePolicy().Rule)
 		if err != nil {
-			return errors.WithMessage(err, fmt.Sprintf("collection-name: %s -- error in member org policy", collectionName))
+			return errors.WithMessagef(err, "collection-name: %s -- error in member org policy", collectionName)
 		}
 	}
 	return nil
@@ -219,7 +219,7 @@ func (vscc *Validator) validateRWSetAndCollection(
 	cdRWSet *ccprovider.ChaincodeData,
 	lsccArgs [][]byte,
 	lsccFunc string,
-	ac Capabilities,
+	ac vc.Capabilities,
 	channelName string,
 ) commonerrors.TxValidationError {
 	/********************************************/
@@ -339,7 +339,7 @@ func (vscc *Validator) ValidateLSCCInvocation(
 	env *common.Envelope,
 	cap *pb.ChaincodeActionPayload,
 	payl *common.Payload,
-	ac Capabilities,
+	ac vc.Capabilities,
 ) commonerrors.TxValidationError {
 	cpp, err := protoutil.GetChaincodeProposalPayload(cap.ChaincodeProposalPayload)
 	if err != nil {
@@ -379,7 +379,12 @@ func (vscc *Validator) ValidateLSCCInvocation(
 			return policyErr(fmt.Errorf("Wrong number of arguments for invocation lscc(%s): received %d", lsccFunc, len(lsccArgs)))
 		}
 
-		cdsArgs, err := protoutil.GetChaincodeDeploymentSpec(lsccArgs[1], platforms.NewRegistry(
+		cdsArgs, err := protoutil.GetChaincodeDeploymentSpec(lsccArgs[1])
+		if err != nil {
+			return policyErr(fmt.Errorf("GetChaincodeDeploymentSpec error %s", err))
+		}
+
+		err = platforms.NewRegistry(
 			// XXX We should definitely _not_ have this external dependency in VSCC
 			// as adding a platform could cause non-determinism.  This is yet another
 			// reason why all of this custom LSCC validation at commit time has no
@@ -388,10 +393,9 @@ func (vscc *Validator) ValidateLSCCInvocation(
 			&node.Platform{},
 			&java.Platform{},
 			&car.Platform{},
-		))
-
+		).ValidateDeploymentSpec(cdsArgs.ChaincodeSpec.Type.String(), cdsArgs.CodePackage)
 		if err != nil {
-			return policyErr(fmt.Errorf("GetChaincodeDeploymentSpec error %s", err))
+			return policyErr(fmt.Errorf("failed to validate deployment spec: %s", err))
 		}
 
 		if cdsArgs == nil || cdsArgs.ChaincodeSpec == nil || cdsArgs.ChaincodeSpec.ChaincodeId == nil ||
@@ -618,7 +622,7 @@ func (vscc *Validator) getInstantiatedCC(chid, ccid string) (cd *ccprovider.Chai
 }
 
 type state struct {
-	State
+	vs.State
 }
 
 // GetState retrieves the value for the given key in the given namespace

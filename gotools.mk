@@ -53,6 +53,14 @@ gotool.golint:
 	@git -C $(GOPATH)/src/golang.org/x/lint/golint checkout c67002cb31c3a748b7688c27f20d8358b4193582
 	GO111MODULE=off GOBIN=$(abspath $(GOTOOLS_BINDIR)) go install golang.org/x/lint/golint
 
+# Lock to a versioned dep
+gotool.dep: DEP_VERSION ?= "v0.5.3"
+gotool.dep:
+	@GOPATH=$(abspath $(GOTOOLS_GOPATH)) go get -d -u github.com/golang/dep
+	@git -C $(abspath $(GOTOOLS_GOPATH))/src/github.com/golang/dep checkout -q $(DEP_VERSION)
+	@echo "Building github.com/golang/dep $(DEP_VERSION) -> dep"
+	@GOPATH=$(abspath $(GOTOOLS_GOPATH)) GOBIN=$(abspath $(GOTOOLS_BINDIR)) go install -ldflags="-X main.version=$(DEP_VERSION) -X main.buildDate=$$(date '+%Y-%m-%d')" github.com/golang/dep/cmd/dep
+	@git -C $(abspath $(GOTOOLS_GOPATH))/src/github.com/golang/dep checkout -q master
 
 # Default rule for gotools uses the name->path map for a generic 'go get' style build
 gotool.%:

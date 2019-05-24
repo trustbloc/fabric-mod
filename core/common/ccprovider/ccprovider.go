@@ -18,6 +18,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/common/chaincode"
 	"github.com/hyperledger/fabric/common/flogging"
+	persistence "github.com/hyperledger/fabric/core/chaincode/persistence/intf"
 	"github.com/hyperledger/fabric/core/common/privdata"
 	"github.com/hyperledger/fabric/core/ledger"
 	pb "github.com/hyperledger/fabric/protos/peer"
@@ -36,9 +37,6 @@ var chaincodeInstallPath string
 type CCPackage interface {
 	//InitFromBuffer initialize the package from bytes
 	InitFromBuffer(buf []byte) (*ChaincodeData, error)
-
-	// InitFromFS gets the chaincode from the filesystem (includes the raw bytes too)
-	InitFromFS(ccname string, ccversion string) ([]byte, *pb.ChaincodeDeploymentSpec, error)
 
 	// PutChaincodeToFS writes the chaincode to the filesystem
 	PutChaincodeToFS() error
@@ -79,10 +77,6 @@ func SetChaincodesPath(path string) {
 	}
 
 	chaincodeInstallPath = path
-}
-
-func GetChaincodePackage(ccname string, ccversion string) ([]byte, error) {
-	return GetChaincodePackageFromPath(ccname, ccversion, chaincodeInstallPath)
 }
 
 // isPrintable is used by CDSPackage and SignedCDSPackage validation to
@@ -218,7 +212,7 @@ func (cifs *CCInfoFSImpl) ListInstalledChaincodes(dir string, ls DirEnumerator, 
 		chaincodes = append(chaincodes, chaincode.InstalledChaincode{
 			Name:    ccName,
 			Version: ccVersion,
-			Id:      ccPackage.GetId(),
+			Hash:    ccPackage.GetId(),
 		})
 	}
 	ccproviderLogger.Debug("Returning", chaincodes)
@@ -394,11 +388,6 @@ type CCContext struct {
 	InitRequired bool
 }
 
-// GetCanonicalName returns the canonical name associated with the proposal context
-func (cccid *CCContext) GetCanonicalName() string {
-	return cccid.Name + ":" + cccid.Version
-}
-
 //-------- ChaincodeDefinition - interface for ChaincodeData ------
 // ChaincodeDefinition describes all of the necessary information for a peer to decide whether to endorse
 // a proposal and whether to validate a transaction, for a particular chaincode.
@@ -487,9 +476,12 @@ func (cd *ChaincodeData) Endorsement() string {
 	return cd.Escc
 }
 
-// RequiresInit always returns true as this is the legacy form of chaincode.
+// RequiresInit always returns false because chaincodes
+// defined using the legacy lifecycle do not require an
+// explicit initialisation step since Init is invoked as
+// part of the LSCC invocation
 func (cd *ChaincodeData) RequiresInit() bool {
-	return true
+	return false
 }
 
 // implement functions needed from proto.Message for proto's mar/unmarshal functions
@@ -505,13 +497,17 @@ func (*ChaincodeData) ProtoMessage() {}
 
 // ChaincodeContainerInfo is yet another synonym for the data required to start/stop a chaincode.
 type ChaincodeContainerInfo struct {
-	Name    string
-	Version string
-	Path    string
-	Type    string
+	PackageID persistence.PackageID
+	Path      string
+	Type      string
 
 	// ContainerType is not a great name, but 'DOCKER' and 'SYSTEM' are the valid types
 	ContainerType string
+
+	// FIXME: Name and Version fields must disappear from this struct
+	// because they are *NOT* a property of the chaincode container (FAB-14561)
+	Name    string
+	Version string
 }
 
 // TransactionParams are parameters which are tied to a particular transaction
@@ -519,6 +515,7 @@ type ChaincodeContainerInfo struct {
 type TransactionParams struct {
 	TxID                 string
 	ChannelID            string
+	NamespaceID          string
 	SignedProp           *pb.SignedProposal
 	Proposal             *pb.Proposal
 	TXSimulator          ledger.TxSimulator
@@ -549,5 +546,6 @@ func DeploymentSpecToChaincodeContainerInfo(cds *pb.ChaincodeDeploymentSpec) *Ch
 		Path:          cds.ChaincodeSpec.ChaincodeId.Path,
 		Type:          cds.ChaincodeSpec.Type.String(),
 		ContainerType: cds.ExecEnv.String(),
+		PackageID:     persistence.PackageID(cds.ChaincodeSpec.ChaincodeId.Name + ":" + cds.ChaincodeSpec.ChaincodeId.Version),
 	}
 }

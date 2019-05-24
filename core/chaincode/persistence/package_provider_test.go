@@ -11,7 +11,9 @@ import (
 
 	"github.com/hyperledger/fabric/common/chaincode"
 	"github.com/hyperledger/fabric/core/chaincode/persistence"
+	p "github.com/hyperledger/fabric/core/chaincode/persistence/intf"
 	"github.com/hyperledger/fabric/core/chaincode/persistence/mock"
+	"github.com/hyperledger/fabric/core/common/ccprovider"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
@@ -28,8 +30,7 @@ var _ = Describe("PackageProvider", func() {
 
 		BeforeEach(func() {
 			mockSPP = &mock.StorePackageProvider{}
-			mockSPP.RetrieveHashReturns([]byte("testcchash"), nil)
-			mockSPP.LoadReturns([]byte("storeCode"), []*persistence.ChaincodeMetadata{{Name: "testcc", Version: "1.0"}}, nil)
+			mockSPP.LoadReturns([]byte("storeCode"), nil)
 
 			mockParser = &mock.PackageParser{}
 			mockParser.ParseReturns(&persistence.ChaincodePackage{
@@ -47,13 +48,16 @@ var _ = Describe("PackageProvider", func() {
 		})
 
 		It("gets the code package successfully", func() {
-			pkgBytes, err := packageProvider.GetChaincodeCodePackage("testcc", "1.0")
+			pkgBytes, err := packageProvider.GetChaincodeCodePackage(&ccprovider.ChaincodeContainerInfo{
+				PackageID: p.PackageID("testcc:1.0"),
+				Name:      "testcc",
+				Version:   "1.0",
+			})
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(mockSPP.RetrieveHashCallCount()).To(Equal(1))
-			ccName, ccVersion := mockSPP.RetrieveHashArgsForCall(0)
-			Expect(ccName).To(Equal("testcc"))
-			Expect(ccVersion).To(Equal("1.0"))
+			Expect(mockSPP.LoadCallCount()).To(Equal(1))
+			packageID := mockSPP.LoadArgsForCall(0)
+			Expect(packageID).To(Equal(p.PackageID("testcc:1.0")))
 
 			Expect(mockParser.ParseCallCount()).To(Equal(1))
 			Expect(mockParser.ParseArgsForCall(0)).To(Equal([]byte("storeCode")))
@@ -67,18 +71,26 @@ var _ = Describe("PackageProvider", func() {
 			})
 
 			It("wraps and returns the error", func() {
-				_, err := packageProvider.GetChaincodeCodePackage("testcc", "1.0")
+				_, err := packageProvider.GetChaincodeCodePackage(&ccprovider.ChaincodeContainerInfo{
+					PackageID: p.PackageID("testcc:1.0"),
+					Name:      "testcc",
+					Version:   "1.0",
+				})
 				Expect(err).To(MatchError("error parsing chaincode package: fake-error"))
 			})
 		})
 
 		Context("when the code package is not available in the store package provider", func() {
 			BeforeEach(func() {
-				mockSPP.RetrieveHashReturns(nil, &persistence.CodePackageNotFoundErr{})
+				mockSPP.LoadReturns(nil, &persistence.CodePackageNotFoundErr{})
 			})
 
 			It("gets the code package successfully from the legacy package provider", func() {
-				pkgBytes, err := packageProvider.GetChaincodeCodePackage("testcc", "1.0")
+				pkgBytes, err := packageProvider.GetChaincodeCodePackage(&ccprovider.ChaincodeContainerInfo{
+					PackageID: p.PackageID("testcc:1.0"),
+					Name:      "testcc",
+					Version:   "1.0",
+				})
 				Expect(err).NotTo(HaveOccurred())
 				Expect(pkgBytes).To(Equal([]byte("legacyCode")))
 			})
@@ -86,24 +98,32 @@ var _ = Describe("PackageProvider", func() {
 
 		Context("when retrieving the hash from the store package provider fails", func() {
 			BeforeEach(func() {
-				mockSPP.RetrieveHashReturns(nil, errors.New("chai"))
+				mockSPP.LoadReturns(nil, errors.New("chai"))
 			})
 
 			It("returns an error", func() {
-				pkgBytes, err := packageProvider.GetChaincodeCodePackage("testcc", "1.0")
+				pkgBytes, err := packageProvider.GetChaincodeCodePackage(&ccprovider.ChaincodeContainerInfo{
+					PackageID: p.PackageID("testcc:1.0"),
+					Name:      "testcc",
+					Version:   "1.0",
+				})
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("error retrieving hash: chai"))
+				Expect(err.Error()).To(Equal("error loading code package from ChaincodeInstallPackage: chai"))
 				Expect(pkgBytes).To(BeNil())
 			})
 		})
 
 		Context("when the code package fails to load from the store package provider", func() {
 			BeforeEach(func() {
-				mockSPP.LoadReturns(nil, nil, errors.New("mocha"))
+				mockSPP.LoadReturns(nil, errors.New("mocha"))
 			})
 
 			It("returns an error", func() {
-				pkgBytes, err := packageProvider.GetChaincodeCodePackage("testcc", "1.0")
+				pkgBytes, err := packageProvider.GetChaincodeCodePackage(&ccprovider.ChaincodeContainerInfo{
+					PackageID: p.PackageID("testcc:1.0"),
+					Name:      "testcc",
+					Version:   "1.0",
+				})
 				Expect(err).To(HaveOccurred())
 				Expect(pkgBytes).To(BeNil())
 			})
@@ -111,12 +131,16 @@ var _ = Describe("PackageProvider", func() {
 
 		Context("when the code package is not available in either package provider", func() {
 			BeforeEach(func() {
-				mockSPP.RetrieveHashReturns(nil, &persistence.CodePackageNotFoundErr{})
+				mockSPP.LoadReturns(nil, &persistence.CodePackageNotFoundErr{})
 				mockLPP.GetChaincodeCodePackageReturns(nil, errors.New("latte"))
 			})
 
 			It("returns an error", func() {
-				pkgBytes, err := packageProvider.GetChaincodeCodePackage("testcc", "1.0")
+				pkgBytes, err := packageProvider.GetChaincodeCodePackage(&ccprovider.ChaincodeContainerInfo{
+					PackageID: p.PackageID("testcc:1.0"),
+					Name:      "testcc",
+					Version:   "1.0",
+				})
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(Equal("code package not found for chaincode with name 'testcc', version '1.0'"))
 				Expect(len(pkgBytes)).To(Equal(0))
@@ -124,7 +148,7 @@ var _ = Describe("PackageProvider", func() {
 		})
 	})
 
-	var _ = Describe("ListInstalledChaincodes", func() {
+	Describe("ListInstalledChaincodesLegacy", func() {
 		var (
 			mockSPP         *mock.StorePackageProvider
 			mockLPP         *mock.LegacyPackageProvider
@@ -133,26 +157,12 @@ var _ = Describe("PackageProvider", func() {
 
 		BeforeEach(func() {
 			mockSPP = &mock.StorePackageProvider{}
-			installedChaincodes := []chaincode.InstalledChaincode{
-				{
-					Name:    "test1",
-					Version: "1.0",
-					Id:      []byte("hash1"),
-				},
-				{
-					Name:    "cc1",
-					Version: "2.0",
-					Id:      []byte("hash2"),
-				},
-			}
-			mockSPP.ListInstalledChaincodesReturns(installedChaincodes, nil)
-
 			mockLPP = &mock.LegacyPackageProvider{}
 			installedChaincodesLegacy := []chaincode.InstalledChaincode{
 				{
 					Name:    "testLegacy",
 					Version: "1.0",
-					Id:      []byte("hashLegacy"),
+					Hash:    []byte("hashLegacy"),
 				},
 			}
 			mockLPP.ListInstalledChaincodesReturns(installedChaincodesLegacy, nil)
@@ -164,21 +174,9 @@ var _ = Describe("PackageProvider", func() {
 		})
 
 		It("lists the installed chaincodes successfully", func() {
-			installedChaincodes, err := packageProvider.ListInstalledChaincodes()
+			installedChaincodes, err := packageProvider.ListInstalledChaincodesLegacy()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(len(installedChaincodes)).To(Equal(3))
-		})
-
-		Context("when listing the installed chaincodes from the persistence store fails", func() {
-			BeforeEach(func() {
-				mockSPP.ListInstalledChaincodesReturns(nil, errors.New("football"))
-			})
-
-			It("falls back to listing the chaincodes from the legacy package provider", func() {
-				installedChaincodes, err := packageProvider.ListInstalledChaincodes()
-				Expect(err).NotTo(HaveOccurred())
-				Expect(len(installedChaincodes)).To(Equal(1))
-			})
+			Expect(len(installedChaincodes)).To(Equal(1))
 		})
 
 		Context("when listing the installed chaincodes from the legacy package provider fails", func() {
@@ -187,9 +185,10 @@ var _ = Describe("PackageProvider", func() {
 			})
 
 			It("lists the chaincodes from only the persistence store package provider ", func() {
-				installedChaincodes, err := packageProvider.ListInstalledChaincodes()
-				Expect(err).NotTo(HaveOccurred())
-				Expect(len(installedChaincodes)).To(Equal(2))
+				installedChaincodes, err := packageProvider.ListInstalledChaincodesLegacy()
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("football"))
+				Expect(len(installedChaincodes)).To(Equal(0))
 			})
 		})
 	})

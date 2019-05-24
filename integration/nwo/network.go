@@ -31,7 +31,7 @@ import (
 	"github.com/tedsuo/ifrit"
 	"github.com/tedsuo/ifrit/ginkgomon"
 	"github.com/tedsuo/ifrit/grouper"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 )
 
 // Organization models information about an Organization. It includes
@@ -774,17 +774,33 @@ func (n *Network) CreateChannel(channelName string, o *Orderer, p *Peer, additio
 // at the location returned by CreateChannelTxPath.
 //
 // The orderer must be running when this is called.
-func (n *Network) CreateChannelFail(o *Orderer, channelName string) {
-	peers := n.PeersWithChannel(channelName)
-	if len(peers) == 0 {
-		return
+func (n *Network) CreateChannelFail(channelName string, o *Orderer, p *Peer, additionalSigners ...interface{}) {
+	channelCreateTxPath := n.CreateChannelTxPath(channelName)
+
+	for _, signer := range additionalSigners {
+		switch t := signer.(type) {
+		case *Peer:
+			sess, err := n.PeerAdminSession(t, commands.SignConfigTx{
+				File: channelCreateTxPath,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(sess, n.EventuallyTimeout).Should(gexec.Exit(0))
+		case *Orderer:
+			sess, err := n.OrdererAdminSession(t, p, commands.SignConfigTx{
+				File: channelCreateTxPath,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(sess, n.EventuallyTimeout).Should(gexec.Exit(0))
+		default:
+			panic("unknown signer type, expect Peer or Orderer")
+		}
 	}
 
 	createChannelFail := func() int {
-		sess, err := n.PeerAdminSession(peers[0], commands.ChannelCreate{
+		sess, err := n.PeerAdminSession(p, commands.ChannelCreate{
 			ChannelID:   channelName,
 			Orderer:     n.OrdererAddress(o, ListenPort),
-			File:        n.CreateChannelTxPath(channelName),
+			File:        channelCreateTxPath,
 			OutputBlock: "/dev/null",
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -947,7 +963,7 @@ func (n *Network) OrdererRunner(o *Orderer) *ginkgomon.Runner {
 		StartCheckTimeout: 15 * time.Second,
 	}
 
-	//After consensus-type migration, the #brokers is >0, but the type is etcdraft
+	// After consensus-type migration, the #brokers is >0, but the type is etcdraft
 	if n.Consensus.Type == "kafka" && n.Consensus.Brokers != 0 {
 		config.StartCheck = "Start phase completed successfully"
 		config.StartCheckTimeout = 30 * time.Second
@@ -967,7 +983,7 @@ func (n *Network) OrdererGroupRunner() ifrit.Runner {
 }
 
 //PeerRunner returns ordered ifrit.Runner for couchdb and peer for the specified peer.
-func (n *Network) PeerRunner(p *Peer) ifrit.Runner {
+func (n *Network) PeerRunner(p *Peer, env ...string) ifrit.Runner {
 	members := grouper.Members{
 		{Name: "couchdbs", Runner: n.CouchDBRunner(p)},
 		{Name: "peers", Runner: n.PeerNodeRunner(p)},
@@ -977,11 +993,13 @@ func (n *Network) PeerRunner(p *Peer) ifrit.Runner {
 
 // PeerNodeRunner returns an ifrit.Runner for the specified peer. The runner can be
 // used to start and manage a peer process.
-func (n *Network) PeerNodeRunner(p *Peer) *ginkgomon.Runner {
+func (n *Network) PeerNodeRunner(p *Peer, env ...string) *ginkgomon.Runner {
+
 	cmd := n.peerCommand(
 		commands.NodeStart{PeerID: p.ID()},
 		fmt.Sprintf("FABRIC_CFG_PATH=%s", n.PeerDir(p)),
 	)
+	cmd.Env = append(cmd.Env, env...)
 
 	return ginkgomon.New(ginkgomon.Config{
 		AnsiColorCode:     n.nextColor(),

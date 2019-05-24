@@ -20,7 +20,6 @@ import (
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/orderer/common/cluster"
 	"github.com/hyperledger/fabric/orderer/consensus"
-	"github.com/hyperledger/fabric/orderer/consensus/migration"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/orderer"
 	"github.com/hyperledger/fabric/protos/orderer/etcdraft"
@@ -45,10 +44,10 @@ const (
 	// slow followers to catch up.
 	DefaultSnapshotCatchUpEntries = uint64(20)
 
-	// DefaultSnapshotInterval is the default snapshot interval. It is
-	// used if SnapshotInterval is not provided in channel config options.
+	// DefaultSnapshotIntervalSize is the default snapshot interval. It is
+	// used if SnapshotIntervalSize is not provided in channel config options.
 	// It is needed to enforce snapshot being set.
-	DefaultSnapshotInterval = 100 * MEGABYTE // 100MB
+	DefaultSnapshotIntervalSize = 20 * MEGABYTE // 20 MB
 
 	// DefaultEvictionSuspicion is the threshold that a node will start
 	// suspecting its own eviction if it has been leaderless for this
@@ -60,7 +59,7 @@ const (
 	DefaultLeaderlessCheckInterval = time.Second * 10
 )
 
-//go:generate mockery -dir . -name Configurator -case underscore -output ./mocks/
+//go:generate counterfeiter -o mocks/configurator.go . Configurator
 
 // Configurator is used to configure the communication layer
 // when the chain starts.
@@ -95,9 +94,9 @@ type Options struct {
 
 	Clock clock.Clock
 
-	WALDir       string
-	SnapDir      string
-	SnapInterval uint32
+	WALDir               string
+	SnapDir              string
+	SnapshotIntervalSize uint32
 
 	// This is configurable mainly for testing purpose. Users are not
 	// expected to alter this. Instead, DefaultSnapshotCatchUpEntries is used.
@@ -106,15 +105,19 @@ type Options struct {
 	MemoryStorage MemoryStorage
 	Logger        *flogging.FabricLogger
 
-	TickInterval    time.Duration
-	ElectionTick    int
-	HeartbeatTick   int
-	MaxSizePerMsg   uint64
-	MaxInflightMsgs int
+	TickInterval      time.Duration
+	ElectionTick      int
+	HeartbeatTick     int
+	MaxSizePerMsg     uint64
+	MaxInflightBlocks int
 
-	RaftMetadata *etcdraft.RaftMetadata
-	Metrics      *Metrics
-	Cert         []byte
+	// BlockMetdata and Consenters should only be modified while under lock
+	// of raftMetadataLock
+	BlockMetadata *etcdraft.BlockMetadata
+	Consenters    map[uint64]*etcdraft.Consenter
+
+	Metrics *Metrics
+	Cert    []byte
 
 	EvictionSuspicion   time.Duration
 	LeaderCheckInterval time.Duration
@@ -168,7 +171,7 @@ type Chain struct {
 	appliedIndex uint64
 
 	// needed by snapshotting
-	sizeLimit        uint32 // SnapshotInterval in bytes
+	sizeLimit        uint32 // SnapshotIntervalSize in bytes
 	accDataSize      uint32 // accumulative data size since last snapshot
 	lastSnapBlockNum uint64
 	confState        raftpb.ConfState // Etcdraft requires ConfState to be persisted within snapshot
@@ -183,8 +186,6 @@ type Chain struct {
 
 	Metrics *Metrics
 	logger  *flogging.FabricLogger
-
-	migrationStatus migration.Status // The consensus-type migration status
 
 	periodicChecker *PeriodicCheck
 }
@@ -212,9 +213,9 @@ func NewChain(
 		storage.SnapshotCatchUpEntries = opts.SnapshotCatchUpEntries
 	}
 
-	sizeLimit := opts.SnapInterval
+	sizeLimit := opts.SnapshotIntervalSize
 	if sizeLimit == 0 {
-		sizeLimit = DefaultSnapshotInterval
+		sizeLimit = DefaultSnapshotIntervalSize
 	}
 
 	// get block number in last snapshot, if exists
@@ -247,7 +248,7 @@ func NewChain(
 		observeC:         observeC,
 		support:          support,
 		fresh:            fresh,
-		appliedIndex:     opts.RaftMetadata.RaftIndex,
+		appliedIndex:     opts.BlockMetadata.RaftIndex,
 		lastBlock:        b,
 		sizeLimit:        sizeLimit,
 		lastSnapBlockNum: snapBlkNum,
@@ -265,19 +266,24 @@ func NewChain(
 			NormalProposalsReceived: opts.Metrics.NormalProposalsReceived.With("channel", support.ChainID()),
 			ConfigProposalsReceived: opts.Metrics.ConfigProposalsReceived.With("channel", support.ChainID()),
 		},
-		logger:          lg,
-		opts:            opts,
-		migrationStatus: migration.NewStatusStepper(support.IsSystemChannel(), support.ChainID()), // Needed by consensus-type migration
+		logger: lg,
+		opts:   opts,
 	}
 
+	// Sets initial values for metrics
+	c.Metrics.ClusterSize.Set(float64(len(c.opts.BlockMetadata.ConsenterIds)))
+	c.Metrics.IsLeader.Set(float64(0)) // all nodes start out as followers
+	c.Metrics.CommittedBlockNumber.Set(float64(c.lastBlock.Header.Number))
+	c.Metrics.SnapshotBlockNumber.Set(float64(c.lastSnapBlockNum))
+
 	// DO NOT use Applied option in config, see https://github.com/etcd-io/etcd/issues/10217
-	// We guard against replay of written blocks in `entriesToApply` instead.
+	// We guard against replay of written blocks with `appliedIndex` instead.
 	config := &raft.Config{
 		ID:              c.raftID,
 		ElectionTick:    c.opts.ElectionTick,
 		HeartbeatTick:   c.opts.HeartbeatTick,
 		MaxSizePerMsg:   c.opts.MaxSizePerMsg,
-		MaxInflightMsgs: c.opts.MaxInflightMsgs,
+		MaxInflightMsgs: c.opts.MaxInflightBlocks,
 		Logger:          c.logger,
 		Storage:         c.opts.MemoryStorage,
 		// PreVote prevents reconnected node from disturbing network.
@@ -297,25 +303,16 @@ func NewChain(
 		config:       config,
 		tickInterval: c.opts.TickInterval,
 		clock:        c.clock,
-		metadata:     c.opts.RaftMetadata,
+		metadata:     c.opts.BlockMetadata,
 	}
 
 	return c, nil
-}
-
-// MigrationStatus provides access to the consensus-type migration status of the chain.
-// (Added to the Chain interface mainly for the Kafka chains)
-func (c *Chain) MigrationStatus() migration.Status {
-	return c.migrationStatus
 }
 
 // Start instructs the orderer to begin serving the chain and keep it current.
 func (c *Chain) Start() {
 	c.logger.Infof("Starting Raft node")
 
-	c.Metrics.ClusterSize.Set(float64(len(c.opts.RaftMetadata.Consenters)))
-	// all nodes start out as followers
-	c.Metrics.IsLeader.Set(float64(0))
 	if err := c.configureComm(); err != nil {
 		c.logger.Errorf("Failed to start chain, aborting: +%v", err)
 		close(c.doneC)
@@ -323,11 +320,11 @@ func (c *Chain) Start() {
 	}
 
 	isJoin := c.support.Height() > 1
-	isMigration := false
-	if isJoin {
-		isMigration = c.detectMigration()
+	if isJoin && c.support.DetectConsensusMigration() {
+		isJoin = false
+		c.logger.Infof("Consensus-type migration detected, starting new raft node on an existing channel; height=%d", c.support.Height())
 	}
-	c.Node.start(c.fresh, isJoin, isMigration)
+	c.Node.start(c.fresh, isJoin)
 
 	close(c.startC)
 	close(c.errorC)
@@ -351,43 +348,6 @@ func (c *Chain) Start() {
 	c.periodicChecker.Run()
 }
 
-// detectMigration detects if the orderer restarts right after consensus-type migration,
-// in which the Height>1 but previous blocks were created by Kafka.
-// If this is the case, Raft should be started like it is joining a new channel.
-func (c *Chain) detectMigration() bool {
-	startOfChain := false
-	if c.support.SharedConfig().Capabilities().Kafka2RaftMigration() {
-		lastConfigIndex, err := protoutil.GetLastConfigIndexFromBlock(c.lastBlock)
-		if err != nil {
-			c.logger.Panicf("Chain did not have appropriately encoded last config in its latest block: %s", err)
-		}
-
-		c.logger.Debugf("Detecting if consensus-type migration, sysChan=%v, lastConfigIndex=%d, Height=%d, mig-state: %s",
-			c.support.IsSystemChannel(), lastConfigIndex, c.lastBlock.Header.Number+1, c.support.SharedConfig().ConsensusMigrationState().String())
-
-		if lastConfigIndex != c.lastBlock.Header.Number { // The last block is not a config-tx
-			return startOfChain
-		}
-
-		// The last block was a config-tx
-		if c.support.IsSystemChannel() {
-			if c.support.SharedConfig().ConsensusMigrationState() == orderer.ConsensusType_MIG_STATE_COMMIT {
-				startOfChain = true
-			}
-		} else {
-			if c.support.SharedConfig().ConsensusMigrationState() == orderer.ConsensusType_MIG_STATE_CONTEXT {
-				startOfChain = true
-			}
-		}
-
-		if startOfChain {
-			c.logger.Infof("[channel: %s], Restarting after consensus-type migration. Type: %s, just starting the channel.",
-				c.support.ChainID(), c.support.SharedConfig().ConsensusType())
-		}
-	}
-	return startOfChain
-}
-
 // Order submits normal type transactions for ordering.
 func (c *Chain) Order(env *common.Envelope, configSeq uint64) error {
 	c.Metrics.NormalProposalsReceived.Add(1)
@@ -398,6 +358,7 @@ func (c *Chain) Order(env *common.Envelope, configSeq uint64) error {
 func (c *Chain) Configure(env *common.Envelope, configSeq uint64) error {
 	c.Metrics.ConfigProposalsReceived.Add(1)
 	if err := c.checkConfigUpdateValidity(env); err != nil {
+		c.logger.Warnf("Rejected config: %s", err)
 		c.Metrics.ProposalFailures.Add(1)
 		return err
 	}
@@ -416,26 +377,68 @@ func (c *Chain) checkConfigUpdateValidity(ctx *common.Envelope) error {
 		return err
 	}
 
-	switch chdr.Type {
-	case int32(common.HeaderType_ORDERER_TRANSACTION):
-		return nil
-	case int32(common.HeaderType_CONFIG):
-		configUpdate, err := configtx.UnmarshalConfigUpdateFromPayload(payload)
+	if chdr.Type != int32(common.HeaderType_ORDERER_TRANSACTION) &&
+		chdr.Type != int32(common.HeaderType_CONFIG) {
+		return errors.Errorf("config transaction has unknown header type: %s", common.HeaderType(chdr.Type))
+	}
+
+	if chdr.Type == int32(common.HeaderType_ORDERER_TRANSACTION) {
+		newChannelConfig, err := protoutil.UnmarshalEnvelope(payload.Data)
 		if err != nil {
 			return err
 		}
 
-		// Check that only the ConsensusType is updated in the write-set
-		if ordererConfigGroup, ok := configUpdate.WriteSet.Groups["Orderer"]; ok {
-			if val, ok := ordererConfigGroup.Values["ConsensusType"]; ok {
-				return c.checkConsentersSet(val)
+		payload, err = protoutil.UnmarshalPayload(newChannelConfig.Payload)
+		if err != nil {
+			return err
+		}
+	}
+
+	configUpdate, err := configtx.UnmarshalConfigUpdateFromPayload(payload)
+	if err != nil {
+		return err
+	}
+
+	metadata, err := MetadataFromConfigUpdate(configUpdate)
+	if err != nil {
+		return err
+	}
+
+	if metadata == nil {
+		return nil // ConsensusType is not updated
+	}
+
+	if err = CheckConfigMetadata(metadata); err != nil {
+		return err
+	}
+
+	switch chdr.Type {
+	case int32(common.HeaderType_ORDERER_TRANSACTION):
+		c.raftMetadataLock.RLock()
+		set := MembershipByCert(c.opts.Consenters)
+		c.raftMetadataLock.RUnlock()
+
+		for _, c := range metadata.Consenters {
+			if _, exits := set[string(c.ClientTlsCert)]; !exits {
+				return errors.Errorf("new channel has consenter that is not part of system consenter set")
 			}
 		}
+
 		return nil
 
+	case int32(common.HeaderType_CONFIG):
+		c.raftMetadataLock.RLock()
+		_, err = ComputeMembershipChanges(c.opts.BlockMetadata, c.opts.Consenters, metadata.Consenters)
+		c.raftMetadataLock.RUnlock()
+
+		return err
+
 	default:
-		return errors.Errorf("config transaction has unknown header type")
+		// panic here because we have just check header type and return early
+		c.logger.Panicf("Programming error, unknown header type")
 	}
+
+	return nil
 }
 
 // WaitReady blocks when the chain:
@@ -567,14 +570,14 @@ func (c *Chain) serveRequest() {
 	}
 
 	// if timer is already started, this is a no-op
-	start := func() {
+	startTimer := func() {
 		if !ticking {
 			ticking = true
 			timer.Reset(c.support.SharedConfig().BatchTimeout())
 		}
 	}
 
-	stop := func() {
+	stopTimer := func() {
 		if !timer.Stop() && ticking {
 			// we only need to drain the channel if the timer expired (not explicitly stopped)
 			<-timer.C()
@@ -596,7 +599,7 @@ func (c *Chain) serveRequest() {
 		c.blockInflight = 0
 		c.justElected = true
 		submitC = nil
-		ch := make(chan *common.Block, c.opts.MaxInflightMsgs)
+		ch := make(chan *common.Block, c.opts.MaxInflightBlocks)
 
 		// if there is unfinished ConfChange, we should resume the effort to propose it as
 		// new leader, and wait for it to be committed before start serving new requests.
@@ -622,10 +625,10 @@ func (c *Chain) serveRequest() {
 				case b := <-ch:
 					data := protoutil.MarshalOrPanic(b)
 					if err := c.Node.Propose(ctx, data); err != nil {
-						c.logger.Errorf("Failed to propose block %d to raft and discard %d blocks in queue: %s", b.Header.Number, len(ch), err)
+						c.logger.Errorf("Failed to propose block [%d] to raft and discard %d blocks in queue: %s", b.Header.Number, len(ch), err)
 						return
 					}
-					c.logger.Debugf("Proposed block %d to raft consensus", b.Header.Number)
+					c.logger.Debugf("Proposed block [%d] to raft consensus", b.Header.Number)
 
 				case <-ctx.Done():
 					c.logger.Debugf("Quit proposing blocks, discarded %d blocks in the queue", len(ch))
@@ -641,7 +644,7 @@ func (c *Chain) serveRequest() {
 		cancelProp()
 		c.blockInflight = 0
 		_ = c.support.BlockCutter().Cut()
-		stop()
+		stopTimer()
 		submitC = c.submitC
 		bc = nil
 		c.Metrics.IsLeader.Set(0)
@@ -671,19 +674,19 @@ func (c *Chain) serveRequest() {
 				continue
 			}
 			if pending {
-				start() // no-op if timer is already started
+				startTimer() // no-op if timer is already started
 			} else {
-				stop()
+				stopTimer()
 			}
 
 			c.propose(propC, bc, batches...)
 
 			if c.configInflight {
-				c.logger.Info("Received config block, pause accepting transaction till it is committed")
+				c.logger.Info("Received config transaction, pause accepting transaction till it is committed")
 				submitC = nil
-			} else if c.blockInflight >= c.opts.MaxInflightMsgs {
+			} else if c.blockInflight >= c.opts.MaxInflightBlocks {
 				c.logger.Debugf("Number of in-flight blocks (%d) reaches limit (%d), pause accepting transaction",
-					c.blockInflight, c.opts.MaxInflightMsgs)
+					c.blockInflight, c.opts.MaxInflightBlocks)
 				submitC = nil
 			}
 
@@ -719,7 +722,7 @@ func (c *Chain) serveRequest() {
 					select {
 					case <-c.errorC:
 					default:
-						nodeCount := len(c.opts.RaftMetadata.Consenters)
+						nodeCount := len(c.opts.BlockMetadata.ConsenterIds)
 						// Only close the error channel (to signal the broadcast/deliver front-end a consensus backend error)
 						// If we are a cluster of size 3 or more, otherwise we can't expand a cluster of size 1 to 2 nodes.
 						if nodeCount > 2 {
@@ -753,7 +756,7 @@ func (c *Chain) serveRequest() {
 					continue
 				}
 
-				c.logger.Infof("Start accepting requests as Raft leader at block %d", c.lastBlock.Header.Number)
+				c.logger.Infof("Start accepting requests as Raft leader at block [%d]", c.lastBlock.Header.Number)
 				bc = &blockCreator{
 					hash:   protoutil.BlockHeaderHash(c.lastBlock.Header),
 					number: c.lastBlock.Header.Number,
@@ -764,7 +767,7 @@ func (c *Chain) serveRequest() {
 			} else if c.configInflight {
 				c.logger.Info("Config block or ConfChange in flight, pause accepting transaction")
 				submitC = nil
-			} else if c.blockInflight < c.opts.MaxInflightMsgs {
+			} else if c.blockInflight < c.opts.MaxInflightBlocks {
 				submitC = c.submitC
 			}
 
@@ -816,9 +819,9 @@ func (c *Chain) serveRequest() {
 
 func (c *Chain) writeBlock(block *common.Block, index uint64) {
 	if block.Header.Number > c.lastBlock.Header.Number+1 {
-		c.logger.Panicf("Got block %d, expect block %d", block.Header.Number, c.lastBlock.Header.Number+1)
+		c.logger.Panicf("Got block [%d], expect block [%d]", block.Header.Number, c.lastBlock.Header.Number+1)
 	} else if block.Header.Number < c.lastBlock.Header.Number+1 {
-		c.logger.Infof("Got block %d, expect block %d, this node was forced to catch up", block.Header.Number, c.lastBlock.Header.Number+1)
+		c.logger.Infof("Got block [%d], expect block [%d], this node was forced to catch up", block.Header.Number, c.lastBlock.Header.Number+1)
 		return
 	}
 
@@ -827,7 +830,7 @@ func (c *Chain) writeBlock(block *common.Block, index uint64) {
 	}
 	c.lastBlock = block
 
-	c.logger.Debugf("Writing block %d to ledger", block.Header.Number)
+	c.logger.Infof("Writing block [%d] (Raft index: %d) to ledger", block.Header.Number, index)
 
 	if protoutil.IsConfigBlock(block) {
 		c.writeConfigBlock(block, index)
@@ -835,8 +838,8 @@ func (c *Chain) writeBlock(block *common.Block, index uint64) {
 	}
 
 	c.raftMetadataLock.Lock()
-	c.opts.RaftMetadata.RaftIndex = index
-	m := protoutil.MarshalOrPanic(c.opts.RaftMetadata)
+	c.opts.BlockMetadata.RaftIndex = index
+	m := protoutil.MarshalOrPanic(c.opts.BlockMetadata)
 	c.raftMetadataLock.Unlock()
 
 	c.support.WriteBlock(block, m)
@@ -890,7 +893,7 @@ func (c *Chain) ordered(msg *orderer.SubmitRequest) (batches [][]*common.Envelop
 func (c *Chain) propose(ch chan<- *common.Block, bc *blockCreator, batches ...[]*common.Envelope) {
 	for _, batch := range batches {
 		b := bc.createNextBlock(batch)
-		c.logger.Debugf("Created block %d, there are %d blocks in flight", b.Header.Number, c.blockInflight)
+		c.logger.Infof("Created block [%d], there are %d blocks in flight", b.Header.Number, c.blockInflight)
 
 		select {
 		case ch <- b:
@@ -916,7 +919,7 @@ func (c *Chain) catchUp(snap *raftpb.Snapshot) error {
 	}
 
 	if c.lastBlock.Header.Number >= b.Header.Number {
-		c.logger.Warnf("Snapshot is at block %d, local block number is %d, no sync needed", b.Header.Number, c.lastBlock.Header.Number)
+		c.logger.Warnf("Snapshot is at block [%d], local block number is %d, no sync needed", b.Header.Number, c.lastBlock.Header.Number)
 		return nil
 	}
 
@@ -928,23 +931,24 @@ func (c *Chain) catchUp(snap *raftpb.Snapshot) error {
 
 	next := c.lastBlock.Header.Number + 1
 
-	c.logger.Infof("Catching up with snapshot taken at block %d, starting from block %d", b.Header.Number, next)
+	c.logger.Infof("Catching up with snapshot taken at block [%d], starting from block [%d]", b.Header.Number, next)
 
 	for next <= b.Header.Number {
 		block := puller.PullBlock(next)
 		if block == nil {
-			return errors.Errorf("failed to fetch block %d from cluster", next)
+			return errors.Errorf("failed to fetch block [%d] from cluster", next)
 		}
 		if protoutil.IsConfigBlock(block) {
 			c.support.WriteConfigBlock(block, nil)
 
-			cc, raftMetadata := c.detectConfChange(block)
+			configMembership := c.detectConfChange(block)
 
-			if cc != nil {
-				c.logger.Infof("Config block %d changes Raft cluster, communication should be reconfigured", block.Header.Number)
+			if configMembership != nil && configMembership.Changed() {
+				c.logger.Infof("Config block [%d] changes consenter set, communication should be reconfigured", block.Header.Number)
 
 				c.raftMetadataLock.Lock()
-				c.opts.RaftMetadata = raftMetadata
+				c.opts.BlockMetadata = configMembership.NewBlockMetadata
+				c.opts.Consenters = configMembership.NewConsenters
 				c.raftMetadataLock.Unlock()
 
 				if err := c.configureComm(); err != nil {
@@ -959,29 +963,37 @@ func (c *Chain) catchUp(snap *raftpb.Snapshot) error {
 		next++
 	}
 
-	c.logger.Infof("Finished syncing with cluster up to block %d (incl.)", b.Header.Number)
+	c.logger.Infof("Finished syncing with cluster up to and including block [%d]", b.Header.Number)
 	return nil
 }
 
-func (c *Chain) detectConfChange(block *common.Block) (*raftpb.ConfChange, *etcdraft.RaftMetadata) {
+func (c *Chain) detectConfChange(block *common.Block) *MembershipChanges {
 	// If config is targeting THIS channel, inspect consenter set and
 	// propose raft ConfChange if it adds/removes node.
-	metadata, raftMetadata := c.newRaftMetadata(block)
+	configMetadata := c.newConfigMetadata(block)
 
-	if metadata != nil && metadata.Options != nil && metadata.Options.SnapshotInterval != 0 {
-		old := c.sizeLimit
-		c.sizeLimit = metadata.Options.SnapshotInterval
-		c.logger.Infof("Snapshot interval is updated to %d bytes (was %d)", c.sizeLimit, old)
+	if configMetadata == nil {
+		return nil
 	}
 
-	var changes *MembershipChanges
-	if metadata != nil {
-		changes = ComputeMembershipChanges(raftMetadata.Consenters, metadata.Consenters)
+	if configMetadata.Options != nil &&
+		configMetadata.Options.SnapshotIntervalSize != 0 &&
+		configMetadata.Options.SnapshotIntervalSize != c.sizeLimit {
+		c.logger.Infof("Update snapshot interval size to %d bytes (was %d)",
+			configMetadata.Options.SnapshotIntervalSize, c.sizeLimit)
+		c.sizeLimit = configMetadata.Options.SnapshotIntervalSize
 	}
 
-	confChange := changes.UpdateRaftMetadataAndConfChange(raftMetadata)
+	changes, err := ComputeMembershipChanges(c.opts.BlockMetadata, c.opts.Consenters, configMetadata.Consenters)
+	if err != nil {
+		c.logger.Panicf("illegal configuration change detected: %s", err)
+	}
 
-	return confChange, raftMetadata
+	if changes.Rotated() {
+		c.logger.Infof("Config block [%d] rotates TLS certificate of node %d", block.Header.Number, changes.RotatedNode)
+	}
+
+	return changes
 }
 
 func (c *Chain) apply(ents []raftpb.Entry) {
@@ -993,7 +1005,6 @@ func (c *Chain) apply(ents []raftpb.Entry) {
 		c.logger.Panicf("first index of committed entry[%d] should <= appliedIndex[%d]+1", ents[0].Index, c.appliedIndex)
 	}
 
-	var appliedb uint64
 	var position int
 	for i := range ents {
 		switch ents[i].Type {
@@ -1001,6 +1012,9 @@ func (c *Chain) apply(ents []raftpb.Entry) {
 			if len(ents[i].Data) == 0 {
 				break
 			}
+
+			position = i
+			c.accDataSize += uint32(len(ents[i].Data))
 
 			// We need to strictly avoid re-applying normal entries,
 			// otherwise we are writing the same block twice.
@@ -1011,11 +1025,7 @@ func (c *Chain) apply(ents []raftpb.Entry) {
 
 			block := protoutil.UnmarshalBlockOrPanic(ents[i].Data)
 			c.writeBlock(block, ents[i].Index)
-
-			appliedb = block.Header.Number
-			c.Metrics.CommittedBlockNumber.Set(float64(appliedb))
-			position = i
-			c.accDataSize += uint32(len(ents[i].Data))
+			c.Metrics.CommittedBlockNumber.Set(float64(block.Header.Number))
 
 		case raftpb.EntryConfChange:
 			var cc raftpb.ConfChange
@@ -1048,14 +1058,28 @@ func (c *Chain) apply(ents []raftpb.Entry) {
 				c.confChangeInProgress = nil
 				c.configInflight = false
 				// report the new cluster size
-				c.Metrics.ClusterSize.Set(float64(len(c.opts.RaftMetadata.Consenters)))
+				c.Metrics.ClusterSize.Set(float64(len(c.opts.BlockMetadata.ConsenterIds)))
 			}
 
 			if cc.Type == raftpb.ConfChangeRemoveNode && cc.NodeID == c.raftID {
 				c.logger.Infof("Current node removed from replica set for channel %s", c.channelID)
 				// calling goroutine, since otherwise it will be blocked
 				// trying to write into haltC
-				go c.Halt()
+				lead := atomic.LoadUint64(&c.lastKnownLeader)
+				if lead == c.raftID {
+					c.logger.Info("This node is being removed as current leader, halt with delay")
+					c.configInflight = true // toggle the flag so this node does not accept further tx
+					go func() {
+						select {
+						case <-c.clock.After(time.Duration(c.opts.ElectionTick) * c.opts.TickInterval):
+						case <-c.doneC:
+						}
+
+						c.Halt()
+					}()
+				} else {
+					go c.Halt()
+				}
 			}
 		}
 
@@ -1064,22 +1088,19 @@ func (c *Chain) apply(ents []raftpb.Entry) {
 		}
 	}
 
-	if appliedb == 0 {
-		// no block has been written (appliedb == 0) in this round
-		return
-	}
-
 	if c.accDataSize >= c.sizeLimit {
+		b := protoutil.UnmarshalBlockOrPanic(ents[position].Data)
+
 		select {
 		case c.gcC <- &gc{index: c.appliedIndex, state: c.confState, data: ents[position].Data}:
 			c.logger.Infof("Accumulated %d bytes since last snapshot, exceeding size limit (%d bytes), "+
-				"taking snapshot at block %d, last snapshotted block number is %d, nodes: %+v",
-				c.accDataSize, c.sizeLimit, appliedb, c.lastSnapBlockNum, c.confState.Nodes)
+				"taking snapshot at block [%d] (index: %d), last snapshotted block number is %d, current nodes: %+v",
+				c.accDataSize, c.sizeLimit, b.Header.Number, c.appliedIndex, c.lastSnapBlockNum, c.confState.Nodes)
 			c.accDataSize = 0
-			c.lastSnapBlockNum = appliedb
-			c.Metrics.SnapshotBlockNumber.Set(float64(appliedb))
+			c.lastSnapBlockNum = b.Header.Number
+			c.Metrics.SnapshotBlockNumber.Set(float64(b.Header.Number))
 		default:
-			c.logger.Warnf("Snapshotting is in progress, it is very likely that SnapshotInterval is too small")
+			c.logger.Warnf("Snapshotting is in progress, it is very likely that SnapshotIntervalSize is too small")
 		}
 	}
 
@@ -1123,8 +1144,11 @@ func (c *Chain) configureComm() error {
 }
 
 func (c *Chain) remotePeers() ([]cluster.RemoteNode, error) {
+	c.raftMetadataLock.RLock()
+	defer c.raftMetadataLock.RUnlock()
+
 	var nodes []cluster.RemoteNode
-	for raftID, consenter := range c.opts.RaftMetadata.Consenters {
+	for raftID, consenter := range c.opts.Consenters {
 		// No need to know yourself
 		if raftID == c.raftID {
 			continue
@@ -1156,29 +1180,6 @@ func (c *Chain) pemToDER(pemBytes []byte, id uint64, certType string) ([]byte, e
 	return bl.Bytes, nil
 }
 
-// checkConsentersSet validates correctness of the consenters set provided within configuration value
-func (c *Chain) checkConsentersSet(configValue *common.ConfigValue) error {
-	// read metadata update from configuration
-	updatedMetadata, err := MetadataFromConfigValue(configValue)
-	if err != nil {
-		return err
-	}
-
-	if err := MetadataHasDuplication(updatedMetadata); err != nil {
-		return err
-	}
-
-	c.raftMetadataLock.RLock()
-	changes := ComputeMembershipChanges(c.opts.RaftMetadata.Consenters, updatedMetadata.Consenters)
-	c.raftMetadataLock.RUnlock()
-
-	if changes.TotalChanges > 1 {
-		return errors.Errorf("update of more than one consenter at a time is not supported, requested changes: %s", changes)
-	}
-
-	return nil
-}
-
 // writeConfigBlock writes configuration blocks into the ledger in
 // addition extracts updates about raft replica set and if there
 // are changes updates cluster membership as well
@@ -1192,48 +1193,72 @@ func (c *Chain) writeConfigBlock(block *common.Block, index uint64) {
 
 	switch common.HeaderType(hdr.Type) {
 	case common.HeaderType_CONFIG:
-		confChange, raftMetadata := c.detectConfChange(block)
-		raftMetadata.RaftIndex = index
-		raftMetadataBytes := protoutil.MarshalOrPanic(raftMetadata)
+		configMembership := c.detectConfChange(block)
+
+		c.raftMetadataLock.Lock()
+		c.opts.BlockMetadata.RaftIndex = index
+		if configMembership != nil {
+			c.opts.BlockMetadata = configMembership.NewBlockMetadata
+			c.opts.Consenters = configMembership.NewConsenters
+		}
+		c.raftMetadataLock.Unlock()
+
+		blockMetadataBytes := protoutil.MarshalOrPanic(c.opts.BlockMetadata)
+
 		// write block with metadata
-		c.support.WriteConfigBlock(block, raftMetadataBytes)
+		c.support.WriteConfigBlock(block, blockMetadataBytes)
+
+		if configMembership == nil {
+			return
+		}
 
 		// update membership
-		if confChange != nil {
+		if configMembership.ConfChange != nil {
 			// We need to propose conf change in a go routine, because it may be blocked if raft node
 			// becomes leaderless, and we should not block `serveRequest` so it can keep consuming applyC,
 			// otherwise we have a deadlock.
 			go func() {
 				// ProposeConfChange returns error only if node being stopped.
 				// This proposal is dropped by followers because DisableProposalForwarding is enabled.
-				if err := c.Node.ProposeConfChange(context.TODO(), *confChange); err != nil {
+				if err := c.Node.ProposeConfChange(context.TODO(), *configMembership.ConfChange); err != nil {
 					c.logger.Warnf("Failed to propose configuration update to Raft node: %s", err)
 				}
 			}()
 
-			c.confChangeInProgress = confChange
+			c.confChangeInProgress = configMembership.ConfChange
 
-			switch confChange.Type {
+			switch configMembership.ConfChange.Type {
 			case raftpb.ConfChangeAddNode:
-				c.logger.Infof("Config block just committed adds node %d, pause accepting transactions till config change is applied", confChange.NodeID)
+				c.logger.Infof("Config block just committed adds node %d, pause accepting transactions till config change is applied", configMembership.ConfChange.NodeID)
 			case raftpb.ConfChangeRemoveNode:
-				c.logger.Infof("Config block just committed removes node %d, pause accepting transactions till config change is applied", confChange.NodeID)
+				c.logger.Infof("Config block just committed removes node %d, pause accepting transactions till config change is applied", configMembership.ConfChange.NodeID)
 			default:
 				c.logger.Panic("Programming error, encountered unsupported raft config change")
 			}
 
 			c.configInflight = true
+		} else if configMembership.Rotated() {
+			lead := atomic.LoadUint64(&c.lastKnownLeader)
+			if configMembership.RotatedNode == lead {
+				c.logger.Infof("Certificate of Raft leader is being rotated, attempt leader transfer before reconfiguring communication")
+				go func() {
+					c.Node.abdicateLeader(lead)
+					if err := c.configureComm(); err != nil {
+						c.logger.Panicf("Failed to configure communication: %s", err)
+					}
+				}()
+			} else {
+				if err := c.configureComm(); err != nil {
+					c.logger.Panicf("Failed to configure communication: %s", err)
+				}
+			}
 		}
-
-		c.raftMetadataLock.Lock()
-		c.opts.RaftMetadata = raftMetadata
-		c.raftMetadataLock.Unlock()
 
 	case common.HeaderType_ORDERER_TRANSACTION:
 		// If this config is channel creation, no extra inspection is needed
 		c.raftMetadataLock.Lock()
-		c.opts.RaftMetadata.RaftIndex = index
-		m := protoutil.MarshalOrPanic(c.opts.RaftMetadata)
+		c.opts.BlockMetadata.RaftIndex = index
+		m := protoutil.MarshalOrPanic(c.opts.BlockMetadata)
 		c.raftMetadataLock.Unlock()
 
 		c.support.WriteConfigBlock(block, m)
@@ -1244,8 +1269,8 @@ func (c *Chain) writeConfigBlock(block *common.Block, index uint64) {
 }
 
 // getInFlightConfChange returns ConfChange in-flight if any.
-// It either returns confChangeInProgress if it is not nil, or
-// attempts to read ConfChange from last committed block.
+// It returns confChangeInProgress if it is not nil. Otherwise
+// it returns ConfChange from the last committed block (might be nil).
 func (c *Chain) getInFlightConfChange() *raftpb.ConfChange {
 	if c.confChangeInProgress != nil {
 		return c.confChangeInProgress
@@ -1259,43 +1284,28 @@ func (c *Chain) getInFlightConfChange() *raftpb.ConfChange {
 		return nil
 	}
 
-	// Detect if it is a restart right after consensus-type migration. If yes, return early in order to avoid using
-	// the block metadata as etcdraft.RaftMetadata (see below). Right after migration the block metadata will carry
-	// Kafka metadata. The etcdraft.RaftMetadata should be extracted from the ConsensusType.Metadata, instead.
-	if c.detectMigration() {
-		c.logger.Infof("[channel: %s], Restarting after consensus-type migration. Type: %s, just starting the chain.",
-			c.support.ChainID(), c.support.SharedConfig().ConsensusType())
-		return nil
-	}
-
 	// extracting current Raft configuration state
 	confState := c.Node.ApplyConfChange(raftpb.ConfChange{})
 
-	if len(confState.Nodes) == len(c.opts.RaftMetadata.Consenters) {
-		// since configuration change could only add one node or
-		// remove one node at a time, if raft nodes state size
+	if len(confState.Nodes) == len(c.opts.BlockMetadata.ConsenterIds) {
+		// Raft configuration change could only add one node or
+		// remove one node at a time, if raft conf state size is
 		// equal to membership stored in block metadata field,
 		// that means everything is in sync and no need to propose
-		// update
+		// config update.
 		return nil
 	}
 
-	return ConfChange(c.opts.RaftMetadata, confState)
+	return ConfChange(c.opts.BlockMetadata, confState)
 }
 
-// newRaftMetadata extract raft metadata from the configuration block
-func (c *Chain) newRaftMetadata(block *common.Block) (*etcdraft.Metadata, *etcdraft.RaftMetadata) {
+// newMetadata extract config metadata from the configuration block
+func (c *Chain) newConfigMetadata(block *common.Block) *etcdraft.ConfigMetadata {
 	metadata, err := ConsensusMetadataFromConfigBlock(block)
 	if err != nil {
 		c.logger.Panicf("error reading consensus metadata: %s", err)
 	}
-	raftMetadata := proto.Clone(c.opts.RaftMetadata).(*etcdraft.RaftMetadata)
-	// proto.Clone doesn't copy an empty map, hence need to initialize it after
-	// cloning
-	if raftMetadata.Consenters == nil {
-		raftMetadata.Consenters = map[uint64]*etcdraft.Consenter{}
-	}
-	return metadata, raftMetadata
+	return metadata
 }
 
 func (c *Chain) suspectEviction() bool {
@@ -1310,7 +1320,7 @@ func (c *Chain) newEvictionSuspector() *evictionSuspector {
 	return &evictionSuspector{
 		amIInChannel:               ConsenterCertificate(c.opts.Cert).IsConsenterOfChannel,
 		evictionSuspicionThreshold: c.opts.EvictionSuspicion,
-		writeBlock:                 c.support.WriteBlock,
+		writeBlock:                 c.support.Append,
 		createPuller:               c.createPuller,
 		height:                     c.support.Height,
 		triggerCatchUp:             c.triggerCatchup,

@@ -7,13 +7,11 @@ SPDX-License-Identifier: Apache-2.0
 package scc
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
 	"github.com/hyperledger/fabric/core/container/inproccontroller"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
-	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
 	ccprovider2 "github.com/hyperledger/fabric/core/mocks/ccprovider"
 	"github.com/hyperledger/fabric/core/peer"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
@@ -22,14 +20,10 @@ import (
 )
 
 func init() {
-	viper.Set("chaincode.system", map[string]string{"invokableExternalButNotCC2CC": "enable", "invokableCC2CCButNotExternal": "enable", "disabled": "enable"})
 	viper.Set("peer.fileSystemPath", os.TempDir())
 }
 
 func TestMain(m *testing.M) {
-	// Read the core.yaml file for default config.
-	ledgertestutil.SetupCoreYAMLConfig()
-
 	//setup extension test environment
 	_, _, destroy := xtestutil.SetupExtTestEnv()
 
@@ -40,7 +34,16 @@ func TestMain(m *testing.M) {
 }
 
 func newTestProvider() *Provider {
-	p := NewProvider(peer.Default, peer.DefaultSupport, inproccontroller.NewRegistry())
+	p := &Provider{
+		Peer:        peer.Default,
+		PeerSupport: peer.DefaultSupport,
+		Registrar:   inproccontroller.NewRegistry(),
+		Whitelist: map[string]bool{
+			"invokableExternalButNotCC2CC": true,
+			"invokableCC2CCButNotExternal": true,
+			"disabled":                     true,
+		},
+	}
 	for _, cc := range []SelfDescribingSysCC{
 		&SysCCWrapper{
 			SCC: &SystemChaincode{
@@ -78,11 +81,14 @@ func TestDeploy(t *testing.T) {
 		p.DeploySysCCs("a", ccp)
 	}
 	assert.Panics(t, f)
-	ledgermgmt.InitializeTestEnv()
-	defer ledgermgmt.CleanupTestEnv()
+
+	cleanup := ledgermgmt.InitializeTestEnv(t)
+	defer cleanup()
 	err := peer.MockCreateChain("a")
-	fmt.Println(err)
-	deploySysCC("a", ccp, &SysCCWrapper{SCC: &SystemChaincode{
+	if err != nil {
+		t.Fatalf("failed to create mock chain: %v", err)
+	}
+	p.deploySysCC("a", ccp, &SysCCWrapper{SCC: &SystemChaincode{
 		Enabled: true,
 		Name:    "invokableCC2CCButNotExternal",
 	}})
@@ -116,7 +122,11 @@ func TestIsSysCCAndNotInvokableExternal(t *testing.T) {
 }
 
 func TestSccProviderImpl_GetQueryExecutorForLedger(t *testing.T) {
-	p := NewProvider(peer.Default, peer.DefaultSupport, inproccontroller.NewRegistry())
+	p := &Provider{
+		Peer:        peer.Default,
+		PeerSupport: peer.DefaultSupport,
+		Registrar:   inproccontroller.NewRegistry(),
+	}
 	qe, err := p.GetQueryExecutorForLedger("")
 	assert.Nil(t, qe)
 	assert.Error(t, err)
@@ -129,6 +139,10 @@ func TestCreatePluginSysCCs(t *testing.T) {
 func TestRegisterSysCC(t *testing.T) {
 	p := &Provider{
 		Registrar: inproccontroller.NewRegistry(),
+		Whitelist: map[string]bool{
+			"invokableExternalButNotCC2CC": true,
+			"invokableCC2CCButNotExternal": true,
+		},
 	}
 	_, err := p.registerSysCC(&SysCCWrapper{
 		SCC: &SystemChaincode{
@@ -148,5 +162,5 @@ func TestRegisterSysCC(t *testing.T) {
 		},
 	})
 	assert.Error(t, err)
-	assert.Contains(t, "invokableExternalButNotCC2CC-latest already registered", err)
+	assert.Contains(t, "invokableExternalButNotCC2CC:latest already registered", err)
 }

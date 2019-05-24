@@ -1,24 +1,14 @@
 /*
-Copyright IBM Corp. 2016 All Rights Reserved.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-		 http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+Copyright IBM Corp. All Rights Reserved.
+SPDX-License-Identifier: Apache-2.0
 */
 
 package ledgermgmt
 
 import (
 	"fmt"
-	"os"
+	"io/ioutil"
+	"path/filepath"
 	"testing"
 
 	"github.com/hyperledger/fabric/common/configtx/test"
@@ -28,23 +18,8 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/cceventmgmt"
 	"github.com/hyperledger/fabric/core/ledger/mock"
-	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
-	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
-
-func TestMain(m *testing.M) {
-	// Read the core.yaml file for default config.
-	ledgertestutil.SetupCoreYAMLConfig()
-
-	//setup extension test environment
-	_, _, destroy := xtestutil.SetupExtTestEnv()
-	viper.Set("peer.fileSystemPath", "/tmp/fabric/ledgertests/ledgermgmt")
-	code := m.Run()
-	destroy()
-	os.Exit(code)
-}
 
 func TestLedgerMgmt(t *testing.T) {
 	// Check for error when creating/opening ledger without initialization.
@@ -64,8 +39,27 @@ func TestLedgerMgmt(t *testing.T) {
 
 	Close()
 
-	InitializeTestEnv()
-	defer CleanupTestEnv()
+	rootPath, err := ioutil.TempDir("", "lgrmgmt")
+	if err != nil {
+		t.Fatalf("Failed to create ledger directory: %s", err)
+	}
+
+	initializer := &Initializer{
+		PlatformRegistry: platforms.NewRegistry(&golang.Platform{}),
+		MetricsProvider:  &disabled.Provider{},
+		Config: &ledger.Config{
+			RootFSPath: rootPath,
+			StateDB: &ledger.StateDB{
+				LevelDBPath: filepath.Join(rootPath, "stateleveldb"),
+			},
+		},
+	}
+
+	cleanup, err := InitializeTestEnvWithInitializer(initializer)
+	if err != nil {
+		t.Fatalf("Failed to initialize test environment: %s", err)
+	}
+	defer cleanup()
 
 	numLedgers := 10
 	ledgers := make([]ledger.PeerLedger, numLedgers)
@@ -98,18 +92,15 @@ func TestLedgerMgmt(t *testing.T) {
 	Close()
 
 	// Restart ledger mgmt with existing ledgers
-	Initialize(&Initializer{
-		PlatformRegistry: platforms.NewRegistry(&golang.Platform{}),
-		MetricsProvider:  &disabled.Provider{},
-	})
+	Initialize(initializer)
 	l, err = OpenLedger(ledgerID)
 	assert.NoError(t, err)
 	Close()
 }
 
 func TestChaincodeInfoProvider(t *testing.T) {
-	InitializeTestEnv()
-	defer CleanupTestEnv()
+	cleanup := InitializeTestEnv(t)
+	defer cleanup()
 	gb, _ := test.MakeGenesisBlock("ledger1")
 	CreateLedger(gb)
 

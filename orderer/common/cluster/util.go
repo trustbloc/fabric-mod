@@ -10,8 +10,9 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/pem"
-	"reflect"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/hyperledger/fabric/common/channelconfig"
 	"github.com/hyperledger/fabric/common/configtx"
@@ -105,67 +106,23 @@ func (ss StringSet) subtract(set StringSet) {
 // that are only established if the given predicate
 // is fulfilled
 type PredicateDialer struct {
-	Config atomic.Value
+	lock   sync.RWMutex
+	Config comm.ClientConfig
 }
 
-// NewTLSPinningDialer creates a new PredicateDialer
-func NewTLSPinningDialer(config comm.ClientConfig) *PredicateDialer {
-	d := &PredicateDialer{}
-	d.SetConfig(config)
-	return d
-}
-
-// ClientConfig returns the comm.ClientConfig, or an error
-// if they cannot be extracted.
-func (dialer *PredicateDialer) ClientConfig() (comm.ClientConfig, error) {
-	val := dialer.Config.Load()
-	if val == nil {
-		return comm.ClientConfig{}, errors.New("client config not initialized")
-	}
-	cc, isClientConfig := val.(comm.ClientConfig)
-	if !isClientConfig {
-		err := errors.Errorf("value stored is %v, not comm.ClientConfig",
-			reflect.TypeOf(val))
-		return comm.ClientConfig{}, err
-	}
-	if cc.SecOpts == nil {
-		return comm.ClientConfig{}, errors.New("SecOpts is nil")
-	}
-	// Copy by value the secure options
-	secOpts := *cc.SecOpts
-	return comm.ClientConfig{
-		AsyncConnect: cc.AsyncConnect,
-		Timeout:      cc.Timeout,
-		SecOpts:      &secOpts,
-		KaOpts:       cc.KaOpts,
-	}, nil
-}
-
-// SetConfig sets the configuration of the PredicateDialer
-func (dialer *PredicateDialer) SetConfig(config comm.ClientConfig) {
-	configCopy := comm.ClientConfig{
-		AsyncConnect: config.AsyncConnect,
-		Timeout:      config.Timeout,
-		SecOpts:      &comm.SecureOptions{},
-		KaOpts:       &comm.KeepaliveOptions{},
-	}
-	// Explicitly copy configuration
-	if config.SecOpts != nil {
-		*configCopy.SecOpts = *config.SecOpts
-	}
-	if config.KaOpts != nil {
-		*configCopy.KaOpts = *config.KaOpts
-	} else {
-		configCopy.KaOpts = nil
-	}
-
-	dialer.Config.Store(configCopy)
+func (dialer *PredicateDialer) UpdateRootCAs(serverRootCAs [][]byte) {
+	dialer.lock.Lock()
+	defer dialer.lock.Unlock()
+	dialer.Config.SecOpts.ServerRootCAs = serverRootCAs
 }
 
 // Dial creates a new gRPC connection that can only be established, if the remote node's
 // certificate chain satisfy verifyFunc
 func (dialer *PredicateDialer) Dial(address string, verifyFunc RemoteVerifier) (*grpc.ClientConn, error) {
-	cfg := dialer.Config.Load().(comm.ClientConfig)
+	dialer.lock.RLock()
+	cfg := dialer.Config.Clone()
+	dialer.lock.RUnlock()
+
 	cfg.SecOpts.VerifyCertificate = verifyFunc
 	client, err := comm.NewGRPCClient(cfg)
 	if err != nil {
@@ -183,15 +140,23 @@ func DERtoPEM(der []byte) string {
 	}))
 }
 
-// StandardDialer wraps a PredicateDialer
-// to a standard cluster.Dialer that passes in a nil verify function
+// StandardDialer wraps an ClientConfig, and provides
+// a means to connect according to given EndpointCriteria.
 type StandardDialer struct {
-	Dialer *PredicateDialer
+	Config comm.ClientConfig
 }
 
-// Dial dials to the given address
-func (bdp *StandardDialer) Dial(address string) (*grpc.ClientConn, error) {
-	return bdp.Dialer.Dial(address, nil)
+// Dial dials an address according to the given EndpointCriteria
+func (dialer *StandardDialer) Dial(endpointCriteria EndpointCriteria) (*grpc.ClientConn, error) {
+	cfg := dialer.Config.Clone()
+	cfg.SecOpts.ServerRootCAs = endpointCriteria.TLSRootCAs
+
+	client, err := comm.NewGRPCClient(cfg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed creating gRPC client")
+	}
+
+	return client.NewConnection(endpointCriteria.Endpoint, "")
 }
 
 //go:generate mockery -dir . -name BlockVerifier -case underscore -output ./mocks/
@@ -213,7 +178,7 @@ type BlockSequenceVerifier func(blocks []*common.Block, channel string) error
 
 // Dialer creates a gRPC connection to a remote address
 type Dialer interface {
-	Dial(address string) (*grpc.ClientConn, error)
+	Dial(endpointCriteria EndpointCriteria) (*grpc.ClientConn, error)
 }
 
 // VerifyBlocks verifies the given consecutive sequence of blocks is valid,
@@ -329,7 +294,7 @@ func VerifyBlockHash(indexInBuffer int, blockBuff []*common.Block) error {
 		if !bytes.Equal(block.Header.PreviousHash, protoutil.BlockHeaderHash(prevBlock.Header)) {
 			claimedPrevHash := hex.EncodeToString(block.Header.PreviousHash)
 			actualPrevHash := hex.EncodeToString(protoutil.BlockHeaderHash(prevBlock.Header))
-			return errors.Errorf("block %d's hash (%s) mismatches %d's prev block hash (%s)",
+			return errors.Errorf("block [%d]'s hash (%s) mismatches block [%d]'s prev block hash (%s)",
 				prevSeq, actualPrevHash, currSeq, claimedPrevHash)
 		}
 	}
@@ -374,16 +339,15 @@ func VerifyBlockSignature(block *common.Block, verifier BlockVerifier, config *c
 	return verifier.VerifyBlockSignature(signatureSet, config)
 }
 
-// EndpointConfig defines a configuration
-// of endpoints of ordering service nodes
-type EndpointConfig struct {
-	TLSRootCAs [][]byte
-	Endpoints  []string
+// EndpointCriteria defines criteria of how to connect to a remote orderer node.
+type EndpointCriteria struct {
+	Endpoint   string   // Endpoint of the form host:port
+	TLSRootCAs [][]byte // PEM encoded TLS root CA certificates
 }
 
 // EndpointconfigFromConfigBlock retrieves TLS CA certificates and endpoints
 // from a config block.
-func EndpointconfigFromConfigBlock(block *common.Block) (*EndpointConfig, error) {
+func EndpointconfigFromConfigBlock(block *common.Block) ([]EndpointCriteria, error) {
 	if block == nil {
 		return nil, errors.New("nil block")
 	}
@@ -391,7 +355,7 @@ func EndpointconfigFromConfigBlock(block *common.Block) (*EndpointConfig, error)
 	if err != nil {
 		return nil, err
 	}
-	var tlsCACerts [][]byte
+
 	bundle, err := channelconfig.NewBundleFromEnvelope(envelopeConfig)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed extracting bundle from envelope")
@@ -404,17 +368,57 @@ func EndpointconfigFromConfigBlock(block *common.Block) (*EndpointConfig, error)
 	if !ok {
 		return nil, errors.New("failed obtaining orderer config from bundle")
 	}
+
+	mspIDsToCACerts := make(map[string][][]byte)
+	var aggregatedTLSCerts [][]byte
 	for _, org := range ordererConfig.Organizations() {
-		msp := msps[org.MSPID()]
-		if msp == nil {
+		// Validate that every orderer org has a corresponding MSP instance in the MSP Manager.
+		msp, exists := msps[org.MSPID()]
+		if !exists {
 			return nil, errors.Errorf("no MSP found for MSP with ID of %s", org.MSPID())
 		}
-		tlsCACerts = append(tlsCACerts, msp.GetTLSRootCerts()...)
+
+		// Build a per org mapping of the TLS CA certs for this org,
+		// and aggregate all TLS CA certs into aggregatedTLSCerts to be used later on.
+		var caCerts [][]byte
+		caCerts = append(caCerts, msp.GetTLSIntermediateCerts()...)
+		caCerts = append(caCerts, msp.GetTLSRootCerts()...)
+		mspIDsToCACerts[org.MSPID()] = caCerts
+		aggregatedTLSCerts = append(aggregatedTLSCerts, caCerts...)
 	}
-	return &EndpointConfig{
-		Endpoints:  bundle.ChannelConfig().OrdererAddresses(),
-		TLSRootCAs: tlsCACerts,
-	}, nil
+
+	endpointsPerOrg := perOrgEndpoints(ordererConfig, mspIDsToCACerts)
+	if len(endpointsPerOrg) > 0 {
+		return endpointsPerOrg, nil
+	}
+
+	return globalEndpointsFromConfig(aggregatedTLSCerts, bundle), nil
+}
+
+func perOrgEndpoints(ordererConfig channelconfig.Orderer, mspIDsToCerts map[string][][]byte) []EndpointCriteria {
+	var endpointsPerOrg []EndpointCriteria
+
+	for _, org := range ordererConfig.Organizations() {
+		for _, endpoint := range org.Endpoints() {
+			endpointsPerOrg = append(endpointsPerOrg, EndpointCriteria{
+				TLSRootCAs: mspIDsToCerts[org.MSPID()],
+				Endpoint:   endpoint,
+			})
+		}
+	}
+
+	return endpointsPerOrg
+}
+
+func globalEndpointsFromConfig(aggregatedTLSCerts [][]byte, bundle *channelconfig.Bundle) []EndpointCriteria {
+	var globalEndpoints []EndpointCriteria
+	for _, endpoint := range bundle.ChannelConfig().OrdererAddresses() {
+		globalEndpoints = append(globalEndpoints, EndpointCriteria{
+			Endpoint:   endpoint,
+			TLSRootCAs: aggregatedTLSCerts,
+		})
+	}
+	return globalEndpoints
 }
 
 //go:generate mockery -dir . -name VerifierFactory -case underscore -output ./mocks/
@@ -466,7 +470,7 @@ func (vr *VerificationRegistry) BlockCommitted(block *common.Block, channel stri
 	conf, err := ConfigFromBlock(block)
 	// The block doesn't contain a config block, but is a valid block
 	if err == errNotAConfig {
-		vr.Logger.Debugf("Committed block %d for channel %s that is not a config block",
+		vr.Logger.Debugf("Committed block [%d] for channel %s that is not a config block",
 			block.Header.Number, channel)
 		return
 	}
@@ -487,7 +491,7 @@ func (vr *VerificationRegistry) BlockCommitted(block *common.Block, channel stri
 
 	vr.VerifiersByChannel[channel] = verifier
 
-	vr.Logger.Debugf("Committed config block %d for channel %s", block.Header.Number, channel)
+	vr.Logger.Debugf("Committed config block [%d] for channel %s", block.Header.Number, channel)
 }
 
 // BlockToString returns a string representation of this block.
@@ -588,7 +592,7 @@ func LastConfigBlock(block *common.Block, blockRetriever BlockRetriever) (*commo
 	}
 	lastConfigBlock := blockRetriever.Block(lastConfigBlockNum)
 	if lastConfigBlock == nil {
-		return nil, errors.Errorf("unable to retrieve last config block %d", lastConfigBlockNum)
+		return nil, errors.Errorf("unable to retrieve last config block [%d]", lastConfigBlockNum)
 	}
 	return lastConfigBlock, nil
 }
@@ -607,4 +611,30 @@ func (scr *StreamCountReporter) Increment() {
 func (scr *StreamCountReporter) Decrement() {
 	count := atomic.AddUint32(&scr.count, ^uint32(0))
 	scr.Metrics.reportStreamCount(count)
+}
+
+type certificateExpirationCheck struct {
+	minimumExpirationWarningInterval time.Duration
+	expiresAt                        time.Time
+	expirationWarningThreshold       time.Duration
+	lastWarning                      time.Time
+	nodeName                         string
+	endpoint                         string
+	alert                            func(string, ...interface{})
+}
+
+func (exp *certificateExpirationCheck) checkExpiration(currentTime time.Time, channel string) {
+	timeLeft := exp.expiresAt.Sub(currentTime)
+	if timeLeft > exp.expirationWarningThreshold {
+		return
+	}
+
+	timeSinceLastWarning := currentTime.Sub(exp.lastWarning)
+	if timeSinceLastWarning < exp.minimumExpirationWarningInterval {
+		return
+	}
+
+	exp.alert("Certificate of %s from %s for channel %s expires in less than %v",
+		exp.nodeName, exp.endpoint, channel, timeLeft)
+	exp.lastWarning = currentTime
 }

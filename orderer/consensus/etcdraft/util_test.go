@@ -124,7 +124,7 @@ func TestEndpointconfigFromFromSupport(t *testing.T) {
 	}{
 		{
 			name:          "Block returns nil",
-			expectedError: "unable to retrieve block 99",
+			expectedError: "unable to retrieve block [99]",
 			height:        100,
 		},
 		{
@@ -142,7 +142,7 @@ func TestEndpointconfigFromFromSupport(t *testing.T) {
 					})},
 				},
 			},
-			expectedError: "unable to retrieve last config block 42",
+			expectedError: "unable to retrieve last config block [42]",
 			height:        100,
 		},
 		{
@@ -217,11 +217,13 @@ func TestNewBlockPuller(t *testing.T) {
 		},
 	}
 
-	dialer := cluster.NewTLSPinningDialer(comm.ClientConfig{
-		SecOpts: &comm.SecureOptions{
-			Certificate: ca.CertBytes(),
+	dialer := &cluster.PredicateDialer{
+		Config: comm.ClientConfig{
+			SecOpts: &comm.SecureOptions{
+				Certificate: ca.CertBytes(),
+			},
 		},
-	})
+	}
 
 	bp, err := newBlockPuller(cs, dialer, localconfig.Cluster{})
 	assert.NoError(t, err)
@@ -236,20 +238,12 @@ func TestNewBlockPuller(t *testing.T) {
 		certificate   []byte
 	}{
 		{
-			name:          "UnInitialized dialer",
-			certificate:   ca.CertBytes(),
-			cs:            cs,
-			expectedError: "client config not initialized",
-			dialer:        &cluster.PredicateDialer{},
-		},
-		{
-			name: "UnInitialized dialer",
-
+			name: "Unable to retrieve block",
 			cs: &multichannel.ConsenterSupport{
 				HeightVal: 100,
 			},
 			certificate:   ca.CertBytes(),
-			expectedError: "unable to retrieve block 99",
+			expectedError: "unable to retrieve block [99]",
 			dialer:        dialer,
 		},
 		{
@@ -261,11 +255,8 @@ func TestNewBlockPuller(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			cc, err := testCase.dialer.ClientConfig()
-			if err == nil {
-				cc.SecOpts.Certificate = testCase.certificate
-				testCase.dialer.SetConfig(cc)
-			}
+			cc := testCase.dialer.Config
+			cc.SecOpts.Certificate = testCase.certificate
 			bp, err := newBlockPuller(testCase.cs, testCase.dialer, localconfig.Cluster{})
 			assert.Nil(t, bp)
 			assert.EqualError(t, err, testCase.expectedError)
@@ -425,7 +416,7 @@ func TestEvictionSuspector(t *testing.T) {
 		},
 		{
 			description:                 "we are not in the channel",
-			expectedLog:                 "Detected our own eviction from the chain in block 9",
+			expectedLog:                 "Detected our own eviction from the channel in block [9]",
 			evictionSuspicionThreshold:  10*time.Minute - time.Second,
 			amIInChannelReturns:         cluster.ErrNotInChannel,
 			blockPuller:                 puller,
@@ -445,9 +436,9 @@ func TestEvictionSuspector(t *testing.T) {
 		t.Run(testCase.description, func(t *testing.T) {
 			committedBlocks := make(chan *common.Block, 2)
 
-			commitBlock := func(block *common.Block, metadata []byte) {
-				assert.Nil(t, metadata)
+			commitBlock := func(block *common.Block) error {
 				committedBlocks <- block
+				return nil
 			}
 
 			es := &evictionSuspector{

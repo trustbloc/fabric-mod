@@ -28,6 +28,7 @@ import (
 	privdata2 "github.com/hyperledger/fabric/gossip/privdata"
 	"github.com/hyperledger/fabric/gossip/state"
 	"github.com/hyperledger/fabric/gossip/util"
+	"github.com/hyperledger/fabric/internal/pkg/identity"
 	gproto "github.com/hyperledger/fabric/protos/gossip"
 	"github.com/hyperledger/fabric/protos/transientstore"
 	"github.com/hyperledger/fabric/protoutil"
@@ -61,20 +62,22 @@ type GossipService interface {
 // DeliveryServiceFactory factory to create and initialize delivery service instance
 type DeliveryServiceFactory interface {
 	// Returns an instance of delivery client
-	Service(g GossipService, endpoints []string, msc api.MessageCryptoService) (deliverclient.DeliverService, error)
+	Service(g GossipService, endpoints []string, msc api.MessageCryptoService) (deliverservice.DeliverService, error)
 }
 
 type deliveryFactoryImpl struct {
+	signer identity.SignerSerializer
 }
 
 // Returns an instance of delivery client
-func (*deliveryFactoryImpl) Service(g GossipService, endpoints []string, mcs api.MessageCryptoService) (deliverclient.DeliverService, error) {
-	return deliverclient.NewDeliverService(&deliverclient.Config{
+func (df *deliveryFactoryImpl) Service(g GossipService, endpoints []string, mcs api.MessageCryptoService) (deliverservice.DeliverService, error) {
+	return deliverservice.NewDeliverService(&deliverservice.Config{
 		CryptoSvc:   mcs,
 		Gossip:      g,
 		Endpoints:   endpoints,
-		ConnFactory: deliverclient.DefaultConnectionFactory,
-		ABCFactory:  deliverclient.DefaultABCFactory,
+		ConnFactory: deliverservice.DefaultConnectionFactory,
+		ABCFactory:  deliverservice.DefaultABCFactory,
+		Signer:      df.signer,
 	})
 }
 
@@ -95,7 +98,7 @@ type gossipServiceImpl struct {
 	privateHandlers map[string]privateHandler
 	chains          map[string]state.GossipStateProvider
 	leaderElection  map[string]election.LeaderElectionService
-	deliveryService map[string]deliverclient.DeliverService
+	deliveryService map[string]deliverservice.DeliverService
 	deliveryFactory DeliveryServiceFactory
 	lock            sync.RWMutex
 	mcs             api.MessageCryptoService
@@ -133,24 +136,50 @@ func (jcm *joinChannelMessage) AnchorPeersOf(org api.OrgIdentityType) []api.Anch
 var logger = util.GetLogger(util.ServiceLogger, "")
 
 // InitGossipService initialize gossip service
-func InitGossipService(peerIdentity []byte, metricsProvider metrics.Provider, endpoint string, s *grpc.Server,
+func InitGossipService(peerIdentity identity.SignerSerializer, metricsProvider metrics.Provider, endpoint string, s *grpc.Server,
 	certs *gossipCommon.TLSCertificates, mcs api.MessageCryptoService, secAdv api.SecurityAdvisor,
 	secureDialOpts api.PeerSecureDialOpts, bootPeers ...string) error {
 	// TODO: Remove this.
 	// TODO: This is a temporary work-around to make the gossip leader election module load its logger at startup
 	// TODO: in order for the flogging package to register this logger in time so it can set the log levels as requested in the config
 	util.GetLogger(util.ElectionLogger, "")
-	return InitGossipServiceCustomDeliveryFactory(peerIdentity, metricsProvider, endpoint, s, certs, &deliveryFactoryImpl{},
-		mcs, secAdv, secureDialOpts, bootPeers...)
+
+	return InitGossipServiceCustomDeliveryFactory(
+		peerIdentity,
+		metricsProvider,
+		endpoint,
+		s,
+		certs,
+		&deliveryFactoryImpl{
+			signer: peerIdentity,
+		},
+		mcs,
+		secAdv,
+		secureDialOpts,
+		bootPeers...,
+	)
 }
 
 // InitGossipServiceCustomDeliveryFactory initialize gossip service with customize delivery factory
 // implementation, might be useful for testing and mocking purposes
-func InitGossipServiceCustomDeliveryFactory(peerIdentity []byte, metricsProvider metrics.Provider, endpoint string,
-	s *grpc.Server, certs *gossipCommon.TLSCertificates, factory DeliveryServiceFactory, mcs api.MessageCryptoService,
-	secAdv api.SecurityAdvisor, secureDialOpts api.PeerSecureDialOpts, bootPeers ...string) error {
+func InitGossipServiceCustomDeliveryFactory(
+	peerIdentity identity.SignerSerializer,
+	metricsProvider metrics.Provider,
+	endpoint string,
+	s *grpc.Server,
+	certs *gossipCommon.TLSCertificates,
+	factory DeliveryServiceFactory,
+	mcs api.MessageCryptoService,
+	secAdv api.SecurityAdvisor,
+	secureDialOpts api.PeerSecureDialOpts,
+	bootPeers ...string,
+) error {
 	var err error
 	var gossip gossip.Gossip
+	serializedIdentity, err := peerIdentity.Serialize()
+	if err != nil {
+		return err
+	}
 	once.Do(func() {
 		if overrideEndpoint := viper.GetString("peer.gossip.endpoint"); overrideEndpoint != "" {
 			endpoint = overrideEndpoint
@@ -160,7 +189,7 @@ func InitGossipServiceCustomDeliveryFactory(peerIdentity []byte, metricsProvider
 
 		gossipMetrics := gossipMetrics.NewGossipMetrics(metricsProvider)
 
-		gossip, err = integration.NewGossipComponent(peerIdentity, endpoint, s, secAdv,
+		gossip, err = integration.NewGossipComponent(serializedIdentity, endpoint, s, secAdv,
 			mcs, secureDialOpts, certs, gossipMetrics, bootPeers...)
 		gossipServiceInstance = &gossipServiceImpl{
 			mcs:             mcs,
@@ -168,9 +197,9 @@ func InitGossipServiceCustomDeliveryFactory(peerIdentity []byte, metricsProvider
 			privateHandlers: make(map[string]privateHandler),
 			chains:          make(map[string]state.GossipStateProvider),
 			leaderElection:  make(map[string]election.LeaderElectionService),
-			deliveryService: make(map[string]deliverclient.DeliverService),
+			deliveryService: make(map[string]deliverservice.DeliverService),
 			deliveryFactory: factory,
-			peerIdentity:    peerIdentity,
+			peerIdentity:    serializedIdentity,
 			secAdv:          secAdv,
 			metrics:         gossipMetrics,
 		}
@@ -368,7 +397,7 @@ func (g *gossipServiceImpl) updateAnchors(config Config) {
 
 func (g *gossipServiceImpl) updateEndpoints(chainID string, endpoints []string) {
 	if ds, ok := g.deliveryService[chainID]; ok {
-		logger.Debugf("Updating endpoints for chainID", chainID)
+		logger.Debugf("Updating endpoints for chainID %s", chainID)
 		if err := ds.UpdateEndpoints(chainID, endpoints); err != nil {
 			// The only reason to fail is because of absence of block provider
 			// for given channel id, hence printing a warning will be enough
@@ -438,12 +467,12 @@ func (g *gossipServiceImpl) onStatusChangeFactory(chainID string, committer bloc
 			}
 			logger.Info("Elected as a leader, starting delivery service for channel", chainID)
 			if err := g.deliveryService[chainID].StartDeliverForChannel(chainID, committer, yield); err != nil {
-				logger.Errorf("Delivery service is not able to start blocks delivery for chain, due to %+v", errors.WithStack(err))
+				logger.Errorf("Delivery service is not able to start blocks delivery for chain, due to %+v", err)
 			}
 		} else {
 			logger.Info("Renounced leadership, stopping delivery service for channel", chainID)
 			if err := g.deliveryService[chainID].StopDeliverForChannel(chainID); err != nil {
-				logger.Errorf("Delivery service is not able to stop blocks delivery for chain, due to %+v", errors.WithStack(err))
+				logger.Errorf("Delivery service is not able to stop blocks delivery for chain, due to %+v", err)
 			}
 
 		}

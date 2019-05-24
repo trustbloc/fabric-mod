@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/hyperledger/fabric/integration"
 	"github.com/hyperledger/fabric/integration/nwo"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -22,7 +23,7 @@ func TestEndToEnd(t *testing.T) {
 }
 
 var components *nwo.Components
-var suiteBase = 30000
+var suiteBase = integration.TokenBasePort
 
 var _ = SynchronizedBeforeSuite(func() []byte {
 	components = &nwo.Components{}
@@ -47,6 +48,10 @@ func StartPort() int {
 
 func ToHex(q uint64) string {
 	return "0x" + strconv.FormatUint(q, 16)
+}
+
+func ToDecimal(q uint64) string {
+	return strconv.FormatUint(q, 10)
 }
 
 func BasicSoloV20() *nwo.Config {

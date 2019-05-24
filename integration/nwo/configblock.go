@@ -179,20 +179,11 @@ func CurrentConfigBlockNumber(n *Network, peer *Peer, orderer *Orderer, channel 
 
 	// fetch the config block
 	output := filepath.Join(tempDir, "config_block.pb")
-
 	if orderer == nil {
 		return CurrentConfigBlockNumberFromPeer(n, peer, channel, output)
 	}
 
-	sess, err := n.OrdererAdminSession(orderer, peer, commands.ChannelFetch{
-		ChannelID:  channel,
-		Block:      "config",
-		Orderer:    n.OrdererAddress(orderer, ListenPort),
-		OutputFile: output,
-	})
-	Expect(err).NotTo(HaveOccurred())
-	Eventually(sess, n.EventuallyTimeout).Should(gexec.Exit(0))
-	Expect(sess.Err).To(gbytes.Say("Received block: "))
+	FetchConfigBlock(n, peer, orderer, channel, output)
 
 	// unmarshal the config block bytes
 	configBlock := UnmarshalBlockFromFile(output)
@@ -215,6 +206,25 @@ func CurrentConfigBlockNumberFromPeer(n *Network, peer *Peer, channel, output st
 	configBlock := UnmarshalBlockFromFile(output)
 
 	return configBlock.Header.Number
+}
+
+// FetchConfigBlock fetches latest config block.
+func FetchConfigBlock(n *Network, peer *Peer, orderer *Orderer, channel string, output string) {
+	fetch := func() int {
+		sess, err := n.OrdererAdminSession(orderer, peer, commands.ChannelFetch{
+			ChannelID:  channel,
+			Block:      "config",
+			Orderer:    n.OrdererAddress(orderer, ListenPort),
+			OutputFile: output,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		code := sess.Wait(n.EventuallyTimeout).ExitCode()
+		if code == 0 {
+			Expect(sess.Err).To(gbytes.Say("Received block: "))
+		}
+		return code
+	}
+	Eventually(fetch, n.EventuallyTimeout).Should(Equal(0))
 }
 
 // UpdateOrdererConfigFail computes, signs, and submits a configuration update which requires orderers signature
@@ -278,14 +288,14 @@ func UnmarshalBlockFromFile(blockFile string) *common.Block {
 
 // AddConsenter adds a new consenter to the given channel
 func AddConsenter(n *Network, peer *Peer, orderer *Orderer, channel string, consenter ectdraft_protos.Consenter) {
-	UpdateEtcdRaftMetadata(n, peer, orderer, channel, func(metadata *ectdraft_protos.Metadata) {
+	UpdateEtcdRaftMetadata(n, peer, orderer, channel, func(metadata *ectdraft_protos.ConfigMetadata) {
 		metadata.Consenters = append(metadata.Consenters, &consenter)
 	})
 }
 
 // RemoveConsenter removes a consenter with the given certificate in PEM format from the given channel
 func RemoveConsenter(n *Network, peer *Peer, orderer *Orderer, channel string, certificate []byte) {
-	UpdateEtcdRaftMetadata(n, peer, orderer, channel, func(metadata *ectdraft_protos.Metadata) {
+	UpdateEtcdRaftMetadata(n, peer, orderer, channel, func(metadata *ectdraft_protos.ConfigMetadata) {
 		var newConsenters []*ectdraft_protos.Consenter
 		for _, consenter := range metadata.Consenters {
 			if bytes.Equal(consenter.ClientTlsCert, certificate) || bytes.Equal(consenter.ServerTlsCert, certificate) {
@@ -322,9 +332,9 @@ func UpdateConsensusMetadata(network *Network, peer *Peer, orderer *Orderer, cha
 }
 
 // UpdateEtcdRaftMetadata executes a config update that updates the etcdraft metadata according to the given function f
-func UpdateEtcdRaftMetadata(network *Network, peer *Peer, orderer *Orderer, channel string, f func(md *ectdraft_protos.Metadata)) {
+func UpdateEtcdRaftMetadata(network *Network, peer *Peer, orderer *Orderer, channel string, f func(md *ectdraft_protos.ConfigMetadata)) {
 	UpdateConsensusMetadata(network, peer, orderer, channel, func(originalMetadata []byte) []byte {
-		metadata := &ectdraft_protos.Metadata{}
+		metadata := &ectdraft_protos.ConfigMetadata{}
 		err := proto.Unmarshal(originalMetadata, metadata)
 		Expect(err).NotTo(HaveOccurred())
 

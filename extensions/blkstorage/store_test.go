@@ -9,10 +9,11 @@ package blkstorage
 import (
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
-	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
+	coreconfig "github.com/hyperledger/fabric/core/config"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +21,8 @@ import (
 func TestNewProvider(t *testing.T) {
 	cleanup := setupPath(t)
 	defer cleanup()
-	require.NotEmpty(t, NewProvider(NewConf(ledgerconfig.GetBlockStorePath(), ledgerconfig.GetMaxBlockfileSize()), &blkstorage.IndexConfig{}))
+	require.NotEmpty(t, NewProvider(NewConf(filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "chains"),
+		-1), &blkstorage.IndexConfig{}))
 }
 
 func setupPath(t *testing.T) (cleanup func()) {

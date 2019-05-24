@@ -16,29 +16,37 @@ import (
 	"github.com/hyperledger/fabric/common/util"
 	lgr "github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/txmgr"
-	"github.com/hyperledger/fabric/core/ledger/ledgerconfig"
-	ledgertestutil "github.com/hyperledger/fabric/core/ledger/testutil"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/queryresult"
 	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestMain(m *testing.M) {
-	ledgertestutil.SetupCoreYAMLConfig()
-
 	flogging.ActivateSpec("lockbasedtxmgr,statevalidator,valimpl,confighistory,pvtstatepurgemgmt=debug")
-	viper.Set("peer.fileSystemPath", "/tmp/fabric/ledgertests/kvledger")
-	viper.Set("ledger.history.enableHistoryDatabase", true)
 	os.Exit(m.Run())
 }
 
+func TestKVLedgerNilHistoryDBProvider(t *testing.T) {
+	kvl := &kvLedger{}
+	qe, err := kvl.NewHistoryQueryExecutor()
+	assert.Nil(
+		t,
+		qe,
+		"NewHistoryQueryExecutor should return nil when history db provider is nil",
+	)
+	assert.NoError(
+		t,
+		err,
+		"NewHistoryQueryExecutor should return an error when history db provider is nil",
+	)
+}
+
 func TestKVLedgerBlockStorage(t *testing.T) {
-	env := newTestEnv(t)
-	defer env.cleanup()
-	provider := testutilNewProvider(t)
+	conf, cleanup := testConfig(t)
+	defer cleanup()
+	provider := testutilNewProvider(conf, t)
 	defer provider.Close()
 
 	bg, gb := testutil.NewBlockGenerator(t, "testLedger", false)
@@ -122,9 +130,9 @@ func TestKVLedgerBlockStorage(t *testing.T) {
 
 func TestKVLedgerBlockStorageWithPvtdata(t *testing.T) {
 	t.Skip()
-	env := newTestEnv(t)
-	defer env.cleanup()
-	provider := testutilNewProvider(t)
+	conf, cleanup := testConfig(t)
+	defer cleanup()
+	provider := testutilNewProvider(conf, t)
 	defer provider.Close()
 
 	bg, gb := testutil.NewBlockGenerator(t, "testLedger", false)
@@ -192,10 +200,13 @@ func TestKVLedgerDBRecovery(t *testing.T) {
 }
 
 func testSyncStateAndHistoryDBWithBlockstore(t *testing.T) {
-	env := newTestEnv(t)
-	defer env.cleanup()
-	provider := testutilNewProviderWithCollectionConfig(t,
-		"ns", map[string]uint64{"coll": 0},
+	conf, cleanup := testConfig(t)
+	defer cleanup()
+	provider := testutilNewProviderWithCollectionConfig(
+		t,
+		"ns",
+		map[string]uint64{"coll": 0},
+		conf,
 	)
 	defer provider.Close()
 	testLedgerid := "testLedger"
@@ -256,8 +267,11 @@ func testSyncStateAndHistoryDBWithBlockstore(t *testing.T) {
 
 	// Here the peer comes online and calls NewKVLedger to get a handler for the ledger
 	// StateDB and HistoryDB should be recovered before returning from NewKVLedger call
-	provider = testutilNewProviderWithCollectionConfig(t,
-		"ns", map[string]uint64{"coll": 0},
+	provider = testutilNewProviderWithCollectionConfig(
+		t,
+		"ns",
+		map[string]uint64{"coll": 0},
+		conf,
 	)
 	ledger, _ = provider.Open(testLedgerid)
 	checkBCSummaryForTest(t, ledger,
@@ -307,8 +321,11 @@ func testSyncStateAndHistoryDBWithBlockstore(t *testing.T) {
 
 	// we assume here that the peer comes online and calls NewKVLedger to get a handler for the ledger
 	// history DB should be recovered before returning from NewKVLedger call
-	provider = testutilNewProviderWithCollectionConfig(t,
-		"ns", map[string]uint64{"coll": 0},
+	provider = testutilNewProviderWithCollectionConfig(
+		t,
+		"ns",
+		map[string]uint64{"coll": 0},
+		conf,
 	)
 	ledger, _ = provider.Open(testLedgerid)
 
@@ -358,8 +375,11 @@ func testSyncStateAndHistoryDBWithBlockstore(t *testing.T) {
 
 	// we assume here that the peer comes online and calls NewKVLedger to get a handler for the ledger
 	// state DB should be recovered before returning from NewKVLedger call
-	provider = testutilNewProviderWithCollectionConfig(t,
-		"ns", map[string]uint64{"coll": 0},
+	provider = testutilNewProviderWithCollectionConfig(
+		t,
+		"ns",
+		map[string]uint64{"coll": 0},
+		conf,
 	)
 	ledger, _ = provider.Open(testLedgerid)
 	checkBCSummaryForTest(t, ledger,
@@ -376,10 +396,13 @@ func testSyncStateAndHistoryDBWithBlockstore(t *testing.T) {
 }
 
 func testSyncStateDBWithPvtdatastore(t *testing.T) {
-	env := newTestEnv(t)
-	defer env.cleanup()
-	provider := testutilNewProviderWithCollectionConfig(t,
-		"ns", map[string]uint64{"coll": 0},
+	conf, cleanup := testConfig(t)
+	defer cleanup()
+	provider := testutilNewProviderWithCollectionConfig(
+		t,
+		"ns",
+		map[string]uint64{"coll": 0},
+		conf,
 	)
 	defer provider.Close()
 	testLedgerid := "testLedger"
@@ -424,8 +447,11 @@ func testSyncStateDBWithPvtdatastore(t *testing.T) {
 
 	// Here the peer comes online and calls NewKVLedger to get a handler for the ledger
 	// StateDB and HistoryDB should be recovered before returning from NewKVLedger call
-	provider = testutilNewProviderWithCollectionConfig(t,
-		"ns", map[string]uint64{"coll": 0},
+	provider = testutilNewProviderWithCollectionConfig(
+		t,
+		"ns",
+		map[string]uint64{"coll": 0},
+		conf,
 	)
 	ledger, _ = provider.Open(testLedgerid)
 
@@ -437,16 +463,9 @@ func testSyncStateDBWithPvtdatastore(t *testing.T) {
 }
 
 func TestLedgerWithCouchDbEnabledWithBinaryAndJSONData(t *testing.T) {
-
-	//call a helper method to load the core.yaml
-	ledgertestutil.SetupCoreYAMLConfig()
-
-	logger.Debugf("TestLedgerWithCouchDbEnabledWithBinaryAndJSONData  IsCouchDBEnabled()value: %v , IsHistoryDBEnabled()value: %v\n",
-		ledgerconfig.IsCouchDBEnabled(), ledgerconfig.IsHistoryDBEnabled())
-
-	env := newTestEnv(t)
-	defer env.cleanup()
-	provider := testutilNewProvider(t)
+	conf, cleanup := testConfig(t)
+	defer cleanup()
+	provider := testutilNewProvider(conf, t)
 	defer provider.Close()
 	bg, gb := testutil.NewBlockGenerator(t, "testLedger", false)
 	gbHash := protoutil.BlockHeaderHash(gb.Header)
@@ -526,7 +545,7 @@ func TestLedgerWithCouchDbEnabledWithBinaryAndJSONData(t *testing.T) {
 	assert.True(t, proto.Equal(b2, block2), "proto messages are not equal")
 
 	//Similar test has been pushed down to historyleveldb_test.go as well
-	if ledgerconfig.IsHistoryDBEnabled() == true {
+	if conf.HistoryDB.Enabled {
 		logger.Debugf("History is enabled\n")
 		qhistory, err := ledger.NewHistoryQueryExecutor()
 		assert.NoError(t, err, "Error when trying to retrieve history database executor")

@@ -12,7 +12,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/common/metrics/metricsfakes"
-	"github.com/hyperledger/fabric/common/mocks/config"
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/aclmgmt/resources"
 	"github.com/hyperledger/fabric/core/chaincode"
@@ -20,6 +19,7 @@ import (
 	"github.com/hyperledger/fabric/core/chaincode/mock"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/common/sysccprovider"
+	"github.com/hyperledger/fabric/core/container/ccintf"
 	pb "github.com/hyperledger/fabric/protos/peer"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
@@ -48,6 +48,7 @@ var _ = Describe("Handler", func() {
 		fakeShimRequestsCompleted      *metricsfakes.Counter
 		fakeShimRequestDuration        *metricsfakes.Histogram
 		fakeExecuteTimeouts            *metricsfakes.Counter
+		fakeCapabilites                *mock.ApplicationCapabilities
 
 		responseNotifier chan *pb.ChaincodeMessage
 		txContext        *chaincode.TransactionContext
@@ -69,6 +70,7 @@ var _ = Describe("Handler", func() {
 		responseNotifier = make(chan *pb.ChaincodeMessage, 1)
 		txContext = &chaincode.TransactionContext{
 			ChainID:              "channel-id",
+			NamespaceID:          "cc-instance-name",
 			TXSimulator:          fakeTxSimulator,
 			HistoryQueryExecutor: fakeHistoryQueryExecutor,
 			ResponseNotifier:     responseNotifier,
@@ -88,11 +90,12 @@ var _ = Describe("Handler", func() {
 		fakeContextRegistry.GetReturns(txContext)
 		fakeContextRegistry.CreateReturns(txContext, nil)
 
+		fakeApplicationConfig := &mock.ApplicationConfig{}
+		fakeCapabilites = &mock.ApplicationCapabilities{}
+		fakeCapabilites.KeyLevelEndorsementReturns(true)
+		fakeApplicationConfig.CapabilitiesReturns(fakeCapabilites)
 		fakeApplicationConfigRetriever = &fake.ApplicationConfigRetriever{}
-		applicationCapability := &config.MockApplication{
-			CapabilitiesRv: &config.MockApplicationCapabilities{KeyLevelEndorsementRv: true},
-		}
-		fakeApplicationConfigRetriever.GetApplicationConfigReturns(applicationCapability, true)
+		fakeApplicationConfigRetriever.GetApplicationConfigReturns(fakeApplicationConfig, true)
 
 		fakeShimRequestsReceived = &metricsfakes.Counter{}
 		fakeShimRequestsReceived.WithReturns(fakeShimRequestsReceived)
@@ -130,7 +133,6 @@ var _ = Describe("Handler", func() {
 		}
 		chaincode.SetHandlerChatStream(handler, fakeChatStream)
 		chaincode.SetHandlerChaincodeID(handler, &pb.ChaincodeID{Name: "test-handler-name", Version: "1.0"})
-		chaincode.SetHandlerCCInstance(handler, &sysccprovider.ChaincodeInstance{ChaincodeName: "cc-instance-name"})
 	})
 
 	Describe("HandleTransaction", func() {
@@ -689,10 +691,7 @@ var _ = Describe("Handler", func() {
 
 		Context("when key level endorsement is not supported", func() {
 			BeforeEach(func() {
-				applicationCapability := &config.MockApplication{
-					CapabilitiesRv: &config.MockApplicationCapabilities{KeyLevelEndorsementRv: false},
-				}
-				fakeApplicationConfigRetriever.GetApplicationConfigReturns(applicationCapability, true)
+				fakeCapabilites.KeyLevelEndorsementReturns(false)
 			})
 
 			It("returns an error", func() {
@@ -1236,10 +1235,7 @@ var _ = Describe("Handler", func() {
 
 		Context("when key level endorsement is not supported", func() {
 			BeforeEach(func() {
-				applicationCapability := &config.MockApplication{
-					CapabilitiesRv: &config.MockApplicationCapabilities{KeyLevelEndorsementRv: false},
-				}
-				fakeApplicationConfigRetriever.GetApplicationConfigReturns(applicationCapability, true)
+				fakeCapabilites.KeyLevelEndorsementReturns(false)
 			})
 
 			It("returns an error", func() {
@@ -2131,6 +2127,17 @@ var _ = Describe("Handler", func() {
 				Expect(retCount).To(BeNil())
 			})
 		})
+
+		Context("when HistoryQueryExecutor is nil", func() {
+			BeforeEach(func() {
+				txContext.HistoryQueryExecutor = nil
+			})
+
+			It("returns an error", func() {
+				_, err := handler.HandleGetHistoryForKey(incomingMessage, txContext)
+				Expect(err).To(MatchError("history database is not enabled"))
+			})
+		})
 	})
 
 	Describe("HandleInvokeChaincode", func() {
@@ -2708,8 +2715,6 @@ var _ = Describe("Handler", func() {
 		var incomingMessage *pb.ChaincodeMessage
 
 		BeforeEach(func() {
-			chaincode.SetHandlerCCInstance(handler, nil)
-
 			request := &pb.ChaincodeID{
 				Name:    "chaincode-id-name",
 				Version: "chaincode-id-version",
@@ -2723,13 +2728,6 @@ var _ = Describe("Handler", func() {
 				ChannelId: "channel-id",
 				Payload:   payload,
 			}
-		})
-
-		It("sets chainodeID on the handler", func() {
-			Expect(handler.ChaincodeName()).To(Equal(""))
-
-			handler.HandleRegister(incomingMessage)
-			Expect(handler.ChaincodeName()).To(Equal("chaincode-id-name"))
 		})
 
 		It("registers the handler with the registry", func() {
@@ -2750,7 +2748,7 @@ var _ = Describe("Handler", func() {
 			Expect(fakeHandlerRegistry.FailedCallCount()).To(Equal(0))
 			Expect(fakeHandlerRegistry.ReadyCallCount()).To(Equal(1))
 			name := fakeHandlerRegistry.ReadyArgsForCall(0)
-			Expect(name).To(Equal("chaincode-id-name"))
+			Expect(name).To(Equal(ccintf.CCID("chaincode-id-name")))
 		})
 
 		It("sends registered and ready messsages", func() {
@@ -2786,7 +2784,7 @@ var _ = Describe("Handler", func() {
 				Expect(fakeHandlerRegistry.ReadyCallCount()).To(Equal(0))
 				Expect(fakeHandlerRegistry.FailedCallCount()).To(Equal(1))
 				name, err := fakeHandlerRegistry.FailedArgsForCall(0)
-				Expect(name).To(Equal("chaincode-id-name"))
+				Expect(name).To(Equal(ccintf.CCID("chaincode-id-name")))
 				Expect(err).To(MatchError("[] error sending READY: carrot"))
 			})
 		})
@@ -2870,7 +2868,7 @@ var _ = Describe("Handler", func() {
 			})
 
 			It("returns an error", func() {
-				err := handler.ProcessStream((fakeChatStream))
+				err := handler.ProcessStream(fakeChatStream)
 				Expect(err).To(MatchError("receive failed: chocolate"))
 			})
 		})
