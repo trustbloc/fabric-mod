@@ -14,6 +14,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/customtx"
 	lgrutil "github.com/hyperledger/fabric/core/ledger/util"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
 	"github.com/hyperledger/fabric/protos/peer"
@@ -39,6 +40,9 @@ func (ctp *customTxProcessor) GenerateSimulationResults(txEnvelop *common.Envelo
 }
 
 func TestCustomProcessor(t *testing.T) {
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 	conf, cleanup := testConfig(t)
 	defer cleanup()
 	provider := testutilNewProvider(conf, t)

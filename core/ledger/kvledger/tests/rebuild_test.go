@@ -50,7 +50,7 @@ func TestRebuildComponents(t *testing.T) {
 		func(t *testing.T) {
 
 			flag := rebuildableStatedb + rebuildableBlockIndex
-			_, err := util.DirEmpty(filepath.Join(env.rootPath, "ledgersData", "stateLeveldb"))
+			_, err := util.DirEmpty(filepath.Join(env.rootPath, "ledgersData", "chains"))
 			if err != nil && strings.Contains(err.Error(), "no such file or directory") {
 				//couch db index, no need to attempt to delete index file
 				flag = rebuildableStatedb

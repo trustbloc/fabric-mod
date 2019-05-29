@@ -11,6 +11,7 @@ import (
 	"os"
 	"testing"
 
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
@@ -20,6 +21,8 @@ import (
 
 func TestStart(t *testing.T) {
 	defer viper.Reset()
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 
 	tempDir, err := ioutil.TempDir("", "startcmd")
 	require.NoError(t, err)

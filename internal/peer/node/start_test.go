@@ -16,6 +16,7 @@ import (
 	"github.com/hyperledger/fabric/common/viperutil"
 	"github.com/hyperledger/fabric/core/handlers/library"
 	"github.com/hyperledger/fabric/core/testutil"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/viper"
@@ -30,6 +31,9 @@ func TestStartCmd(t *testing.T) {
 	tempDir, err := ioutil.TempDir("", "startcmd")
 	g.Expect(err).NotTo(HaveOccurred())
 	defer os.RemoveAll(tempDir)
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 
 	viper.Set("peer.address", "localhost:6051")
 	viper.Set("peer.listenAddress", "0.0.0.0:6051")

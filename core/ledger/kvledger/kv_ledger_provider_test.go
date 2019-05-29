@@ -21,6 +21,7 @@ import (
 	"github.com/hyperledger/fabric/common/util"
 	lgr "github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/mock"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/queryresult"
 	"github.com/hyperledger/fabric/protoutil"
@@ -276,6 +277,9 @@ func TestMultipleLedgerBasicRW(t *testing.T) {
 }
 
 func TestLedgerBackup(t *testing.T) {
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 	ledgerid := "TestLedger"
 	basePath, err := ioutil.TempDir("", "kvledger")
 	if err != nil {
@@ -445,8 +449,11 @@ func testConfig(t *testing.T) (conf *lgr.Config, cleanup func()) {
 			Enabled: true,
 		},
 	}
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
 	cleanup = func() {
 		os.RemoveAll(path)
+		destroy()
 	}
 
 	return conf, cleanup
