@@ -15,6 +15,7 @@ import (
 	"github.com/hyperledger/fabric/common/ledger/testutil"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/protos/ledger/rwset"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
@@ -23,6 +24,9 @@ import (
 func TestConstructValidInvalidBlocksPvtData(t *testing.T) {
 	conf, cleanup := testConfig(t)
 	defer cleanup()
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 	provider := testutilNewProvider(conf, t)
 	defer provider.Close()
 

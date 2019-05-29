@@ -18,6 +18,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/cceventmgmt"
 	"github.com/hyperledger/fabric/core/ledger/mock"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -55,6 +56,9 @@ func TestLedgerMgmt(t *testing.T) {
 		},
 	}
 
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 	cleanup, err := InitializeTestEnvWithInitializer(initializer)
 	if err != nil {
 		t.Fatalf("Failed to initialize test environment: %s", err)
@@ -99,6 +103,9 @@ func TestLedgerMgmt(t *testing.T) {
 }
 
 func TestChaincodeInfoProvider(t *testing.T) {
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 	cleanup := InitializeTestEnv(t)
 	defer cleanup()
 	gb, _ := test.MakeGenesisBlock("ledger1")

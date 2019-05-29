@@ -22,6 +22,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/pvtdatastorage"
 	lutil "github.com/hyperledger/fabric/core/ledger/util"
 	blkstorageext "github.com/hyperledger/fabric/extensions/blkstorage"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/rwset"
 	pb "github.com/hyperledger/fabric/protos/peer"
@@ -30,6 +31,7 @@ import (
 
 func TestMain(m *testing.M) {
 	flogging.ActivateSpec("ledgerstorage,pvtdatastorage=debug")
+
 	os.Exit(m.Run())
 }
 
@@ -39,6 +41,9 @@ func TestStore(t *testing.T) {
 		t.Fatalf("Failed to create ledger storage directory: %s", err)
 	}
 	defer os.RemoveAll(storeDir)
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 	conf := &ledger.PrivateData{
 		StorePath:     filepath.Join(storeDir, "pvtdataStore"),
 		PurgeInterval: 1,
@@ -120,6 +125,9 @@ func TestStoreWithExistingBlockchain(t *testing.T) {
 		t.Fatalf("Failed to create ledger storage directory: %s", err)
 	}
 	defer os.RemoveAll(storeDir)
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 
 	// Construct a block storage
 	attrsToIndex := []blkstorage.IndexableAttr{
@@ -179,6 +187,9 @@ func TestCrashAfterPvtdataStorePreparation(t *testing.T) {
 		t.Fatalf("Failed to create ledger storage directory: %s", err)
 	}
 	defer os.RemoveAll(storeDir)
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 	conf := &ledger.PrivateData{
 		StorePath:     filepath.Join(storeDir, "pvtdataStore"),
 		PurgeInterval: 1,
@@ -241,6 +252,9 @@ func TestCrashBeforePvtdataStoreCommit(t *testing.T) {
 		t.Fatalf("Failed to create ledger storage directory: %s", err)
 	}
 	defer os.RemoveAll(storeDir)
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 	conf := &ledger.PrivateData{
 		StorePath:     filepath.Join(storeDir, "pvtdataStore"),
 		PurgeInterval: 1,
@@ -287,6 +301,9 @@ func TestAddAfterPvtdataStoreError(t *testing.T) {
 		t.Fatalf("Failed to create ledger storage directory: %s", err)
 	}
 	defer os.RemoveAll(storeDir)
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 	conf := &ledger.PrivateData{
 		StorePath:     filepath.Join(storeDir, "pvtdataStore"),
 		PurgeInterval: 1,
@@ -331,6 +348,9 @@ func TestAddAfterBlkStoreError(t *testing.T) {
 		t.Fatalf("Failed to create ledger storage directory: %s", err)
 	}
 	defer os.RemoveAll(storeDir)
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 	conf := &ledger.PrivateData{
 		StorePath:     filepath.Join(storeDir, "pvtdataStore"),
 		PurgeInterval: 1,
