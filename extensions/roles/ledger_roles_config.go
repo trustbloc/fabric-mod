@@ -6,6 +6,9 @@ SPDX-License-Identifier: Apache-2.0
 
 package roles
 
+//Role is the role of the peer
+type Role string
+
 // IsCommitter returns true if the peer is a committer, otherwise the peer does not commit to the DB
 func IsCommitter() bool {
 	return true

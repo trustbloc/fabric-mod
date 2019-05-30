@@ -409,7 +409,7 @@ func newPeerNodeWithGossipWithValidatorWithMetrics(id int, committer committer.C
 		TransientStore: &mockTransientStore{},
 		Committer:      committer,
 	}, protoutil.SignedData{}, gossipMetrics.PrivdataMetrics, coordConfig)
-	sp := NewGossipStateProvider(util.GetTestChainID(), servicesAdapater, coord, gossipMetrics.StateMetrics, blocking, nil)
+	sp := NewGossipStateProvider(util.GetTestChainID(), servicesAdapater, coord, gossipMetrics.StateMetrics, blocking, nil, nil)
 	if sp == nil {
 		gRPCServer.Stop()
 		return nil, port
@@ -461,6 +461,7 @@ func TestNilDirectMsg(t *testing.T) {
 	g := &mocks.GossipMock{}
 	g.On("Accept", mock.Anything, false).Return(make(<-chan *proto.GossipMessage), nil)
 	g.On("Accept", mock.Anything, true).Return(nil, make(chan protoext.ReceivedMessage))
+	g.On("Gossip", mock.Anything).Return()
 	p := newPeerNodeWithGossip(0, mc, noopPeerIdentityAcceptor, g)
 	defer p.shutdown()
 	p.s.handleStateRequest(nil)
@@ -479,6 +480,7 @@ func TestNilAddPayload(t *testing.T) {
 	g := &mocks.GossipMock{}
 	g.On("Accept", mock.Anything, false).Return(make(<-chan *proto.GossipMessage), nil)
 	g.On("Accept", mock.Anything, true).Return(nil, make(chan protoext.ReceivedMessage))
+	g.On("Gossip", mock.Anything).Return()
 	p := newPeerNodeWithGossip(0, mc, noopPeerIdentityAcceptor, g)
 	defer p.shutdown()
 	err := p.s.AddPayload(nil)
@@ -493,6 +495,7 @@ func TestAddPayloadLedgerUnavailable(t *testing.T) {
 	g := &mocks.GossipMock{}
 	g.On("Accept", mock.Anything, false).Return(make(<-chan *proto.GossipMessage), nil)
 	g.On("Accept", mock.Anything, true).Return(nil, make(chan protoext.ReceivedMessage))
+	g.On("Gossip", mock.Anything).Return()
 	p := newPeerNodeWithGossip(0, mc, noopPeerIdentityAcceptor, g)
 	defer p.shutdown()
 	// Simulate a problem in the ledger
@@ -511,6 +514,7 @@ func TestAddPayloadLedgerUnavailable(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Failed obtaining ledger height")
 	assert.Contains(t, err.Error(), "cannot query ledger")
+
 }
 
 func TestLargeBlockGap(t *testing.T) {
@@ -538,6 +542,7 @@ func TestLargeBlockGap(t *testing.T) {
 	g.On("PeersOfChannel", mock.Anything).Return(membership)
 	g.On("Accept", mock.Anything, false).Return(make(<-chan *proto.GossipMessage), nil)
 	g.On("Accept", mock.Anything, true).Return(nil, msgsFromPeer)
+	g.On("Gossip", mock.Anything).Return()
 	g.On("Send", mock.Anything, mock.Anything).Run(func(arguments mock.Arguments) {
 		msg := arguments.Get(0).(*proto.GossipMessage)
 		// The peer requested a state request
@@ -599,6 +604,7 @@ func TestOverPopulation(t *testing.T) {
 	g := &mocks.GossipMock{}
 	g.On("Accept", mock.Anything, false).Return(make(<-chan *proto.GossipMessage), nil)
 	g.On("Accept", mock.Anything, true).Return(nil, make(chan protoext.ReceivedMessage))
+	g.On("Gossip", mock.Anything).Return()
 	p := newPeerNode(0, mc, noopPeerIdentityAcceptor)
 	defer p.shutdown()
 
@@ -662,6 +668,7 @@ func TestBlockingEnqueue(t *testing.T) {
 	g := &mocks.GossipMock{}
 	g.On("Accept", mock.Anything, false).Return(make(<-chan *proto.GossipMessage), nil)
 	g.On("Accept", mock.Anything, true).Return(nil, make(chan protoext.ReceivedMessage))
+	g.On("Gossip", mock.Anything).Return()
 	p := newPeerNode(0, mc, noopPeerIdentityAcceptor)
 	defer p.shutdown()
 
@@ -784,6 +791,7 @@ func TestFailures(t *testing.T) {
 	g.On("Accept", mock.Anything, false).Return(make(<-chan *proto.GossipMessage), nil)
 	g.On("Accept", mock.Anything, true).Return(nil, make(chan protoext.ReceivedMessage))
 	g.On("PeersOfChannel", mock.Anything).Return([]discovery.NetworkMember{})
+	g.On("Gossip", mock.Anything).Return()
 	assert.Panics(t, func() {
 		newPeerNodeWithGossip(0, mc, noopPeerIdentityAcceptor, g)
 	})
@@ -848,6 +856,7 @@ func TestGossipReception(t *testing.T) {
 	})
 	g.On("Accept", mock.Anything, true).Return(nil, make(chan protoext.ReceivedMessage))
 	g.On("PeersOfChannel", mock.Anything).Return([]discovery.NetworkMember{})
+	g.On("Gossip", mock.Anything).Return()
 	mc := &mockCommitter{Mock: &mock.Mock{}}
 	receivedChan := make(chan struct{})
 	mc.On("CommitWithPvtData", mock.Anything).Run(func(arguments mock.Arguments) {
@@ -889,6 +898,7 @@ func TestLedgerHeightFromProperties(t *testing.T) {
 		})
 		g.On("Accept", mock.Anything, false).Return(make(<-chan *proto.GossipMessage), nil)
 		g.On("Accept", mock.Anything, true).Return(nil, make(chan protoext.ReceivedMessage))
+		g.On("Gossip", mock.Anything).Return()
 		defaultPeer := discovery.NetworkMember{
 			InternalEndpoint: "b",
 			PKIid:            common.PKIidType("b"),
@@ -1294,6 +1304,7 @@ func TestTransferOfPrivateRWSet(t *testing.T) {
 	g.On("UpdateChannelMetadata", mock.Anything, mock.Anything)
 	g.On("PeersOfChannel", mock.Anything).Return([]discovery.NetworkMember{})
 	g.On("Close")
+	g.On("Gossip", mock.Anything).Return()
 
 	coord1.On("LedgerHeight", mock.Anything).Return(uint64(5), nil)
 
@@ -1371,7 +1382,7 @@ func TestTransferOfPrivateRWSet(t *testing.T) {
 
 	servicesAdapater := &ServicesMediator{GossipAdapter: g, MCSAdapter: &cryptoServiceMock{acceptor: noopPeerIdentityAcceptor}}
 	stateMetrics := metrics.NewGossipMetrics(&disabled.Provider{}).StateMetrics
-	st := NewGossipStateProvider(chainID, servicesAdapater, coord1, stateMetrics, blocking, nil)
+	st := NewGossipStateProvider(chainID, servicesAdapater, coord1, stateMetrics, blocking, nil, nil)
 	defer st.Stop()
 
 	// Mocked state request message
@@ -1466,7 +1477,7 @@ type testPeer struct {
 	coord         *coordinatorMock
 }
 
-func (t testPeer) Gossip() <-chan *proto.GossipMessage {
+func (t testPeer) PerformGossip() <-chan *proto.GossipMessage {
 	return t.gossipChannel
 }
 
@@ -1505,7 +1516,7 @@ func TestTransferOfPvtDataBetweenPeers(t *testing.T) {
 
 	// Initialize peer
 	for _, peer := range peers {
-		peer.On("Accept", mock.Anything, false).Return(peer.Gossip(), nil)
+		peer.On("Accept", mock.Anything, false).Return(peer.PerformGossip(), nil)
 
 		peer.On("Accept", mock.Anything, true).
 			Return(nil, peer.Comm()).
@@ -1516,6 +1527,8 @@ func TestTransferOfPvtDataBetweenPeers(t *testing.T) {
 		peer.On("UpdateChannelMetadata", mock.Anything, mock.Anything)
 		peer.coord.On("Close")
 		peer.On("Close")
+
+		peer.On("Gossip", mock.Anything).Return()
 	}
 
 	// First peer going to have more advanced ledger
@@ -1605,11 +1618,11 @@ func TestTransferOfPvtDataBetweenPeers(t *testing.T) {
 	stateMetrics := metrics.NewGossipMetrics(&disabled.Provider{}).StateMetrics
 
 	mediator := &ServicesMediator{GossipAdapter: peers["peer1"], MCSAdapter: cryptoService}
-	peer1State := NewGossipStateProvider(chainID, mediator, peers["peer1"].coord, stateMetrics, blocking, nil)
+	peer1State := NewGossipStateProvider(chainID, mediator, peers["peer1"].coord, stateMetrics, blocking, nil, nil)
 	defer peer1State.Stop()
 
 	mediator = &ServicesMediator{GossipAdapter: peers["peer2"], MCSAdapter: cryptoService}
-	peer2State := NewGossipStateProvider(chainID, mediator, peers["peer2"].coord, stateMetrics, blocking, nil)
+	peer2State := NewGossipStateProvider(chainID, mediator, peers["peer2"].coord, stateMetrics, blocking, nil, nil)
 	defer peer2State.Stop()
 
 	// Make sure state was replicated
