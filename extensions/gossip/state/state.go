@@ -79,7 +79,7 @@ type GossipServiceMediator interface {
 }
 
 //AddBlockHandler handles state update in gossip
-func AddBlockHandler(publisher api.BlockPublisher) {
+func AddBlockHandler(cid string, publisher api.BlockPublisher) {
 	//do nothing
 }
 
