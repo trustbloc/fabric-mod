@@ -40,7 +40,7 @@ type Store struct {
 }
 
 // NewProvider returns the handle to the provider
-func NewProvider(storeDir string, conf *ledger.PrivateData) *Provider {
+func NewProvider(storeDir string, conf *ledger.PrivateData, ledgerconf *ledger.Config) *Provider {
 	// Initialize the block storage
 	attrsToIndex := []blkstorage.IndexableAttr{
 		blkstorage.IndexableAttrBlockHash,
@@ -56,9 +56,10 @@ func NewProvider(storeDir string, conf *ledger.PrivateData) *Provider {
 			filepath.Join(storeDir, "chains"),
 			maxBlockFileSize,
 		),
-		indexConfig)
+		indexConfig,
+		ledgerconf)
 
-	pvtStoreProvider := pvtdatastorageext.NewProvider(conf)
+	pvtStoreProvider := pvtdatastorageext.NewProvider(conf, ledgerconf)
 	return &Provider{blockStoreProvider, pvtStoreProvider}
 }
 

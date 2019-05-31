@@ -54,12 +54,13 @@ func NewProvider(initializer *ledger.Initializer) (*Provider, error) {
 	p := &Provider{}
 	p.initializer = initializer
 	// initialize the ID store (inventory of chainIds/ledgerIds)
-	idStore := idstoreext.OpenIDStore(filepath.Join(p.initializer.Config.RootFSPath, "ledgerProvider"))
+	idStore := idstoreext.OpenIDStore(filepath.Join(p.initializer.Config.RootFSPath, "ledgerProvider"), p.initializer.Config)
 	p.idStore = idStore
 	// initialize ledger storage
 	ledgerStoreProvider := ledgerstorage.NewProvider(
 		p.initializer.Config.RootFSPath,
 		p.initializer.Config.PrivateData,
+		p.initializer.Config,
 	)
 	p.ledgerStoreProvider = ledgerStoreProvider
 	if initializer.Config.HistoryDB.Enabled {

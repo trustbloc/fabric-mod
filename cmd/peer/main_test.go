@@ -50,6 +50,7 @@ func TestPluginLoadingFailure(t *testing.T) {
 				fmt.Sprintf("CORE_PEER_MSPCONFIGPATH=%s", "msp"),
 				fmt.Sprintf("FABRIC_CFG_PATH=%s", filepath.Join(parentDir, "sampleconfig")),
 				"CORE_OPERATIONS_TLS_ENABLED=false",
+				fmt.Sprintf("CORE_LEDGER_STATE_STATEDATABASE=%s", xtestutil.TestLedgerConf().StateDB.StateDatabase),
 				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=%s", addr),
 				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=%s", ""),
 				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=%s", ""),

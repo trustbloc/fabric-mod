@@ -45,6 +45,10 @@ func TestLedgerMgmt(t *testing.T) {
 		t.Fatalf("Failed to create ledger directory: %s", err)
 	}
 
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	initializer := &Initializer{
 		PlatformRegistry: platforms.NewRegistry(&golang.Platform{}),
 		MetricsProvider:  &disabled.Provider{},
@@ -52,13 +56,11 @@ func TestLedgerMgmt(t *testing.T) {
 			RootFSPath: rootPath,
 			StateDB: &ledger.StateDB{
 				LevelDBPath: filepath.Join(rootPath, "stateleveldb"),
+				CouchDB:     xtestutil.TestLedgerConf().StateDB.CouchDB,
 			},
 		},
 	}
 
-	//setup extension test environment
-	_, _, destroy := xtestutil.SetupExtTestEnv()
-	defer destroy()
 	cleanup, err := InitializeTestEnvWithInitializer(initializer)
 	if err != nil {
 		t.Fatalf("Failed to initialize test environment: %s", err)
