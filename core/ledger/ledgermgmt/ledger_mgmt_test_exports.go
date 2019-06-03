@@ -16,6 +16,7 @@ import (
 	"github.com/hyperledger/fabric/core/chaincode/platforms/golang"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/mock"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 )
 
 //TODO:  Remove all of these functions and create ledger provider instances
@@ -38,6 +39,8 @@ func InitializeTestEnvWithInitializer(initializer *Initializer) (cleanup func(),
 // This function does not remove the existing ledgers and is used in upgrade tests
 // TODO ledgermgmt should be reworked to move the package scoped functions to a struct
 func InitializeExistingTestEnvWithInitializer(initializer *Initializer) (cleanup func(), err error) {
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
 	if initializer == nil {
 		initializer = &Initializer{}
 	}
@@ -59,6 +62,7 @@ func InitializeExistingTestEnvWithInitializer(initializer *Initializer) (cleanup
 			RootFSPath: rootPath,
 			StateDB: &ledger.StateDB{
 				LevelDBPath: filepath.Join(rootPath, "stateleveldb"),
+				CouchDB:     xtestutil.TestLedgerConf().StateDB.CouchDB,
 			},
 		}
 	}
@@ -78,6 +82,7 @@ func InitializeExistingTestEnvWithInitializer(initializer *Initializer) (cleanup
 	initialize(initializer)
 	cleanup = func() {
 		Close()
+		destroy()
 		os.RemoveAll(initializer.Config.RootFSPath)
 	}
 	return cleanup, nil

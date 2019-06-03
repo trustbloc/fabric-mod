@@ -434,10 +434,13 @@ func testConfig(t *testing.T) (conf *lgr.Config, cleanup func()) {
 	if err != nil {
 		t.Fatalf("Failed to create test ledger directory: %s", err)
 	}
+	//setup extension test environment
+	_, _, destroy := xtestutil.SetupExtTestEnv()
 	conf = &lgr.Config{
 		RootFSPath: path,
 		StateDB: &lgr.StateDB{
 			LevelDBPath: filepath.Join(path, "stateLeveldb"),
+			CouchDB:     xtestutil.TestLedgerConf().StateDB.CouchDB,
 		},
 		PrivateData: &lgr.PrivateData{
 			StorePath:       filepath.Join(path, "pvtdataStore"),
@@ -449,8 +452,6 @@ func testConfig(t *testing.T) (conf *lgr.Config, cleanup func()) {
 			Enabled: true,
 		},
 	}
-	//setup extension test environment
-	_, _, destroy := xtestutil.SetupExtTestEnv()
 	cleanup = func() {
 		os.RemoveAll(path)
 		destroy()
@@ -460,6 +461,7 @@ func testConfig(t *testing.T) (conf *lgr.Config, cleanup func()) {
 }
 
 func testutilNewProvider(conf *lgr.Config, t *testing.T) *Provider {
+	conf.StateDB.CouchDB = xtestutil.TestLedgerConf().StateDB.CouchDB
 	provider, err := NewProvider(
 		&lgr.Initializer{
 			DeployedChaincodeInfoProvider: &mock.DeployedChaincodeInfoProvider{},

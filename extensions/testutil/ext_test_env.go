@@ -9,7 +9,9 @@ package testutil
 import (
 	"testing"
 
+	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
+	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 )
 
 //SetupExtTestEnv creates new extension test environment,
@@ -24,4 +26,17 @@ func SetupExtTestEnv() (addr string, cleanup func(string), stop func()) {
 
 func GetExtStateDBProvider(t testing.TB, dbProvider statedb.VersionedDBProvider) statedb.VersionedDBProvider {
 	return nil
+}
+
+func TestLedgerConf() *ledger.Config {
+	conf := &ledger.Config{
+		RootFSPath: "",
+		StateDB: &ledger.StateDB{
+			CouchDB: &couchdb.Config{},
+		},
+		PrivateData: &ledger.PrivateData{},
+		HistoryDB:   &ledger.HistoryDB{},
+	}
+
+	return conf
 }

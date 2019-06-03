@@ -115,6 +115,7 @@ func TestInitialize(t *testing.T) {
 			RootFSPath: rootFSPath,
 			StateDB: &ledger.StateDB{
 				LevelDBPath: filepath.Join(rootFSPath, "stateleveldb"),
+				CouchDB:     xtestutil.TestLedgerConf().StateDB.CouchDB,
 			},
 			PrivateData: &ledger.PrivateData{
 				StorePath:       filepath.Join(rootFSPath, "pvtdataStore"),
@@ -156,6 +157,7 @@ func TestCreateChainFromBlock(t *testing.T) {
 			RootFSPath: filepath.Join(peerFSPath, "ledgersData"),
 			StateDB: &ledger.StateDB{
 				LevelDBPath: filepath.Join(peerFSPath, "ledgersData", "stateleveldb"),
+				CouchDB:     xtestutil.TestLedgerConf().StateDB.CouchDB,
 			},
 			PrivateData: &ledger.PrivateData{
 				StorePath:       filepath.Join(peerFSPath, "ledgersData", "pvtdataStore"),

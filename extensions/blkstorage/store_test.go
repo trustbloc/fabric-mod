@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/hyperledger/fabric/extensions/testutil"
+
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	coreconfig "github.com/hyperledger/fabric/core/config"
 	"github.com/spf13/viper"
@@ -22,7 +24,7 @@ func TestNewProvider(t *testing.T) {
 	cleanup := setupPath(t)
 	defer cleanup()
 	require.NotEmpty(t, NewProvider(NewConf(filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "chains"),
-		-1), &blkstorage.IndexConfig{}))
+		-1), &blkstorage.IndexConfig{}, testutil.TestLedgerConf()))
 }
 
 func setupPath(t *testing.T) (cleanup func()) {

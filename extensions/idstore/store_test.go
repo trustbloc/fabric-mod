@@ -11,6 +11,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/hyperledger/fabric/extensions/testutil"
+
 	"github.com/spf13/viper"
 
 	"github.com/stretchr/testify/require"
@@ -21,5 +23,5 @@ func TestOpenIDStore(t *testing.T) {
 	require.NoError(t, err)
 	viper.Set("peer.fileSystemPath", tempDir)
 	defer os.RemoveAll(tempDir)
-	require.NotEmpty(t, OpenIDStore(tempDir))
+	require.NotEmpty(t, OpenIDStore(tempDir, testutil.TestLedgerConf()))
 }

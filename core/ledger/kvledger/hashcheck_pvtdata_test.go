@@ -22,11 +22,11 @@ import (
 )
 
 func TestConstructValidInvalidBlocksPvtData(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
 	//setup extension test environment
 	_, _, destroy := xtestutil.SetupExtTestEnv()
 	defer destroy()
+	conf, cleanup := testConfig(t)
+	defer cleanup()
 	provider := testutilNewProvider(conf, t)
 	defer provider.Close()
 

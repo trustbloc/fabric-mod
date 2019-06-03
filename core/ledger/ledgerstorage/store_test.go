@@ -48,7 +48,7 @@ func TestStore(t *testing.T) {
 		StorePath:     filepath.Join(storeDir, "pvtdataStore"),
 		PurgeInterval: 1,
 	}
-	provider := NewProvider(storeDir, conf)
+	provider := NewProvider(storeDir, conf, xtestutil.TestLedgerConf())
 	defer provider.Close()
 	store, err := provider.Open("testLedger")
 	store.Init(btlPolicyForSampleData())
@@ -141,7 +141,7 @@ func TestStoreWithExistingBlockchain(t *testing.T) {
 	indexConfig := &blkstorage.IndexConfig{AttrsToIndex: attrsToIndex}
 	blockStoreProvider := blkstorageext.NewProvider(
 		blkstorageext.NewConf(filepath.Join(storeDir, "chains"), maxBlockFileSize),
-		indexConfig)
+		indexConfig, xtestutil.TestLedgerConf())
 
 	blkStore, err := blockStoreProvider.OpenBlockStore(testLedgerid)
 	assert.NoError(t, err)
@@ -162,7 +162,7 @@ func TestStoreWithExistingBlockchain(t *testing.T) {
 		StorePath:     filepath.Join(storeDir, "pvtdataStore"),
 		PurgeInterval: 1,
 	}
-	provider := NewProvider(storeDir, conf)
+	provider := NewProvider(storeDir, conf, xtestutil.TestLedgerConf())
 	defer provider.Close()
 	store, err := provider.Open(testLedgerid)
 	store.Init(btlPolicyForSampleData())
@@ -194,7 +194,7 @@ func TestCrashAfterPvtdataStorePreparation(t *testing.T) {
 		StorePath:     filepath.Join(storeDir, "pvtdataStore"),
 		PurgeInterval: 1,
 	}
-	provider := NewProvider(storeDir, conf)
+	provider := NewProvider(storeDir, conf, xtestutil.TestLedgerConf())
 	defer provider.Close()
 	store, err := provider.Open("testLedger")
 	store.Init(btlPolicyForSampleData())
@@ -217,7 +217,7 @@ func TestCrashAfterPvtdataStorePreparation(t *testing.T) {
 	store.pvtdataStore.Prepare(blokNumAtCrash, pvtdataAtCrash, nil)
 	store.Shutdown()
 	provider.Close()
-	provider = NewProvider(storeDir, conf)
+	provider = NewProvider(storeDir, conf, xtestutil.TestLedgerConf())
 	store, err = provider.Open("testLedger")
 	assert.NoError(t, err)
 	store.Init(btlPolicyForSampleData())
@@ -259,7 +259,7 @@ func TestCrashBeforePvtdataStoreCommit(t *testing.T) {
 		StorePath:     filepath.Join(storeDir, "pvtdataStore"),
 		PurgeInterval: 1,
 	}
-	provider := NewProvider(storeDir, conf)
+	provider := NewProvider(storeDir, conf, xtestutil.TestLedgerConf())
 	defer provider.Close()
 	store, err := provider.Open("testLedger")
 	store.Init(btlPolicyForSampleData())
@@ -285,7 +285,7 @@ func TestCrashBeforePvtdataStoreCommit(t *testing.T) {
 	store.BlockStore.AddBlock(dataAtCrash.Block)
 	store.Shutdown()
 	provider.Close()
-	provider = NewProvider(storeDir, conf)
+	provider = NewProvider(storeDir, conf, xtestutil.TestLedgerConf())
 	store, err = provider.Open("testLedger")
 	assert.NoError(t, err)
 	store.Init(btlPolicyForSampleData())
@@ -308,7 +308,7 @@ func TestAddAfterPvtdataStoreError(t *testing.T) {
 		StorePath:     filepath.Join(storeDir, "pvtdataStore"),
 		PurgeInterval: 1,
 	}
-	provider := NewProvider(storeDir, conf)
+	provider := NewProvider(storeDir, conf, xtestutil.TestLedgerConf())
 	defer provider.Close()
 	store, err := provider.Open("testLedger")
 	store.Init(btlPolicyForSampleData())
@@ -355,7 +355,7 @@ func TestAddAfterBlkStoreError(t *testing.T) {
 		StorePath:     filepath.Join(storeDir, "pvtdataStore"),
 		PurgeInterval: 1,
 	}
-	provider := NewProvider(storeDir, conf)
+	provider := NewProvider(storeDir, conf, xtestutil.TestLedgerConf())
 	defer provider.Close()
 	store, err := provider.Open("testLedger")
 	store.Init(btlPolicyForSampleData())

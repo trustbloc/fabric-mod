@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/hyperledger/fabric/common/metrics/disabled"
+	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/msp/mgmt"
 	"github.com/hyperledger/fabric/protoutil"
@@ -40,6 +41,7 @@ type env struct {
 	assert            *assert.Assertions
 	rootPath          string
 	cleanupExtTestEnv func()
+	couchDB           *couchdb.Config
 }
 
 func newEnv(t *testing.T) *env {
@@ -53,6 +55,7 @@ func newEnv(t *testing.T) *env {
 		assert:            assert.New(t),
 		rootPath:          rootPath,
 		cleanupExtTestEnv: destroy,
+		couchDB:           xtestutil.TestLedgerConf().StateDB.CouchDB,
 	}
 	return env
 }
@@ -118,6 +121,7 @@ func (e *env) initLedgerMgmt() {
 				StateDB: &ledger.StateDB{
 					StateDatabase: "goleveldb",
 					LevelDBPath:   filepath.Join(ledgerPath, "stateLeveldb"),
+					CouchDB:       e.couchDB,
 				},
 				PrivateData: &ledger.PrivateData{
 					StorePath:       filepath.Join(ledgerPath, "pvtdataStore"),

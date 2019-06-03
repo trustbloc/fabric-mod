@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/hyperledger/fabric/extensions/testutil"
+
 	coreconfig "github.com/hyperledger/fabric/core/config"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/spf13/viper"
@@ -26,7 +28,7 @@ func TestNewProvider(t *testing.T) {
 		PurgeInterval: 1,
 	}
 
-	require.NotEmpty(t, NewProvider(conf))
+	require.NotEmpty(t, NewProvider(conf, testutil.TestLedgerConf()))
 }
 
 func setupPath(t *testing.T) (cleanup func()) {
