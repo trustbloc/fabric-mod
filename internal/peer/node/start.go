@@ -244,7 +244,7 @@ func serve(args []string) error {
 	lifecycleCache := lifecycle.NewCache(lifecycleResources, mspID, metadataManager)
 
 	collDataProvider := collretriever.NewProvider(
-		peer.CollectionDataStoreFactory().StoreForChannel,
+		peer.CollectionDataStoreFactory(ledgerConfig()).StoreForChannel,
 		peer.GetLedger,
 		func() supportapi.GossipAdapter {
 			return service.GetGossipService()

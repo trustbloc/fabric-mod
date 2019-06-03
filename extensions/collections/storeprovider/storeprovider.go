@@ -7,12 +7,13 @@ SPDX-License-Identifier: Apache-2.0
 package storeprovider
 
 import (
+	"github.com/hyperledger/fabric/core/ledger"
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	proto "github.com/hyperledger/fabric/protos/transientstore"
 )
 
 // NewProviderFactory returns a new private data store provider factory
-func NewProviderFactory() *StoreProvider {
+func NewProviderFactory(ledgerconfig *ledger.Config) *StoreProvider {
 	return &StoreProvider{}
 }
 

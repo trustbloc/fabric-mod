@@ -11,8 +11,6 @@ import (
 	"net"
 	"sync"
 
-	xstate "github.com/hyperledger/fabric/extensions/gossip/state"
-
 	"github.com/hyperledger/fabric/common/channelconfig"
 	cc "github.com/hyperledger/fabric/common/config"
 	"github.com/hyperledger/fabric/common/configtx"
@@ -41,6 +39,7 @@ import (
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	"github.com/hyperledger/fabric/extensions/collections/storeprovider"
 	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
+	xstate "github.com/hyperledger/fabric/extensions/gossip/state"
 	transientstoreext "github.com/hyperledger/fabric/extensions/transientstore"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/service"
@@ -106,9 +105,9 @@ type CollStoreProvider interface {
 }
 
 // CollectionDataStoreFactory returns transient data stores by channel ID
-func CollectionDataStoreFactory() CollStoreProvider {
+func CollectionDataStoreFactory(ledgerConfig *ledger.Config) CollStoreProvider {
 	initCollDataStoreFactoryOnce.Do(func() {
-		collectionDataStoreFactory = storeprovider.NewProviderFactory()
+		collectionDataStoreFactory = storeprovider.NewProviderFactory(ledgerConfig)
 	})
 	return collectionDataStoreFactory
 }
@@ -289,7 +288,7 @@ func Initialize(
 			continue
 		}
 		// Create a chain if we get a valid ledger with config block
-		if err = createChain(cid, ledger, cb, sccp, pm, deployedCCInfoProvider, legacyLifecycleValidation, newLifecycleValidation); err != nil {
+		if err = createChain(cid, ledger, cb, sccp, pm, deployedCCInfoProvider, legacyLifecycleValidation, newLifecycleValidation, ledgerConfig); err != nil {
 			peerLogger.Errorf("Failed to load chain %s(%s)", cid, err)
 			peerLogger.Debugf("Error reloading chain %s with message %s. We continue to the next chain rather than abort.", cid, err)
 			continue
@@ -343,6 +342,7 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 	deployedCCInfoProvider ledger.DeployedChaincodeInfoProvider,
 	legacyLifecycleValidation plugindispatcher.LifecycleResources,
 	newLifecycleValidation plugindispatcher.CollectionAndLifecycleResources,
+	ledgerconfig *ledger.Config,
 ) error {
 	chanConf, err := retrievePersistedChannelConfig(ledger)
 	if err != nil {
@@ -468,7 +468,7 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 	if err != nil {
 		return errors.Wrapf(err, "[channel %s] failed opening transient store", bundle.ConfigtxValidator().ChainID())
 	}
-	collDataStore, err := CollectionDataStoreFactory().OpenStore(bundle.ConfigtxValidator().ChainID())
+	collDataStore, err := CollectionDataStoreFactory(ledgerconfig).OpenStore(bundle.ConfigtxValidator().ChainID())
 	if err != nil {
 		return errors.Wrapf(err, "[channel %s] failed opening transient data store", bundle.ConfigtxValidator().ChainID())
 	}
@@ -518,7 +518,7 @@ func CreateChainFromBlock(
 		return errors.WithMessage(err, "cannot create ledger from genesis block")
 	}
 
-	return createChain(cid, l, cb, sccp, pluginMapper, deployedCCInfoProvider, legacyLifecycleValidation, newLifecycleValidation)
+	return createChain(cid, l, cb, sccp, pluginMapper, deployedCCInfoProvider, legacyLifecycleValidation, newLifecycleValidation, nil)
 }
 
 // GetLedger returns the ledger of the chain with chain ID. Note that this

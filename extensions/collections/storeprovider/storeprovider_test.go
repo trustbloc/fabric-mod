@@ -9,12 +9,14 @@ package storeprovider
 import (
 	"testing"
 
+	"github.com/hyperledger/fabric/extensions/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCollDataStore(t *testing.T) {
-	f := NewProviderFactory()
+	f := NewProviderFactory(testutil.TestLedgerConf())
 	require.NotNil(t, f)
 
 	s, err := f.OpenStore("testchannel")
