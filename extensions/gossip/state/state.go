@@ -7,7 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package state
 
 import (
-	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/extensions/gossip/api"
 	common2 "github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/discovery"
@@ -15,33 +14,7 @@ import (
 	"github.com/hyperledger/fabric/gossip/util"
 	"github.com/hyperledger/fabric/protos/common"
 	proto "github.com/hyperledger/fabric/protos/gossip"
-	"github.com/hyperledger/fabric/protos/transientstore"
-	"github.com/hyperledger/fabric/protoutil"
 )
-
-var logger = util.GetLogger(util.StateLogger, "")
-
-// LedgerResources defines abilities that the ledger provides
-type LedgerResources interface {
-	// StoreBlock deliver new block with underlined private data
-	// returns missing transaction ids
-	StoreBlock(block *common.Block, data util.PvtDataCollections) error
-
-	// StorePvtData used to persist private date into transient store
-	StorePvtData(txid string, privData *transientstore.TxPvtReadWriteSetWithConfigInfo, blckHeight uint64) error
-
-	// GetPvtDataAndBlockByNum get block by number and returns also all related private data
-	// the order of private data in slice of PvtDataCollections doesn't imply the order of
-	// transactions in the block related to these private data, to get the correct placement
-	// need to read TxPvtData.SeqInBlock field
-	GetPvtDataAndBlockByNum(seqNum uint64, peerAuthInfo protoutil.SignedData) (*common.Block, util.PvtDataCollections, error)
-
-	// Get recent block sequence number
-	LedgerHeight() (uint64, error)
-
-	// Close ledgerResources
-	Close()
-}
 
 //GossipStateProviderExtension extends GossipStateProvider features
 type GossipStateProviderExtension interface {
@@ -84,12 +57,11 @@ func AddBlockHandler(cid string, publisher api.BlockPublisher) {
 }
 
 //NewGossipStateProviderExtension returns new GossipStateProvider Extension implementation
-func NewGossipStateProviderExtension(chainID string, ledger LedgerResources, peerLedger ledger.PeerLedger, mediator GossipServiceMediator) GossipStateProviderExtension {
-	return &gossipStateProviderExtension{ledger}
+func NewGossipStateProviderExtension(chainID string, mediator GossipServiceMediator) GossipStateProviderExtension {
+	return &gossipStateProviderExtension{}
 }
 
 type gossipStateProviderExtension struct {
-	ledger LedgerResources
 }
 
 func (s *gossipStateProviderExtension) HandleStateRequest(handle func(msg protoext.ReceivedMessage)) func(msg protoext.ReceivedMessage) {

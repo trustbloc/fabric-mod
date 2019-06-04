@@ -351,7 +351,7 @@ func NewGossipStateProvider(chainID string, services *ServicesMediator, ledger l
 
 		peerLedger: peerLedger,
 
-		extension: xstate.NewGossipStateProviderExtension(chainID, ledger, peerLedger, services),
+		extension: xstate.NewGossipStateProviderExtension(chainID, services),
 	}
 
 	logger.Infof("Updating metadata information, "+
