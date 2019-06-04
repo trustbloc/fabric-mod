@@ -16,13 +16,13 @@ import (
 type ConfigUpdateHandler func(blockNum uint64, configUpdate *cb.ConfigUpdate) error
 
 // WriteHandler handles a KV write
-type WriteHandler func(blockNum uint64, txID string, namespace string, kvWrite *kvrwset.KVWrite) error
+type WriteHandler func(blockNum uint64, channelID, txID, namespace string, kvWrite *kvrwset.KVWrite) error
 
 // ReadHandler handles a KV read
-type ReadHandler func(blockNum uint64, txID string, namespace string, kvRead *kvrwset.KVRead) error
+type ReadHandler func(blockNum uint64, channelID, txID, namespace string, kvRead *kvrwset.KVRead) error
 
 // ChaincodeEventHandler handles a chaincode event
-type ChaincodeEventHandler func(blockNum uint64, txID string, event *pb.ChaincodeEvent) error
+type ChaincodeEventHandler func(blockNum uint64, channelID, txID string, event *pb.ChaincodeEvent) error
 
 // ChaincodeUpgradeHandler handles chaincode upgrade events
 type ChaincodeUpgradeHandler func(blockNum uint64, txID string, chaincodeName string) error
