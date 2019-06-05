@@ -13,7 +13,7 @@ Compile time Extension Points for Hyperledger Fabric by leveraging `Go Modules <
    extension
    Contribution <https://github.com/trustbloc/community/blob/master/CONTRIBUTING.md>
    questions
-   hyperledgerfabric
+   Hyperledger Fabric <https://hyperledger-fabric.readthedocs.io/en/latest/>
 
 
 .. note:: If you have questions not addressed by this documentation, or run into
