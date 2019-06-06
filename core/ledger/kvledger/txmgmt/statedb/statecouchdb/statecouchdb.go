@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"sync"
 
+	xcouchdb "github.com/hyperledger/fabric/extensions/storage/couchdb"
+
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/metrics"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
@@ -151,7 +153,7 @@ func newVersionedDB(couchInstance *couchdb.CouchInstance, redoLogger *redoLogger
 	chainName := dbName
 	dbName = couchdb.ConstructMetadataDBName(dbName)
 
-	metadataDB, err := couchdb.CreateCouchDatabase(couchInstance, dbName)
+	metadataDB, err := xcouchdb.CreateCouchDatabase(couchdb.CreateCouchDatabase)(couchInstance, dbName)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +213,7 @@ func (vdb *VersionedDB) getNamespaceDBHandle(namespace string) (*couchdb.CouchDa
 	db = vdb.namespaceDBs[namespace]
 	if db == nil {
 		var err error
-		db, err = couchdb.CreateCouchDatabase(vdb.couchInstance, namespaceDBName)
+		db, err = xcouchdb.CreateCouchDatabase(couchdb.CreateCouchDatabase)(vdb.couchInstance, namespaceDBName)
 		if err != nil {
 			return nil, err
 		}
