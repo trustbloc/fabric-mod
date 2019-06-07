@@ -43,7 +43,7 @@ import (
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	"github.com/hyperledger/fabric/extensions/collections/storeprovider"
 	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
-	transientstoreext "github.com/hyperledger/fabric/extensions/transientstore"
+	transientstoreext "github.com/hyperledger/fabric/extensions/storage/transientstore"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/service"
 	"github.com/hyperledger/fabric/msp"

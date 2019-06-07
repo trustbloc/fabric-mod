@@ -21,7 +21,7 @@ import (
 	btltestutil "github.com/hyperledger/fabric/core/ledger/pvtdatapolicy/testutil"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatastorage"
 	lutil "github.com/hyperledger/fabric/core/ledger/util"
-	blkstorageext "github.com/hyperledger/fabric/extensions/blkstorage"
+	blkstorageext "github.com/hyperledger/fabric/extensions/storage/blkstorage"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/rwset"

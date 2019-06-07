@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	xrecover "github.com/hyperledger/fabric/extensions/storage/recover"
+
 	"github.com/hyperledger/fabric/common/flogging"
 	commonledger "github.com/hyperledger/fabric/common/ledger"
 	"github.com/hyperledger/fabric/common/util"
@@ -80,7 +82,7 @@ func newKVLedger(
 	}
 
 	//Recover both state DB and history DB if they are out of sync with block storage
-	if err := l.recoverDBs(); err != nil {
+	if err := xrecover.RecoverDBHandler(l.recoverDBs)(); err != nil {
 		panic(errors.WithMessage(err, "error during state DB recovery"))
 	}
 	l.configHistoryRetriever = configHistoryMgr.GetRetriever(ledgerID, l)
