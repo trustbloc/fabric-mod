@@ -184,6 +184,8 @@ type CollectionType string
 const (
 	CollectionType_PRIVATE   CollectionType = "PRIVATE"
 	CollectionType_TRANSIENT CollectionType = "TRANSIENT"
+	CollectionType_OFFLEDGER CollectionType = "OFFLEDGER"
+	CollectionType_DCAS      CollectionType = "DCAS"
 )
 
 type collectionConfigJson struct {
@@ -247,6 +249,36 @@ func getCollectionConfigFromBytes(cconfBytes []byte) (*pcommon.CollectionConfigP
 						MemberOnlyRead:    cconfitem.MemberOnlyRead,
 						MemberOnlyWrite:   cconfitem.MemberOnlyWrite,
 						Type:              pcommon.CollectionType_COL_TRANSIENT,
+						TimeToLive:        cconfitem.TimeToLive,
+					},
+				},
+			}
+		case CollectionType_OFFLEDGER:
+			cc = &pcommon.CollectionConfig{
+				Payload: &pcommon.CollectionConfig_StaticCollectionConfig{
+					StaticCollectionConfig: &pcommon.StaticCollectionConfig{
+						Name:              cconfitem.Name,
+						MemberOrgsPolicy:  cpc,
+						RequiredPeerCount: cconfitem.RequiredCount,
+						MaximumPeerCount:  cconfitem.MaxPeerCount,
+						MemberOnlyRead:    cconfitem.MemberOnlyRead,
+						MemberOnlyWrite:   cconfitem.MemberOnlyWrite,
+						Type:              pcommon.CollectionType_COL_OFFLEDGER,
+						TimeToLive:        cconfitem.TimeToLive,
+					},
+				},
+			}
+		case CollectionType_DCAS:
+			cc = &pcommon.CollectionConfig{
+				Payload: &pcommon.CollectionConfig_StaticCollectionConfig{
+					StaticCollectionConfig: &pcommon.StaticCollectionConfig{
+						Name:              cconfitem.Name,
+						MemberOrgsPolicy:  cpc,
+						RequiredPeerCount: cconfitem.RequiredCount,
+						MaximumPeerCount:  cconfitem.MaxPeerCount,
+						MemberOnlyRead:    cconfitem.MemberOnlyRead,
+						MemberOnlyWrite:   cconfitem.MemberOnlyWrite,
+						Type:              pcommon.CollectionType_COL_DCAS,
 						TimeToLive:        cconfitem.TimeToLive,
 					},
 				},
