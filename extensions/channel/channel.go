@@ -25,7 +25,7 @@ func JoinChainHandler(handle JoinChain) JoinChain {
 	return handle
 }
 
-//RegisterChannelInitializer registers channel initializer using get block handle and create chain handle
-func RegisterChannelInitializer(func(ledger ledger.PeerLedger) (*common.Block, error), CreateChain) {
+//RegisterChannelInitializer registers channel initializer using given plugin mapper and create chain handle
+func RegisterChannelInitializer(plugin.Mapper, CreateChain) {
 	//do nothing
 }

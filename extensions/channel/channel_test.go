@@ -20,13 +20,13 @@ import (
 
 func TestJoinChainHandler(t *testing.T) {
 
-	sampelResponse := pb.Response{Message: "sample-test-msg"}
+	sampleResponse := pb.Response{Message: "sample-test-msg"}
 	handle := func(string, *common.Block, sysccprovider.SystemChaincodeProvider,
 		ledger.DeployedChaincodeInfoProvider, plugindispatcher.LifecycleResources, plugindispatcher.CollectionAndLifecycleResources) pb.Response {
-		return sampelResponse
+		return sampleResponse
 	}
 
 	response := JoinChainHandler(handle)("", nil, nil, nil, nil, nil)
-	require.Equal(t, sampelResponse, response)
+	require.Equal(t, sampleResponse, response)
 
 }
