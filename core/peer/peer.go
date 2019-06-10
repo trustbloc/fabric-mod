@@ -11,7 +11,7 @@ import (
 	"net"
 	"sync"
 
-	xpeer "github.com/hyperledger/fabric/extensions/peer"
+	xchannel "github.com/hyperledger/fabric/extensions/channel"
 
 	xstate "github.com/hyperledger/fabric/extensions/gossip/state"
 
@@ -301,7 +301,7 @@ func Initialize(
 	}
 
 	//register channel initializer
-	xpeer.RegisterChannelInitializer(getCurrConfigBlockFromLedger, createChain)
+	xchannel.RegisterChannelInitializer(pm, createChain)
 }
 
 // InitChain takes care to initialize chain after peer joined, for example deploys system CCs
