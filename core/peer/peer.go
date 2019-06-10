@@ -300,8 +300,8 @@ func Initialize(
 		InitChain(cid)
 	}
 
-	//register channel initializer
-	xchannel.RegisterChannelInitializer(pm, createChain)
+	//register channel initializer with create chain and init chain handlers
+	xchannel.RegisterChannelInitializer(pm, createChain, InitChain)
 }
 
 // InitChain takes care to initialize chain after peer joined, for example deploys system CCs

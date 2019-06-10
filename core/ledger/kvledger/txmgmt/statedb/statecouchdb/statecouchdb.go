@@ -153,7 +153,7 @@ func newVersionedDB(couchInstance *couchdb.CouchInstance, redoLogger *redoLogger
 	chainName := dbName
 	dbName = couchdb.ConstructMetadataDBName(dbName)
 
-	metadataDB, err := xcouchdb.CreateCouchDatabase(couchdb.CreateCouchDatabase)(couchInstance, dbName)
+	metadataDB, err := xcouchdb.HandleCreateCouchDatabase(couchdb.CreateCouchDatabase)(couchInstance, dbName)
 	if err != nil {
 		return nil, err
 	}
