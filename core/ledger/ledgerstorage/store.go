@@ -10,14 +10,16 @@ import (
 	"path/filepath"
 	"sync"
 
+	xledgerstorage "github.com/hyperledger/fabric/extensions/storage/ledgerstorage"
+
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatapolicy"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatastorage"
 	lutil "github.com/hyperledger/fabric/core/ledger/util"
-	blkstorageext "github.com/hyperledger/fabric/extensions/blkstorage"
-	pvtdatastorageext "github.com/hyperledger/fabric/extensions/pvtdatastorage"
+	blkstorageext "github.com/hyperledger/fabric/extensions/storage/blkstorage"
+	pvtdatastorageext "github.com/hyperledger/fabric/extensions/storage/pvtdatastorage"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/pkg/errors"
 )
@@ -259,7 +261,7 @@ func (s *Store) init() error {
 	if initialized, err = s.initPvtdataStoreFromExistingBlockchain(); err != nil || initialized {
 		return err
 	}
-	return s.syncPvtdataStoreWithBlockStore()
+	return xledgerstorage.SyncPvtdataStoreWithBlockStoreHandler(s.syncPvtdataStoreWithBlockStore)()
 }
 
 // initPvtdataStoreFromExistingBlockchain updates the initial state of the pvtdata store

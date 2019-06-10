@@ -19,7 +19,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/privacyenabledstate"
 	"github.com/hyperledger/fabric/core/ledger/ledgerstorage"
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
-	idstoreext "github.com/hyperledger/fabric/extensions/idstore"
+	idstoreext "github.com/hyperledger/fabric/extensions/storage/idstore"
 	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
