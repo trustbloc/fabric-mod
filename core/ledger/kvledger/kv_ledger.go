@@ -82,7 +82,7 @@ func newKVLedger(
 	}
 
 	//Recover both state DB and history DB if they are out of sync with block storage
-	if err := xrecover.RecoverDBHandler(l.recoverDBs)(); err != nil {
+	if err := xrecover.DBRecoveryHandler(l.recoverDBs)(); err != nil {
 		panic(errors.WithMessage(err, "error during state DB recovery"))
 	}
 	l.configHistoryRetriever = configHistoryMgr.GetRetriever(ledgerID, l)

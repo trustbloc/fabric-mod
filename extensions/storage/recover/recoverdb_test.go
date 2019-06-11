@@ -18,6 +18,6 @@ func TestRecoverDBHandler(t *testing.T) {
 	handle := func() error {
 		return sampleError
 	}
-	err := RecoverDBHandler(handle)()
+	err := DBRecoveryHandler(handle)()
 	require.Equal(t, sampleError, err)
 }
