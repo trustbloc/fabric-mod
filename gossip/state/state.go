@@ -259,7 +259,7 @@ func readConfiguration() *Configuration {
 // NewGossipStateProvider creates state provider with coordinator instance
 // to orchestrate arrival of private rwsets and blocks before committing them into the ledger.
 func NewGossipStateProvider(chainID string, services *ServicesMediator, ledger ledgerResources,
-	stateMetrics *metrics.StateMetrics, blockingMode bool, msgDispatcher messageDispatcher, peerLedger ledger.PeerLedger) GossipStateProvider {
+	stateMetrics *metrics.StateMetrics, blockingMode bool, msgDispatcher messageDispatcher, peerLedger ledger.PeerLedger, preCommit interface{}) GossipStateProvider {
 
 	gossipChan, _ := services.Accept(func(message interface{}) bool {
 		// Get only data messages
@@ -351,7 +351,7 @@ func NewGossipStateProvider(chainID string, services *ServicesMediator, ledger l
 
 		peerLedger: peerLedger,
 
-		extension: xstate.NewGossipStateProviderExtension(chainID, services),
+		extension: xstate.NewGossipStateProviderExtension(chainID, services, preCommit),
 	}
 
 	logger.Infof("Updating metadata information, "+

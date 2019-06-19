@@ -67,6 +67,17 @@ func NewLedgerCommitterReactive(ledger PeerLedgerSupport, eventer BlockEventer) 
 	return &LedgerCommitter{PeerLedgerSupport: ledger, eventer: eventer}
 }
 
+// AddBlock does pre commit operations as defined in BlockEventer
+func (lc *LedgerCommitter) AddBlock(blockAndPvtData *ledger.BlockAndPvtData) error {
+	// Do validation and whatever needed before
+	// committing new block
+	if err := lc.preCommit(blockAndPvtData.Block); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // preCommit takes care to validate the block and update based on its
 // content
 func (lc *LedgerCommitter) preCommit(block *common.Block) error {

@@ -34,7 +34,7 @@ func TestProviderExtension(t *testing.T) {
 		return sampleError
 	}
 
-	extension := NewGossipStateProviderExtension("test", nil)
+	extension := NewGossipStateProviderExtension("test", nil, nil)
 	require.Error(t, sampleError, extension.AddPayload(handleAddPayload))
 	require.True(t, extension.Predicate(predicate)(discovery.NetworkMember{}))
 	require.Error(t, sampleError, extension.StoreBlock(handleStoreBlock))

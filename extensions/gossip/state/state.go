@@ -57,7 +57,7 @@ func AddBlockHandler(publisher api.BlockPublisher) {
 }
 
 //NewGossipStateProviderExtension returns new GossipStateProvider Extension implementation
-func NewGossipStateProviderExtension(chainID string, mediator GossipServiceMediator) GossipStateProviderExtension {
+func NewGossipStateProviderExtension(chainID string, mediator GossipServiceMediator, preCommit interface{}) GossipStateProviderExtension {
 	return &gossipStateProviderExtension{}
 }
 
