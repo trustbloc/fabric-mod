@@ -71,6 +71,7 @@ import (
 	ccsupport "github.com/hyperledger/fabric/discovery/support/chaincode"
 	"github.com/hyperledger/fabric/discovery/support/config"
 	"github.com/hyperledger/fabric/discovery/support/gossip"
+	extcc "github.com/hyperledger/fabric/extensions/chaincode"
 	supportapi "github.com/hyperledger/fabric/extensions/collections/api/support"
 	collretriever "github.com/hyperledger/fabric/extensions/collections/retriever"
 	gossipcommon "github.com/hyperledger/fabric/gossip/common"
@@ -484,7 +485,13 @@ func serve(args []string) error {
 
 	//Now that chaincode is initialized, register all system chaincodes.
 	sccs := scc.CreatePluginSysCCs(sccp)
-	for _, cc := range append([]scc.SelfDescribingSysCC{lsccInst, csccInst, qsccInst, lifecycleSCC}, sccs...) {
+
+	// get the list of system chain codes provided by extensions
+	extscc := extcc.CreateSCC(
+		sccp, aclProvider, lifecycleValidatorCommitter,
+		newGossipProvider(), peer.BlockPublisher)
+
+	for _, cc := range append([]scc.SelfDescribingSysCC{lsccInst, csccInst, qsccInst, lifecycleSCC}, append(sccs, extscc...)...) {
 		sccp.RegisterSysCC(cc)
 	}
 	pb.RegisterChaincodeSupportServer(ccSrv.Server(), ccSupSrv)
