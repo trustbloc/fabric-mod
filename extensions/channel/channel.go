@@ -22,12 +22,14 @@ type CreateChain func(string, ledger.PeerLedger, *common.Block, sysccprovider.Sy
 
 type InitChain func(string)
 
+type CurrentConfigBlock func(ledger ledger.PeerLedger) (*common.Block, error)
+
 //JoinChainHandler can be used to provide extended features to CSCC join channel
 func JoinChainHandler(handle JoinChain) JoinChain {
 	return handle
 }
 
 //RegisterChannelInitializer registers channel initializer using given plugin mapper and create chain handle
-func RegisterChannelInitializer(plugin.Mapper, CreateChain, InitChain) {
+func RegisterChannelInitializer(plugin.Mapper, CreateChain, InitChain, CurrentConfigBlock) {
 	//do nothing
 }

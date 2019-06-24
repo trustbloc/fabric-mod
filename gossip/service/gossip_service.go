@@ -250,6 +250,7 @@ type Support struct {
 	CollDataStore        storeapi.Store
 	Ledger               ledger.PeerLedger
 	BlockPublisher       extgossipapi.BlockPublisher
+	BlockEventer         extgossipapi.BlockEventer
 }
 
 // DataStoreSupport aggregates interfaces capable
@@ -316,7 +317,7 @@ func (g *gossipServiceImpl) InitializeChannel(chainID string, endpoints []string
 	blockingMode := !viper.GetBool("peer.gossip.nonBlockingCommitMode")
 	g.chains[chainID] = state.NewGossipStateProvider(chainID, servicesAdapter, coordinator,
 		g.metrics.StateMetrics, blockingMode,
-		dispatcher.New(chainID, support.CollDataStore, servicesAdapter, support.Ledger, support.BlockPublisher), support.Ledger)
+		dispatcher.New(chainID, support.CollDataStore, servicesAdapter, support.Ledger, support.BlockPublisher), &extgossipapi.Support{Ledger: support.Ledger, LedgerHeightProvider: support.BlockPublisher, BlockEventer: support.BlockEventer})
 	if g.deliveryService[chainID] == nil {
 		var err error
 		g.deliveryService[chainID], err = g.deliveryFactory.Service(g, endpoints, g.mcs)

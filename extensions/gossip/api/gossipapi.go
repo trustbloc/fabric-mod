@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package api
 
 import (
+	"github.com/hyperledger/fabric/core/ledger"
 	cb "github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
 	pb "github.com/hyperledger/fabric/protos/peer"
@@ -41,6 +42,8 @@ type BlockPublisher interface {
 	AddCCEventHandler(handler ChaincodeEventHandler)
 	// Publish traverses the block and invokes all applicable handlers
 	Publish(block *cb.Block)
+	//LedgerHeight returns current in memory ledger height
+	LedgerHeight() uint64
 }
 
 // TxMetadata contain txn metadata
@@ -49,4 +52,24 @@ type TxMetadata struct {
 	TxNum     uint64
 	ChannelID string
 	TxID      string
+}
+
+//BlockEventer performs pre commit operation for a block
+type BlockEventer interface {
+	//PreCommit performs pre commit operation for given block
+	PreCommit(block *cb.Block) error
+}
+
+//LedgerHeightProvider provides current ledger height
+type LedgerHeightProvider interface {
+	//LedgerHeight  returns current in-memory ledger height
+	LedgerHeight() uint64
+}
+
+// Support aggregates functionality of several
+// interfaces required by gossip service
+type Support struct {
+	Ledger               ledger.PeerLedger
+	LedgerHeightProvider LedgerHeightProvider
+	BlockEventer         BlockEventer
 }

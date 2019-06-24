@@ -67,9 +67,9 @@ func NewLedgerCommitterReactive(ledger PeerLedgerSupport, eventer BlockEventer) 
 	return &LedgerCommitter{PeerLedgerSupport: ledger, eventer: eventer}
 }
 
-// preCommit takes care to validate the block and update based on its
+// PreCommit takes care to validate the block and update based on its
 // content
-func (lc *LedgerCommitter) preCommit(block *common.Block) error {
+func (lc *LedgerCommitter) PreCommit(block *common.Block) error {
 	logger.Debug("Received block, calling eventer")
 	if err := lc.eventer(block); err != nil {
 		return errors.WithMessage(err, "error returned from block eventer")
@@ -81,7 +81,7 @@ func (lc *LedgerCommitter) preCommit(block *common.Block) error {
 func (lc *LedgerCommitter) CommitWithPvtData(blockAndPvtData *ledger.BlockAndPvtData) error {
 	// Do validation and whatever needed before
 	// committing new block
-	if err := lc.preCommit(blockAndPvtData.Block); err != nil {
+	if err := lc.PreCommit(blockAndPvtData.Block); err != nil {
 		return err
 	}
 

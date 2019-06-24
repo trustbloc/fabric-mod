@@ -22,9 +22,6 @@ type GossipStateProviderExtension interface {
 	//HandleStateRequest can used to extend given request handle
 	HandleStateRequest(func(msg protoext.ReceivedMessage)) func(msg protoext.ReceivedMessage)
 
-	//AntiEntropy can be used to extend Anti Entropy features
-	AntiEntropy(func()) func()
-
 	//Predicate can used to override existing predicate to filter peers to be asked for blocks
 	Predicate(func(peer discovery.NetworkMember) bool) func(peer discovery.NetworkMember) bool
 
@@ -33,6 +30,12 @@ type GossipStateProviderExtension interface {
 
 	//StoreBlock  can used to extend given store block handle
 	StoreBlock(func(block *common.Block, pvtData util.PvtDataCollections) error) func(block *common.Block, pvtData util.PvtDataCollections) error
+
+	//LedgerHeight can used to extend ledger height feature to get current ledger height
+	LedgerHeight(func() (uint64, error)) func() (uint64, error)
+
+	//RequestBlocksInRange can be used to extend given request blocks feature
+	RequestBlocksInRange(func(start uint64, end uint64), func(payload *proto.Payload, blockingMode bool) error) func(start uint64, end uint64)
 }
 
 // GossipServiceMediator aggregated adapter interface to compound basic mediator services
@@ -57,7 +60,7 @@ func AddBlockHandler(publisher api.BlockPublisher) {
 }
 
 //NewGossipStateProviderExtension returns new GossipStateProvider Extension implementation
-func NewGossipStateProviderExtension(chainID string, mediator GossipServiceMediator) GossipStateProviderExtension {
+func NewGossipStateProviderExtension(chainID string, mediator GossipServiceMediator, support *api.Support) GossipStateProviderExtension {
 	return &gossipStateProviderExtension{}
 }
 
@@ -65,10 +68,6 @@ type gossipStateProviderExtension struct {
 }
 
 func (s *gossipStateProviderExtension) HandleStateRequest(handle func(msg protoext.ReceivedMessage)) func(msg protoext.ReceivedMessage) {
-	return handle
-}
-
-func (s *gossipStateProviderExtension) AntiEntropy(handle func()) func() {
 	return handle
 }
 
@@ -81,5 +80,13 @@ func (s *gossipStateProviderExtension) AddPayload(handle func(payload *proto.Pay
 }
 
 func (s *gossipStateProviderExtension) StoreBlock(handle func(block *common.Block, pvtData util.PvtDataCollections) error) func(block *common.Block, pvtData util.PvtDataCollections) error {
+	return handle
+}
+
+func (s *gossipStateProviderExtension) LedgerHeight(handle func() (uint64, error)) func() (uint64, error) {
+	return handle
+}
+
+func (s *gossipStateProviderExtension) RequestBlocksInRange(handle func(start uint64, end uint64), addPayload func(payload *proto.Payload, blockingMode bool) error) func(start uint64, end uint64) {
 	return handle
 }

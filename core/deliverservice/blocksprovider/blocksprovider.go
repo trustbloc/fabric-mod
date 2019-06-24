@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	xgossipservice "github.com/hyperledger/fabric/extensions/gossip/service"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/gossip/api"
@@ -182,7 +184,7 @@ func (b *blocksProviderImpl) DeliverBlocks() {
 			// Gossip messages with other nodes
 			logger.Debugf("[%s] Gossiping block [%d], peers number [%d]", b.chainID, blockNum, numberOfPeers)
 			if !b.isDone() {
-				b.gossip.Gossip(gossipMsg)
+				xgossipservice.HandleGossip(b.gossip.Gossip)(gossipMsg)
 			}
 		default:
 			logger.Warningf("[%s] Received unknown: %v", b.chainID, t)
