@@ -8,6 +8,7 @@ package state
 
 import (
 	"bytes"
+	xgossipapi "github.com/hyperledger/fabric/extensions/gossip/api"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -259,7 +260,7 @@ func readConfiguration() *Configuration {
 // NewGossipStateProvider creates state provider with coordinator instance
 // to orchestrate arrival of private rwsets and blocks before committing them into the ledger.
 func NewGossipStateProvider(chainID string, services *ServicesMediator, ledger ledgerResources,
-	stateMetrics *metrics.StateMetrics, blockingMode bool, msgDispatcher messageDispatcher, peerLedger ledger.PeerLedger) GossipStateProvider {
+	stateMetrics *metrics.StateMetrics, blockingMode bool, msgDispatcher messageDispatcher, support *xgossipapi.Support) GossipStateProvider {
 
 	gossipChan, _ := services.Accept(func(message interface{}) bool {
 		// Get only data messages
@@ -349,9 +350,9 @@ func NewGossipStateProvider(chainID string, services *ServicesMediator, ledger l
 
 		msgDispatcher: msgDispatcher,
 
-		peerLedger: peerLedger,
+		peerLedger: support.Ledger,
 
-		extension: xstate.NewGossipStateProviderExtension(chainID, services),
+		extension: xstate.NewGossipStateProviderExtension(chainID, services, support),
 	}
 
 	logger.Infof("Updating metadata information, "+
@@ -368,7 +369,7 @@ func NewGossipStateProvider(chainID string, services *ServicesMediator, ledger l
 
 	if s.config.EnableStateTransfer {
 		// Execute anti entropy to fill missing gaps
-		go s.extension.AntiEntropy(s.antiEntropy)()
+		go s.antiEntropy()
 	}
 
 	// Taking care of state request messages
@@ -710,7 +711,7 @@ func (s *GossipStateProviderImpl) antiEntropy() {
 			s.stopCh <- struct{}{}
 			return
 		case <-time.After(s.config.AntiEntropyInterval):
-			ourHeight, err := s.ledger.LedgerHeight()
+			ourHeight, err := s.extension.LedgerHeight(s.ledger.LedgerHeight)()
 			if err != nil {
 				// Unable to read from ledger continue to the next round
 				logger.Errorf("Cannot obtain ledger height, due to %+v", errors.WithStack(err))
@@ -725,7 +726,7 @@ func (s *GossipStateProviderImpl) antiEntropy() {
 				continue
 			}
 
-			s.requestBlocksInRange(uint64(ourHeight), uint64(maxHeight)-1)
+			s.extension.RequestBlocksInRange(s.requestBlocksInRange, s.addPayload)(uint64(ourHeight), uint64(maxHeight)-1)
 		}
 	}
 }
@@ -873,7 +874,7 @@ func (s *GossipStateProviderImpl) addPayload(payload *proto.Payload, blockingMod
 		return errors.New("Given payload is nil")
 	}
 	logger.Debugf("[%s] Adding payload to local buffer, blockNum = [%d]", s.chainID, payload.SeqNum)
-	height, err := s.ledger.LedgerHeight()
+	height, err := s.extension.LedgerHeight(s.ledger.LedgerHeight)()
 	if err != nil {
 		return errors.Wrap(err, "Failed obtaining ledger height")
 	}

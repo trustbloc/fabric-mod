@@ -34,9 +34,16 @@ func TestProviderExtension(t *testing.T) {
 		return sampleError
 	}
 
-	extension := NewGossipStateProviderExtension("test", nil)
+	handleLedgerheight := func() (uint64, error) {
+		return 99, nil
+	}
+
+	extension := NewGossipStateProviderExtension("test", nil, nil)
 	require.Error(t, sampleError, extension.AddPayload(handleAddPayload))
 	require.True(t, extension.Predicate(predicate)(discovery.NetworkMember{}))
 	require.Error(t, sampleError, extension.StoreBlock(handleStoreBlock))
+	height, err := extension.LedgerHeight(handleLedgerheight)()
+	require.Equal(t, 99, int(height))
+	require.NoError(t, err)
 
 }

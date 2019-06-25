@@ -301,7 +301,7 @@ func Initialize(
 	}
 
 	//register channel initializer with create chain and init chain handlers
-	xchannel.RegisterChannelInitializer(pm, createChain, InitChain)
+	xchannel.RegisterChannelInitializer(pm, createChain, InitChain, getCurrConfigBlockFromLedger)
 }
 
 // InitChain takes care to initialize chain after peer joined, for example deploys system CCs
@@ -492,6 +492,7 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 		IdDeserializeFactory: csStoreSupport,
 		Ledger:               ledger,
 		BlockPublisher:       blockPublisher,
+		BlockEventer:         c,
 	})
 
 	chains.Lock()

@@ -49,3 +49,9 @@ func (m *BlockPublisher) AddCCEventHandler(handler api.ChaincodeEventHandler) {
 func (m *BlockPublisher) Publish(block *cb.Block) {
 	// Not implemented
 }
+
+// Publish traverses the block and invokes all applicable handlers
+func (m *BlockPublisher) LedgerHeight() uint64 {
+	// Not implemented
+	return 0
+}
