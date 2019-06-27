@@ -40,3 +40,17 @@ func TestHandler_HandleGetPrivateDataMultipleKeys(t *testing.T) {
 	assert.False(t, handled)
 	assert.Nil(t, value)
 }
+
+func TestHandler_HandleExecuteQueryOnPrivateData(t *testing.T) {
+	h := New("testchannel", nil)
+
+	config := &common.StaticCollectionConfig{
+		Name: "coll1",
+		Type: common.CollectionType_COL_TRANSIENT,
+	}
+
+	value, handled, err := h.HandleExecuteQueryOnPrivateData("tx1", "ns1", config, "some query")
+	assert.NoError(t, err)
+	assert.False(t, handled)
+	assert.Nil(t, value)
+}

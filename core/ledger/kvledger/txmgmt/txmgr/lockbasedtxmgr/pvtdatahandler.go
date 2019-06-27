@@ -8,6 +8,8 @@ package lockbasedtxmgr
 
 import (
 	"github.com/pkg/errors"
+
+	commonledger "github.com/hyperledger/fabric/common/ledger"
 )
 
 func (h *queryHelper) handleGetPrivateData(txID, ns, coll, key string) ([]byte, error) {
@@ -62,4 +64,31 @@ func (h *queryHelper) handleGetPrivateDataMultipleKeys(txID, ns, coll string, ke
 	}
 
 	return h.getPrivateDataMultipleKeys(ns, coll, keys)
+}
+
+func (h *queryHelper) handleExecuteQueryOnPrivateData(txID, ns, coll, query string) (commonledger.ResultsIterator, error) {
+	if err := h.checkDone(); err != nil {
+		return nil, err
+	}
+
+	config, err := h.collNameValidator.getCollConfig(ns, coll)
+	if err != nil {
+		return nil, err
+	}
+
+	staticConfig := config.GetStaticCollectionConfig()
+	if staticConfig == nil {
+		return nil, errors.New("invalid collection config")
+	}
+
+	it, handled, err := h.pvtDataHandler.HandleExecuteQueryOnPrivateData(txID, ns, staticConfig, query)
+	if err != nil {
+		return nil, err
+	}
+
+	if handled {
+		return it, nil
+	}
+
+	return h.executeQueryOnPrivateData(ns, coll, query)
 }

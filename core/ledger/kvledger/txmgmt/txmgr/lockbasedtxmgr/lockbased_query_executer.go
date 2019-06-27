@@ -97,7 +97,7 @@ func (q *lockBasedQueryExecutor) GetPrivateDataRangeScanIterator(namespace, coll
 
 // ExecuteQueryOnPrivateData implements method in interface `ledger.QueryExecutor`
 func (q *lockBasedQueryExecutor) ExecuteQueryOnPrivateData(namespace, collection, query string) (commonledger.ResultsIterator, error) {
-	return q.helper.executeQueryOnPrivateData(namespace, collection, query)
+	return q.helper.handleExecuteQueryOnPrivateData(q.txid, namespace, collection, query)
 }
 
 // Done implements method in interface `ledger.QueryExecutor`
