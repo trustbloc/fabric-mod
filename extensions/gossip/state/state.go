@@ -60,7 +60,7 @@ func AddBlockHandler(publisher api.BlockPublisher) {
 }
 
 //NewGossipStateProviderExtension returns new GossipStateProvider Extension implementation
-func NewGossipStateProviderExtension(chainID string, mediator GossipServiceMediator, support *api.Support) GossipStateProviderExtension {
+func NewGossipStateProviderExtension(chainID string, mediator GossipServiceMediator, support *api.Support, blockingMode bool) GossipStateProviderExtension {
 	return &gossipStateProviderExtension{}
 }
 

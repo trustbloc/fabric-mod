@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package service
 
 import (
+	xgossipservice "github.com/hyperledger/fabric/extensions/gossip/service"
 	"sync"
 
 	"github.com/hyperledger/fabric/common/metrics"
@@ -298,7 +299,7 @@ func (g *gossipServiceImpl) InitializeChannel(chainID string, endpoints []string
 	reconcilerConfig := privdata2.GetReconcilerConfig()
 	var reconciler privdata2.PvtDataReconciler
 
-	if reconcilerConfig.IsEnabled {
+	if xgossipservice.IsPvtDataReconcilerEnabled(reconcilerConfig.IsEnabled) {
 		reconciler = privdata2.NewReconciler(chainID, g.metrics.PrivdataMetrics,
 			support.Committer, fetcher, reconcilerConfig)
 	} else {
