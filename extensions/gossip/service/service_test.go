@@ -28,3 +28,8 @@ func TestHandleGossip(t *testing.T) {
 		t.Fatal("handler supposed to be executed")
 	}
 }
+
+func TestIsPvtDataReconcilerEnabled(t *testing.T) {
+	require.True(t, IsPvtDataReconcilerEnabled(true))
+	require.False(t, IsPvtDataReconcilerEnabled(false))
+}
