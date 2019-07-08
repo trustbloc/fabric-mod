@@ -7,6 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 package kvledger
 
 import (
+	xledger "github.com/hyperledger/fabric/extensions/ledger"
+	xledgerapi "github.com/hyperledger/fabric/extensions/ledger/api"
 	"sync"
 	"time"
 
@@ -36,6 +38,7 @@ var logger = flogging.MustGetLogger("kvledger")
 // KVLedger provides an implementation of `ledger.PeerLedger`.
 // This implementation provides a key-value based data model
 type kvLedger struct {
+	xledgerapi.PeerLedgerExtension
 	ledgerID               string
 	blockStore             *ledgerstorage.Store
 	txtmgmt                txmgr.TxMgr
@@ -62,7 +65,7 @@ func newKVLedger(
 	logger.Debugf("Creating KVLedger ledgerID=%s: ", ledgerID)
 	// Create a kvLedger for this chain/ledger, which encasulates the underlying
 	// id store, blockstore, txmgr (state database), history database
-	l := &kvLedger{ledgerID: ledgerID, blockStore: blockStore, historyDB: historyDB, blockAPIsRWLock: &sync.RWMutex{}}
+	l := &kvLedger{PeerLedgerExtension: xledger.NewKVLedgerExtension(blockStore), ledgerID: ledgerID, blockStore: blockStore, historyDB: historyDB, blockAPIsRWLock: &sync.RWMutex{}}
 
 	btlPolicy := pvtdatapolicy.ConstructBTLPolicy(&collectionInfoRetriever{ledgerID, l, ccInfoProvider})
 	if err := l.initTxMgr(versionedDB, stateListeners, btlPolicy, bookkeeperProvider, ccInfoProvider, collDataProvider); err != nil {

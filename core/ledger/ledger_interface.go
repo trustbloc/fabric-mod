@@ -9,6 +9,7 @@ package ledger
 import (
 	"fmt"
 	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
+	xledgerapi "github.com/hyperledger/fabric/extensions/ledger/api"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric-lib-go/healthz"
@@ -98,6 +99,7 @@ type PeerLedgerProvider interface {
 // that tells apart valid transactions from invalid ones
 type PeerLedger interface {
 	commonledger.Ledger
+	xledgerapi.PeerLedgerExtension
 	// GetTransactionByID retrieves a transaction by id
 	GetTransactionByID(txID string) (*peer.ProcessedTransaction, error)
 	// GetBlockByHash returns a block given it's hash

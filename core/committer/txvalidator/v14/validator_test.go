@@ -1743,6 +1743,9 @@ func (m *mockLedger) GetBlocksIterator(startBlockNumber uint64) (ledger2.Results
 func (m *mockLedger) Close() {
 
 }
+func (m *mockLedger) CheckpointBlock(block *common.Block) error {
+	return nil
+}
 
 func (m *mockLedger) Commit(block *common.Block) error {
 	return nil
