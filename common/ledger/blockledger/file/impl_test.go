@@ -108,6 +108,10 @@ func (mbs *mockBlockStore) RetrieveTxValidationCodeByTxID(txID string) (peer.TxV
 	return mbs.txValidationCode, mbs.defaultError
 }
 
+func (mbs *mockBlockStore) CheckpointBlock(block *cb.Block) error {
+	return mbs.defaultError
+}
+
 func (*mockBlockStore) Shutdown() {
 }
 

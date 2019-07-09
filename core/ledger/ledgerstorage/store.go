@@ -250,6 +250,11 @@ func (s *Store) ResetLastUpdatedOldBlocksList() error {
 	return s.pvtdataStore.ResetLastUpdatedOldBlocksList()
 }
 
+// CheckpointBlock updates checkpoint info of underlying blockstore with given block
+func (s *Store) CheckpointBlock(block *common.Block) error {
+	return s.BlockStore.CheckpointBlock(block)
+}
+
 // init first invokes function `initFromExistingBlockchain`
 // in order to check whether the pvtdata store is present because of an upgrade
 // of peer from 1.0 and need to be updated with the existing blockchain. If, this is

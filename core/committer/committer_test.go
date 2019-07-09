@@ -121,6 +121,10 @@ func (m *mockLedger) GetMissingPvtDataTracker() (ledger2.MissingPvtDataTracker, 
 	panic("implement me")
 }
 
+func (m *mockLedger) CheckpointBlock(block *common.Block) error {
+	return nil
+}
+
 func createLedger(channelID string) (*common.Block, *mockLedger) {
 	gb, _ := test.MakeGenesisBlock(channelID)
 	ledger := &mockLedger{
