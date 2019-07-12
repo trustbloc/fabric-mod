@@ -9,6 +9,7 @@ package endorser
 import (
 	"context"
 	"fmt"
+	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
 	"strconv"
 	"time"
 
@@ -151,7 +152,7 @@ func NewEndorserServer(privDist privateDataDistributor, s Support, pr *platforms
 			&qeProviderFactory{
 				getLedger: peer.GetLedger,
 			},
-			peer.BlockPublisher),
+			blockpublisher.GetProvider()),
 	}
 	return e
 }

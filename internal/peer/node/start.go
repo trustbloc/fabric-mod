@@ -8,6 +8,7 @@ package node
 
 import (
 	"fmt"
+	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
 	"net"
 	"net/http"
 	"os"
@@ -250,7 +251,7 @@ func serve(args []string) error {
 		func() supportapi.GossipAdapter {
 			return service.GetGossipService()
 		},
-		peer.BlockPublisher.ForChannel,
+		blockpublisher.GetProvider().ForChannel,
 	)
 
 	// initialize resource management exit
@@ -489,7 +490,7 @@ func serve(args []string) error {
 	// get the list of system chain codes provided by extensions
 	extscc := extcc.CreateSCC(
 		sccp, aclProvider, lifecycleValidatorCommitter,
-		newGossipProvider(), peer.BlockPublisher)
+		newGossipProvider(), blockpublisher.GetProvider())
 
 	for _, cc := range append([]scc.SelfDescribingSysCC{lsccInst, csccInst, qsccInst, lifecycleSCC}, append(sccs, extscc...)...) {
 		sccp.RegisterSysCC(cc)

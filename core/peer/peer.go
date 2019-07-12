@@ -115,9 +115,6 @@ func CollectionDataStoreFactory() CollStoreProvider {
 	return collectionDataStoreFactory
 }
 
-// publisher manages the block publishers for all channels
-var BlockPublisher = blockpublisher.NewProvider()
-
 type storeProvider struct {
 	stores map[string]transientstore.Store
 	transientstore.StoreProvider
@@ -446,8 +443,8 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 		ChannelID:                       bundle.ConfigtxValidator().ChainID(),
 	}, sccp, pm, NewChannelPolicyManagerGetter())
 
-	blockPublisher := BlockPublisher.ForChannel(cid)
-	xstate.AddBlockHandler(blockPublisher)
+	blkPublisher := blockpublisher.GetProvider().ForChannel(cid)
+	xstate.AddBlockHandler(blkPublisher)
 
 	c := committer.NewLedgerCommitterReactive(ledger, func(block *common.Block) error {
 		// Updating CSCC with new configuration block
@@ -459,7 +456,7 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 			}
 		}
 		// Inform applicable registered handlers of the new block
-		blockPublisher.Publish(block)
+		blkPublisher.Publish(block)
 		return nil
 	})
 
@@ -491,7 +488,7 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 		Cs:                   simpleCollectionStore,
 		IdDeserializeFactory: csStoreSupport,
 		Ledger:               ledger,
-		BlockPublisher:       blockPublisher,
+		BlockPublisher:       blkPublisher,
 		BlockEventer:         c,
 	})
 

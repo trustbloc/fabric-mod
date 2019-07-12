@@ -10,6 +10,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	xstatedb "github.com/hyperledger/fabric/extensions/storage/statedb"
+	"strings"
 	"sync"
 
 	xcouchdb "github.com/hyperledger/fabric/extensions/storage/couchdb"
@@ -136,6 +138,19 @@ func (l *lsccStateCache) setState(key string, value *statedb.VersionedValue) {
 	l.cache[key] = value
 }
 
+//evictEntry evicts lscc entries matching given lscc key
+func (l *lsccStateCache) evictEntry(pattern string) {
+	l.rwMutex.Lock()
+	defer l.rwMutex.Unlock()
+
+	for k := range l.cache {
+		if k == pattern || strings.HasPrefix(k, fmt.Sprintf(lsccKeyPrefix, pattern)) {
+			delete(l.cache, k)
+		}
+	}
+
+}
+
 func (l *lsccStateCache) isCacheFull() bool {
 	return len(l.cache) == lsccCacheSize
 }
@@ -169,6 +184,9 @@ func newVersionedDB(couchInstance *couchdb.CouchInstance, redoLogger *redoLogger
 		},
 		redoLogger: redoLogger,
 	}
+
+	xstatedb.AddCCUpgradeHandler(chainName, getCCUpgradeHandler(vdb))
+
 	logger.Debugf("chain [%s]: checking for redolog record", chainName)
 	redologRecord, err := redoLogger.load()
 	if err != nil {
