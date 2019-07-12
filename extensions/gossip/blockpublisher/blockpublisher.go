@@ -9,7 +9,11 @@ package blockpublisher
 import (
 	"github.com/hyperledger/fabric/extensions/gossip/api"
 	cb "github.com/hyperledger/fabric/protos/common"
+	"sync"
 )
+
+var blockPublisherProvider *Provider
+var once sync.Once
 
 // Provider is a noop block publisher provider
 type Provider struct {
@@ -25,9 +29,12 @@ func (p *Provider) Close() {
 	// Nothing to do
 }
 
-// NewProvider returns a new block publisher provider
-func NewProvider() *Provider {
-	return &Provider{}
+// GetProvider returns block publisher provider
+func GetProvider() *Provider {
+	once.Do(func() {
+		blockPublisherProvider = &Provider{}
+	})
+	return blockPublisherProvider
 }
 
 type publisher struct {
