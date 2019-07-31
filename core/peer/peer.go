@@ -444,7 +444,7 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 	}, sccp, pm, NewChannelPolicyManagerGetter())
 
 	blkPublisher := blockpublisher.GetProvider().ForChannel(cid)
-	xstate.AddBlockHandler(blkPublisher)
+	xstate.ChannelJoined(cid, ledger, blkPublisher)
 
 	c := committer.NewLedgerCommitterReactive(ledger, func(block *common.Block) error {
 		// Updating CSCC with new configuration block
