@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package state
 
 import (
+	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/extensions/gossip/api"
 	common2 "github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/discovery"
@@ -54,8 +55,8 @@ type GossipServiceMediator interface {
 	Gossip(msg *proto.GossipMessage)
 }
 
-//AddBlockHandler handles state update in gossip
-func AddBlockHandler(publisher api.BlockPublisher) {
+// ChannelJoined is invoked when the peer joins a channel
+func ChannelJoined(channelID string, ledger ledger.PeerLedger, publisher api.BlockPublisher) {
 	//do nothing
 }
 

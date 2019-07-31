@@ -46,4 +46,7 @@ func TestProviderExtension(t *testing.T) {
 	require.Equal(t, 99, int(height))
 	require.NoError(t, err)
 
+	require.NotPanics(t, func() {
+		ChannelJoined("testchannel", nil, nil)
+	})
 }
