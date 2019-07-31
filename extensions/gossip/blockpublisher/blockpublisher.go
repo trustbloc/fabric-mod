@@ -56,6 +56,10 @@ func (p *publisher) AddReadHandler(handler api.ReadHandler) {
 	// Not implemented
 }
 
+func (p *publisher) AddLSCCWriteHandler(handler api.LSCCWriteHandler) {
+	// Not implemented
+}
+
 func (p *publisher) AddCCEventHandler(handler api.ChaincodeEventHandler) {
 	// Not implemented
 }

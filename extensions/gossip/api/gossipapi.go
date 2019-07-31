@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package api
 
 import (
+	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/ledger"
 	cb "github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
@@ -28,6 +29,9 @@ type ChaincodeEventHandler func(txMetadata TxMetadata, event *pb.ChaincodeEvent)
 // ChaincodeUpgradeHandler handles chaincode upgrade events
 type ChaincodeUpgradeHandler func(txMetadata TxMetadata, chaincodeName string) error
 
+// LSCCWriteHandler handles chaincode instantiation/upgrade events
+type LSCCWriteHandler func(txMetadata TxMetadata, chaincodeName string, ccData *ccprovider.ChaincodeData, ccp *cb.CollectionConfigPackage) error
+
 // BlockPublisher allows clients to add handlers for various block events
 type BlockPublisher interface {
 	// AddCCUpgradeHandler adds a handler for chaincode upgrades
@@ -38,6 +42,8 @@ type BlockPublisher interface {
 	AddWriteHandler(handler WriteHandler)
 	// AddReadHandler adds a handler for KV reads
 	AddReadHandler(handler ReadHandler)
+	// AddLSCCWriteHandler adds a handler for LSCC writes (for chaincode instantiate/upgrade)
+	AddLSCCWriteHandler(handler LSCCWriteHandler)
 	// AddCCEventHandler adds a handler for chaincode events
 	AddCCEventHandler(handler ChaincodeEventHandler)
 	// Publish traverses the block and invokes all applicable handlers

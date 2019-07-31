@@ -40,6 +40,10 @@ func (m *BlockPublisher) AddReadHandler(handler api.ReadHandler) {
 	// Not implemented
 }
 
+func (p *BlockPublisher) AddLSCCWriteHandler(handler api.LSCCWriteHandler) {
+	// Not implemented
+}
+
 // AddCCEventHandler adds a handler for chaincode events
 func (m *BlockPublisher) AddCCEventHandler(handler api.ChaincodeEventHandler) {
 	// Not implemented
