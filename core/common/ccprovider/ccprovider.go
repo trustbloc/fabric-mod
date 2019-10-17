@@ -151,6 +151,11 @@ func (*CCInfoFSImpl) GetChaincodeFromPath(ccname string, ccversion string, path 
 	return cccdspack, nil
 }
 
+// GetChaincodeInstallPath returns the path to the installed chaincodes
+func (*CCInfoFSImpl) GetChaincodeInstallPath() string {
+	return chaincodeInstallPath
+}
+
 // PutChaincodeIntoFS is a wrapper for putting raw ChaincodeDeploymentSpec
 //using CDSPackage. This is only used in UTs
 func (*CCInfoFSImpl) PutChaincode(depSpec *pb.ChaincodeDeploymentSpec) (CCPackage, error) {
