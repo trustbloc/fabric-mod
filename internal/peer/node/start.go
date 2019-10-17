@@ -210,6 +210,10 @@ func serve(args []string) error {
 		Parser:   ccPackageParser,
 	}
 
+	// Configure CC package storage
+	lsccInstallPath := filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "chaincodes")
+	ccprovider.SetChaincodesPath(lsccInstallPath)
+
 	// legacyMetadataManager collects metadata information from the legacy
 	// lifecycle (lscc). This is expected to disappear with FAB-15061.
 	legacyMetadataManager, err := cclifecycle.NewMetadataManager(
@@ -269,10 +273,6 @@ func serve(args []string) error {
 			CollDataProvider:                collDataProvider,
 		},
 	)
-
-	// Configure CC package storage
-	lsccInstallPath := filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "chaincodes")
-	ccprovider.SetChaincodesPath(lsccInstallPath)
 
 	if err := lifecycleCache.InitializeLocalChaincodes(); err != nil {
 		return errors.WithMessage(err, "could not initialize local chaincodes")
