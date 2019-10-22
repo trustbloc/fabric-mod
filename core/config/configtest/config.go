@@ -44,23 +44,20 @@ func dirExists(path string) bool {
 // maintained with the source tree. This should only be used in a
 // test/development context.
 func GetDevConfigDir() (string, error) {
+	///////
+	// This workaround allows test functions to be used outside the gopath
+	sampleConfigPath, ok := os.LookupEnv("FABRIC_SAMPLECONFIG_PATH")
+	if ok {
+		return filepath.Clean(sampleConfigPath), nil
+	}
+	// END
+
 	gopath := os.Getenv("GOPATH")
-	if gopath == "" {
-		return "", fmt.Errorf("GOPATH not set")
-	}
-
-	sampleConfigPath := os.Getenv("FABRIC_SAMPLECONFIG_PATH")
-	if sampleConfigPath == "" {
-		sampleConfigPath = "src/github.com/hyperledger/fabric/sampleconfig"
-	}
-
 	for _, p := range filepath.SplitList(gopath) {
-		devPath := filepath.Join(p, sampleConfigPath)
-		if !dirExists(devPath) {
-			continue
+		devPath := filepath.Join(p, "src/github.com/hyperledger/fabric/sampleconfig")
+		if dirExists(devPath) {
+			return devPath, nil
 		}
-
-		return devPath, nil
 	}
 
 	return "", fmt.Errorf("DevConfigDir not found in %s", gopath)
@@ -72,7 +69,7 @@ func GetDevConfigDir() (string, error) {
 func GetDevMspDir() (string, error) {
 	devDir, err := GetDevConfigDir()
 	if err != nil {
-		return "", fmt.Errorf("Error obtaining DevConfigDir: %s", devDir)
+		return "", fmt.Errorf("Error obtaining DevConfigDir: %s", err)
 	}
 
 	return filepath.Join(devDir, "msp"), nil
