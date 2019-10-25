@@ -19,7 +19,7 @@ import (
 	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
 	"github.com/hyperledger/fabric/protos/msp"
 	"github.com/hyperledger/fabric/protos/peer"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 )
 
 type txValidationFlags []uint8

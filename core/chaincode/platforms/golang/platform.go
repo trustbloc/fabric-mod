@@ -24,7 +24,7 @@ import (
 	cutil "github.com/hyperledger/fabric/core/container/util"
 	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/pkg/errors"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 )
 
 // Platform for chaincodes written in Go

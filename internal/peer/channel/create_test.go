@@ -27,7 +27,7 @@ import (
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
 	cb "github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protos/orderer"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 )

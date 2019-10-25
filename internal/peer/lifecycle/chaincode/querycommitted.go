@@ -17,7 +17,7 @@ import (
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 )
 
 // CommittedQuerier holds the dependencies needed to query

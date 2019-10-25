@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 
 	coreconfig "github.com/hyperledger/fabric/core/config"
 	"github.com/stretchr/testify/require"

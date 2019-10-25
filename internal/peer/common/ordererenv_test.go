@@ -10,7 +10,7 @@ import (
 
 	"github.com/hyperledger/fabric/internal/peer/common"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 	"github.com/stretchr/testify/assert"
 )
 

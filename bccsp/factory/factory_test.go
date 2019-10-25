@@ -24,7 +24,7 @@ import (
 	"testing"
 
 	"github.com/hyperledger/fabric/bccsp/pkcs11"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 	"github.com/stretchr/testify/assert"
 )
 

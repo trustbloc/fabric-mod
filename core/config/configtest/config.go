@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 	"github.com/stretchr/testify/assert"
 )
 

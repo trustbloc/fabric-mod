@@ -13,7 +13,7 @@ import (
 
 	"github.com/hyperledger/fabric/extensions/testutil"
 
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 
 	"github.com/stretchr/testify/require"
 )

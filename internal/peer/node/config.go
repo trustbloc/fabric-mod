@@ -13,7 +13,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 )
 
 func ledgerConfig() *ledger.Config {

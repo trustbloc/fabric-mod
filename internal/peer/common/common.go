@@ -30,7 +30,7 @@ import (
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 )
 
 // UndefinedParamValue defines what undefined parameters in the command line will initialise to

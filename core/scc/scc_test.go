@@ -15,7 +15,7 @@ import (
 	ccprovider2 "github.com/hyperledger/fabric/core/mocks/ccprovider"
 	"github.com/hyperledger/fabric/core/peer"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 	"github.com/stretchr/testify/assert"
 )
 

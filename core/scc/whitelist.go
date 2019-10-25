@@ -9,7 +9,7 @@ package scc
 import (
 	"strings"
 
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 )
 
 // Whitelist termintes if a named system chaincode is enabled to run in this peer.

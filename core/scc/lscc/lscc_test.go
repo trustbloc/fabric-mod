@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/common/cauthdsl"

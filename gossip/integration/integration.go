@@ -21,7 +21,7 @@ import (
 	"github.com/hyperledger/fabric/gossip/metrics"
 	"github.com/hyperledger/fabric/gossip/util"
 	"github.com/pkg/errors"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 	"google.golang.org/grpc"
 )
 

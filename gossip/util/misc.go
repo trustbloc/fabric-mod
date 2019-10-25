@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 )
 
 // Equals returns whether a and b are the same

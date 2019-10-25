@@ -16,7 +16,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 
 	configtxtest "github.com/hyperledger/fabric/common/configtx/test"
 	"github.com/hyperledger/fabric/common/metrics/disabled"

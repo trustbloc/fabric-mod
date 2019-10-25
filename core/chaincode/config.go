@@ -13,7 +13,7 @@ import (
 
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/op/go-logging"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 )
 
 const (

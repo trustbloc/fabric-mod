@@ -38,8 +38,8 @@ require (
 	github.com/spf13/cast v1.2.0 // indirect
 	github.com/spf13/cobra v0.0.3
 	github.com/spf13/jwalterweatherman v1.0.0 // indirect
+	github.com/spf13/oldviper v0.0.0
 	github.com/spf13/pflag v1.0.3
-	github.com/spf13/viper v0.0.0-20150908122457-1967d93db724
 	github.com/stretchr/testify v1.3.0
 	github.com/sykesm/zap-logfmt v0.0.2
 	github.com/syndtr/goleveldb v0.0.0-20190318030020-c3a204f8e965
@@ -65,3 +65,5 @@ replace github.com/docker/libnetwork => github.com/docker/libnetwork v0.0.0-2018
 replace github.com/docker/docker => github.com/docker/docker v0.0.0-20180827131323-0c5f8d2b9b23
 
 replace github.com/hyperledger/fabric/extensions => ./extensions
+
+replace github.com/spf13/oldviper => github.com/spf13/viper v0.0.0-20150908122457-1967d93db724

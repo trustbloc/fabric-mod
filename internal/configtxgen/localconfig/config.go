@@ -18,7 +18,7 @@ import (
 	cf "github.com/hyperledger/fabric/core/config"
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/protos/orderer/etcdraft"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 )
 
 const (

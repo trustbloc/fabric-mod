@@ -20,7 +20,7 @@ import (
 	"github.com/hyperledger/fabric/core/chaincode/platforms/util"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 )
 
 var _ = Describe("Platforms", func() {

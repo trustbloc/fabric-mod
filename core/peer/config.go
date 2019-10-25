@@ -31,7 +31,7 @@ import (
 	"github.com/hyperledger/fabric/core/comm"
 	"github.com/hyperledger/fabric/core/config"
 	"github.com/pkg/errors"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/oldviper"
 )
 
 // Config is the struct that defines the Peer configurations.
