@@ -241,10 +241,10 @@ func (m *ChannelInfo) GetChannelId() string {
 }
 
 func init() {
-	proto.RegisterType((*ChaincodeQueryResponse)(nil), "protos.ChaincodeQueryResponse")
-	proto.RegisterType((*ChaincodeInfo)(nil), "protos.ChaincodeInfo")
-	proto.RegisterType((*ChannelQueryResponse)(nil), "protos.ChannelQueryResponse")
-	proto.RegisterType((*ChannelInfo)(nil), "protos.ChannelInfo")
+	proto.RegisterType((*ChaincodeQueryResponse)(nil), "legacy.protos.ChaincodeQueryResponse")
+	proto.RegisterType((*ChaincodeInfo)(nil), "legacy.protos.ChaincodeInfo")
+	proto.RegisterType((*ChannelQueryResponse)(nil), "legacy.protos.ChannelQueryResponse")
+	proto.RegisterType((*ChannelInfo)(nil), "legacy.protos.ChannelInfo")
 }
 
 func init() { proto.RegisterFile("peer/query.proto", fileDescriptor_query_5977fd5a5e763a67) }

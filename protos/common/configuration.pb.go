@@ -283,13 +283,13 @@ func (m *Capability) XXX_DiscardUnknown() {
 var xxx_messageInfo_Capability proto.InternalMessageInfo
 
 func init() {
-	proto.RegisterType((*HashingAlgorithm)(nil), "common.HashingAlgorithm")
-	proto.RegisterType((*BlockDataHashingStructure)(nil), "common.BlockDataHashingStructure")
-	proto.RegisterType((*OrdererAddresses)(nil), "common.OrdererAddresses")
-	proto.RegisterType((*Consortium)(nil), "common.Consortium")
-	proto.RegisterType((*Capabilities)(nil), "common.Capabilities")
-	proto.RegisterMapType((map[string]*Capability)(nil), "common.Capabilities.CapabilitiesEntry")
-	proto.RegisterType((*Capability)(nil), "common.Capability")
+	proto.RegisterType((*HashingAlgorithm)(nil), "legacy.common.HashingAlgorithm")
+	proto.RegisterType((*BlockDataHashingStructure)(nil), "legacy.common.BlockDataHashingStructure")
+	proto.RegisterType((*OrdererAddresses)(nil), "legacy.common.OrdererAddresses")
+	proto.RegisterType((*Consortium)(nil), "legacy.common.Consortium")
+	proto.RegisterType((*Capabilities)(nil), "legacy.common.Capabilities")
+	proto.RegisterMapType((map[string]*Capability)(nil), "legacy.common.Capabilities.CapabilitiesEntry")
+	proto.RegisterType((*Capability)(nil), "legacy.common.Capability")
 }
 
 func init() {

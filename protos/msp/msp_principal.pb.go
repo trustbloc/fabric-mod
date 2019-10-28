@@ -385,14 +385,14 @@ func (m *CombinedPrincipal) GetPrincipals() []*MSPPrincipal {
 }
 
 func init() {
-	proto.RegisterType((*MSPPrincipal)(nil), "common.MSPPrincipal")
-	proto.RegisterType((*OrganizationUnit)(nil), "common.OrganizationUnit")
-	proto.RegisterType((*MSPRole)(nil), "common.MSPRole")
-	proto.RegisterType((*MSPIdentityAnonymity)(nil), "common.MSPIdentityAnonymity")
-	proto.RegisterType((*CombinedPrincipal)(nil), "common.CombinedPrincipal")
-	proto.RegisterEnum("common.MSPPrincipal_Classification", MSPPrincipal_Classification_name, MSPPrincipal_Classification_value)
-	proto.RegisterEnum("common.MSPRole_MSPRoleType", MSPRole_MSPRoleType_name, MSPRole_MSPRoleType_value)
-	proto.RegisterEnum("common.MSPIdentityAnonymity_MSPIdentityAnonymityType", MSPIdentityAnonymity_MSPIdentityAnonymityType_name, MSPIdentityAnonymity_MSPIdentityAnonymityType_value)
+	proto.RegisterType((*MSPPrincipal)(nil), "legacy.common.MSPPrincipal")
+	proto.RegisterType((*OrganizationUnit)(nil), "legacy.common.OrganizationUnit")
+	proto.RegisterType((*MSPRole)(nil), "legacy.common.MSPRole")
+	proto.RegisterType((*MSPIdentityAnonymity)(nil), "legacy.common.MSPIdentityAnonymity")
+	proto.RegisterType((*CombinedPrincipal)(nil), "legacy.common.CombinedPrincipal")
+	proto.RegisterEnum("legacy.common.MSPPrincipal_Classification", MSPPrincipal_Classification_name, MSPPrincipal_Classification_value)
+	proto.RegisterEnum("legacy.common.MSPRole_MSPRoleType", MSPRole_MSPRoleType_name, MSPRole_MSPRoleType_value)
+	proto.RegisterEnum("legacy.common.MSPIdentityAnonymity_MSPIdentityAnonymityType", MSPIdentityAnonymity_MSPIdentityAnonymityType_name, MSPIdentityAnonymity_MSPIdentityAnonymityType_value)
 }
 
 func init() {

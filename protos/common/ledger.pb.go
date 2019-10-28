@@ -75,7 +75,7 @@ func (m *BlockchainInfo) GetPreviousBlockHash() []byte {
 }
 
 func init() {
-	proto.RegisterType((*BlockchainInfo)(nil), "common.BlockchainInfo")
+	proto.RegisterType((*BlockchainInfo)(nil), "legacy.common.BlockchainInfo")
 }
 
 func init() { proto.RegisterFile("common/ledger.proto", fileDescriptor_ledger_2eb5a49d77a3d612) }

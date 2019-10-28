@@ -449,11 +449,11 @@ func (m *SubmitResponse) GetInfo() string {
 }
 
 func init() {
-	proto.RegisterType((*StepRequest)(nil), "orderer.StepRequest")
-	proto.RegisterType((*StepResponse)(nil), "orderer.StepResponse")
-	proto.RegisterType((*ConsensusRequest)(nil), "orderer.ConsensusRequest")
-	proto.RegisterType((*SubmitRequest)(nil), "orderer.SubmitRequest")
-	proto.RegisterType((*SubmitResponse)(nil), "orderer.SubmitResponse")
+	proto.RegisterType((*StepRequest)(nil), "legacy.orderer.StepRequest")
+	proto.RegisterType((*StepResponse)(nil), "legacy.orderer.StepResponse")
+	proto.RegisterType((*ConsensusRequest)(nil), "legacy.orderer.ConsensusRequest")
+	proto.RegisterType((*SubmitRequest)(nil), "legacy.orderer.SubmitRequest")
+	proto.RegisterType((*SubmitResponse)(nil), "legacy.orderer.SubmitResponse")
 }
 
 // Reference imports to suppress errors if they are not otherwise used.

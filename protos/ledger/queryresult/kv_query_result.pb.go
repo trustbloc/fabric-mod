@@ -139,8 +139,8 @@ func (m *KeyModification) GetIsDelete() bool {
 }
 
 func init() {
-	proto.RegisterType((*KV)(nil), "queryresult.KV")
-	proto.RegisterType((*KeyModification)(nil), "queryresult.KeyModification")
+	proto.RegisterType((*KV)(nil), "legacy.queryresult.KV")
+	proto.RegisterType((*KeyModification)(nil), "legacy.queryresult.KeyModification")
 }
 
 func init() {

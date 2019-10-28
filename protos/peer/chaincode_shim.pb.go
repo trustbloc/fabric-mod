@@ -999,7 +999,7 @@ func init() {
 	proto.RegisterType((*QueryResponseMetadata)(nil), "protos.QueryResponseMetadata")
 	proto.RegisterType((*StateMetadata)(nil), "protos.StateMetadata")
 	proto.RegisterType((*StateMetadataResult)(nil), "protos.StateMetadataResult")
-	proto.RegisterEnum("protos.ChaincodeMessage_Type", ChaincodeMessage_Type_name, ChaincodeMessage_Type_value)
+	proto.RegisterEnum("legacy.protos.ChaincodeMessage_Type", ChaincodeMessage_Type_name, ChaincodeMessage_Type_value)
 }
 
 // Reference imports to suppress errors if they are not otherwise used.

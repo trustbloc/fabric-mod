@@ -374,12 +374,12 @@ func (m *ChaincodeAction) GetTokenOperations() []*token.TokenOperation {
 }
 
 func init() {
-	proto.RegisterType((*SignedProposal)(nil), "protos.SignedProposal")
-	proto.RegisterType((*Proposal)(nil), "protos.Proposal")
-	proto.RegisterType((*ChaincodeHeaderExtension)(nil), "protos.ChaincodeHeaderExtension")
-	proto.RegisterType((*ChaincodeProposalPayload)(nil), "protos.ChaincodeProposalPayload")
-	proto.RegisterMapType((map[string][]byte)(nil), "protos.ChaincodeProposalPayload.TransientMapEntry")
-	proto.RegisterType((*ChaincodeAction)(nil), "protos.ChaincodeAction")
+	proto.RegisterType((*SignedProposal)(nil), "legacy.protos.SignedProposal")
+	proto.RegisterType((*Proposal)(nil), "legacy.protos.Proposal")
+	proto.RegisterType((*ChaincodeHeaderExtension)(nil), "legacy.protos.ChaincodeHeaderExtension")
+	proto.RegisterType((*ChaincodeProposalPayload)(nil), "legacy.protos.ChaincodeProposalPayload")
+	proto.RegisterMapType((map[string][]byte)(nil), "legacy.protos.ChaincodeProposalPayload.TransientMapEntry")
+	proto.RegisterType((*ChaincodeAction)(nil), "legacy.protos.ChaincodeAction")
 }
 
 func init() { proto.RegisterFile("peer/proposal.proto", fileDescriptor_proposal_1d9e92dd580783c0) }

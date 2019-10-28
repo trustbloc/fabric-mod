@@ -188,11 +188,11 @@ func (m *ACLs) GetAcls() map[string]*APIResource {
 }
 
 func init() {
-	proto.RegisterType((*AnchorPeers)(nil), "protos.AnchorPeers")
-	proto.RegisterType((*AnchorPeer)(nil), "protos.AnchorPeer")
-	proto.RegisterType((*APIResource)(nil), "protos.APIResource")
-	proto.RegisterType((*ACLs)(nil), "protos.ACLs")
-	proto.RegisterMapType((map[string]*APIResource)(nil), "protos.ACLs.AclsEntry")
+	proto.RegisterType((*AnchorPeers)(nil), "legacy.protos.AnchorPeers")
+	proto.RegisterType((*AnchorPeer)(nil), "legacy.protos.AnchorPeer")
+	proto.RegisterType((*APIResource)(nil), "legacy.protos.APIResource")
+	proto.RegisterType((*ACLs)(nil), "legacy.protos.ACLs")
+	proto.RegisterMapType((map[string]*APIResource)(nil), "legacy.protos.ACLs.AclsEntry")
 }
 
 func init() {

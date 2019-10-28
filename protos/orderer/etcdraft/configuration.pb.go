@@ -265,10 +265,10 @@ func (m *BlockMetadata) GetRaftIndex() uint64 {
 }
 
 func init() {
-	proto.RegisterType((*ConfigMetadata)(nil), "etcdraft.ConfigMetadata")
-	proto.RegisterType((*Consenter)(nil), "etcdraft.Consenter")
-	proto.RegisterType((*Options)(nil), "etcdraft.Options")
-	proto.RegisterType((*BlockMetadata)(nil), "etcdraft.BlockMetadata")
+	proto.RegisterType((*ConfigMetadata)(nil), "legacy.etcdraft.ConfigMetadata")
+	proto.RegisterType((*Consenter)(nil), "legacy.etcdraft.Consenter")
+	proto.RegisterType((*Options)(nil), "legacy.etcdraft.Options")
+	proto.RegisterType((*BlockMetadata)(nil), "legacy.etcdraft.BlockMetadata")
 }
 
 func init() {

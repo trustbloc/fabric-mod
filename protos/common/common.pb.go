@@ -816,22 +816,22 @@ func (m *OrdererBlockMetadata) GetConsenterMetadata() []byte {
 }
 
 func init() {
-	proto.RegisterType((*LastConfig)(nil), "common.LastConfig")
-	proto.RegisterType((*Metadata)(nil), "common.Metadata")
-	proto.RegisterType((*MetadataSignature)(nil), "common.MetadataSignature")
-	proto.RegisterType((*Header)(nil), "common.Header")
-	proto.RegisterType((*ChannelHeader)(nil), "common.ChannelHeader")
-	proto.RegisterType((*SignatureHeader)(nil), "common.SignatureHeader")
-	proto.RegisterType((*Payload)(nil), "common.Payload")
-	proto.RegisterType((*Envelope)(nil), "common.Envelope")
-	proto.RegisterType((*Block)(nil), "common.Block")
-	proto.RegisterType((*BlockHeader)(nil), "common.BlockHeader")
-	proto.RegisterType((*BlockData)(nil), "common.BlockData")
-	proto.RegisterType((*BlockMetadata)(nil), "common.BlockMetadata")
-	proto.RegisterType((*OrdererBlockMetadata)(nil), "common.OrdererBlockMetadata")
-	proto.RegisterEnum("common.Status", Status_name, Status_value)
-	proto.RegisterEnum("common.HeaderType", HeaderType_name, HeaderType_value)
-	proto.RegisterEnum("common.BlockMetadataIndex", BlockMetadataIndex_name, BlockMetadataIndex_value)
+	proto.RegisterType((*LastConfig)(nil), "legacy.common.LastConfig")
+	proto.RegisterType((*Metadata)(nil), "legacy.common.Metadata")
+	proto.RegisterType((*MetadataSignature)(nil), "legacy.common.MetadataSignature")
+	proto.RegisterType((*Header)(nil), "legacy.common.Header")
+	proto.RegisterType((*ChannelHeader)(nil), "legacy.common.ChannelHeader")
+	proto.RegisterType((*SignatureHeader)(nil), "legacy.common.SignatureHeader")
+	proto.RegisterType((*Payload)(nil), "legacy.common.Payload")
+	proto.RegisterType((*Envelope)(nil), "legacy.common.Envelope")
+	proto.RegisterType((*Block)(nil), "legacy.common.Block")
+	proto.RegisterType((*BlockHeader)(nil), "legacy.common.BlockHeader")
+	proto.RegisterType((*BlockData)(nil), "legacy.common.BlockData")
+	proto.RegisterType((*BlockMetadata)(nil), "legacy.common.BlockMetadata")
+	proto.RegisterType((*OrdererBlockMetadata)(nil), "legacy.common.OrdererBlockMetadata")
+	proto.RegisterEnum("legacy.common.Status", Status_name, Status_value)
+	proto.RegisterEnum("legacy.common.HeaderType", HeaderType_name, HeaderType_value)
+	proto.RegisterEnum("legacy.common.BlockMetadataIndex", BlockMetadataIndex_name, BlockMetadataIndex_value)
 }
 
 func init() { proto.RegisterFile("common/common.proto", fileDescriptor_common_0c3f7ee76b4b0e52) }

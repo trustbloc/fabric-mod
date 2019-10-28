@@ -250,11 +250,11 @@ func (m *ConfigTree) GetResourcesConfig() *common.Config {
 }
 
 func init() {
-	proto.RegisterType((*ChaincodeIdentifier)(nil), "protos.ChaincodeIdentifier")
-	proto.RegisterType((*ChaincodeValidation)(nil), "protos.ChaincodeValidation")
-	proto.RegisterType((*VSCCArgs)(nil), "protos.VSCCArgs")
-	proto.RegisterType((*ChaincodeEndorsement)(nil), "protos.ChaincodeEndorsement")
-	proto.RegisterType((*ConfigTree)(nil), "protos.ConfigTree")
+	proto.RegisterType((*ChaincodeIdentifier)(nil), "legacy.protos.ChaincodeIdentifier")
+	proto.RegisterType((*ChaincodeValidation)(nil), "legacy.protos.ChaincodeValidation")
+	proto.RegisterType((*VSCCArgs)(nil), "legacy.protos.VSCCArgs")
+	proto.RegisterType((*ChaincodeEndorsement)(nil), "legacy.protos.ChaincodeEndorsement")
+	proto.RegisterType((*ConfigTree)(nil), "legacy.protos.ConfigTree")
 }
 
 func init() { proto.RegisterFile("peer/resources.proto", fileDescriptor_resources_7e2449932c8d48e8) }

@@ -83,7 +83,7 @@ func (m *ChaincodeEvent) GetPayload() []byte {
 }
 
 func init() {
-	proto.RegisterType((*ChaincodeEvent)(nil), "protos.ChaincodeEvent")
+	proto.RegisterType((*ChaincodeEvent)(nil), "legacy.protos.ChaincodeEvent")
 }
 
 func init() {

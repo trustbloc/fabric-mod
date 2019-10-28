@@ -584,14 +584,14 @@ func (m *TokenId) GetIndex() uint32 {
 }
 
 func init() {
-	proto.RegisterType((*TokenTransaction)(nil), "token.TokenTransaction")
-	proto.RegisterType((*TokenAction)(nil), "token.TokenAction")
-	proto.RegisterType((*TokenOwner)(nil), "token.TokenOwner")
-	proto.RegisterType((*Issue)(nil), "token.Issue")
-	proto.RegisterType((*Transfer)(nil), "token.Transfer")
-	proto.RegisterType((*Token)(nil), "token.Token")
-	proto.RegisterType((*TokenId)(nil), "token.TokenId")
-	proto.RegisterEnum("token.TokenOwner_Type", TokenOwner_Type_name, TokenOwner_Type_value)
+	proto.RegisterType((*TokenTransaction)(nil), "legacy.token.TokenTransaction")
+	proto.RegisterType((*TokenAction)(nil), "legacy.token.TokenAction")
+	proto.RegisterType((*TokenOwner)(nil), "legacy.token.TokenOwner")
+	proto.RegisterType((*Issue)(nil), "legacy.token.Issue")
+	proto.RegisterType((*Transfer)(nil), "legacy.token.Transfer")
+	proto.RegisterType((*Token)(nil), "legacy.token.Token")
+	proto.RegisterType((*TokenId)(nil), "legacy.token.TokenId")
+	proto.RegisterEnum("legacy.token.TokenOwner_Type", TokenOwner_Type_name, TokenOwner_Type_value)
 }
 
 func init() {

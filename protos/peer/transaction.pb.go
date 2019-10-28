@@ -468,14 +468,14 @@ func (m *ChaincodeEndorsedAction) GetEndorsements() []*Endorsement {
 }
 
 func init() {
-	proto.RegisterType((*SignedTransaction)(nil), "protos.SignedTransaction")
-	proto.RegisterType((*ProcessedTransaction)(nil), "protos.ProcessedTransaction")
-	proto.RegisterType((*Transaction)(nil), "protos.Transaction")
-	proto.RegisterType((*TransactionAction)(nil), "protos.TransactionAction")
-	proto.RegisterType((*ChaincodeActionPayload)(nil), "protos.ChaincodeActionPayload")
-	proto.RegisterType((*ChaincodeEndorsedAction)(nil), "protos.ChaincodeEndorsedAction")
-	proto.RegisterEnum("protos.TxValidationCode", TxValidationCode_name, TxValidationCode_value)
-	proto.RegisterEnum("protos.MetaDataKeys", MetaDataKeys_name, MetaDataKeys_value)
+	proto.RegisterType((*SignedTransaction)(nil), "legacy.protos.SignedTransaction")
+	proto.RegisterType((*ProcessedTransaction)(nil), "legacy.protos.ProcessedTransaction")
+	proto.RegisterType((*Transaction)(nil), "legacy.protos.Transaction")
+	proto.RegisterType((*TransactionAction)(nil), "legacy.protos.TransactionAction")
+	proto.RegisterType((*ChaincodeActionPayload)(nil), "legacy.protos.ChaincodeActionPayload")
+	proto.RegisterType((*ChaincodeEndorsedAction)(nil), "legacy.protos.ChaincodeEndorsedAction")
+	proto.RegisterEnum("legacy.protos.TxValidationCode", TxValidationCode_name, TxValidationCode_value)
+	proto.RegisterEnum("legacy.protos.MetaDataKeys", MetaDataKeys_name, MetaDataKeys_value)
 }
 
 func init() { proto.RegisterFile("peer/transaction.proto", fileDescriptor_transaction_6a3cf269faade5fe) }

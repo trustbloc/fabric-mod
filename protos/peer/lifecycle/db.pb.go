@@ -234,8 +234,8 @@ func _StateData_OneofSizer(msg proto.Message) (n int) {
 }
 
 func init() {
-	proto.RegisterType((*StateMetadata)(nil), "lifecycle.StateMetadata")
-	proto.RegisterType((*StateData)(nil), "lifecycle.StateData")
+	proto.RegisterType((*StateMetadata)(nil), "legacy.lifecycle.StateMetadata")
+	proto.RegisterType((*StateData)(nil), "legacy.lifecycle.StateData")
 }
 
 func init() { proto.RegisterFile("peer/lifecycle/db.proto", fileDescriptor_db_111b6af4c0cb631d) }

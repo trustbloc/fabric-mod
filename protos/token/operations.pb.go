@@ -327,9 +327,9 @@ func (m *TokenActionTerms) GetOutputs() []*Token {
 }
 
 func init() {
-	proto.RegisterType((*TokenOperation)(nil), "token.TokenOperation")
-	proto.RegisterType((*TokenOperationAction)(nil), "token.TokenOperationAction")
-	proto.RegisterType((*TokenActionTerms)(nil), "token.TokenActionTerms")
+	proto.RegisterType((*TokenOperation)(nil), "legacy.token.TokenOperation")
+	proto.RegisterType((*TokenOperationAction)(nil), "legacy.token.TokenOperationAction")
+	proto.RegisterType((*TokenActionTerms)(nil), "legacy.token.TokenActionTerms")
 }
 
 func init() { proto.RegisterFile("token/operations.proto", fileDescriptor_operations_019bb882640dd787) }

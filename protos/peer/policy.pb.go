@@ -163,7 +163,7 @@ func _ApplicationPolicy_OneofSizer(msg proto.Message) (n int) {
 }
 
 func init() {
-	proto.RegisterType((*ApplicationPolicy)(nil), "protos.ApplicationPolicy")
+	proto.RegisterType((*ApplicationPolicy)(nil), "legacy.protos.ApplicationPolicy")
 }
 
 func init() { proto.RegisterFile("peer/policy.proto", fileDescriptor_policy_cb2dcc38242d4048) }

@@ -519,12 +519,12 @@ func (m *CollectionCriteria) GetNamespace() string {
 }
 
 func init() {
-	proto.RegisterType((*CollectionConfigPackage)(nil), "common.CollectionConfigPackage")
-	proto.RegisterType((*CollectionConfig)(nil), "common.CollectionConfig")
-	proto.RegisterType((*StaticCollectionConfig)(nil), "common.StaticCollectionConfig")
-	proto.RegisterType((*CollectionPolicyConfig)(nil), "common.CollectionPolicyConfig")
-	proto.RegisterType((*CollectionCriteria)(nil), "common.CollectionCriteria")
-	proto.RegisterEnum("common.CollectionType", CollectionType_name, CollectionType_value)
+	proto.RegisterType((*CollectionConfigPackage)(nil), "legacy.common.CollectionConfigPackage")
+	proto.RegisterType((*CollectionConfig)(nil), "legacy.common.CollectionConfig")
+	proto.RegisterType((*StaticCollectionConfig)(nil), "legacy.common.StaticCollectionConfig")
+	proto.RegisterType((*CollectionPolicyConfig)(nil), "legacy.common.CollectionPolicyConfig")
+	proto.RegisterType((*CollectionCriteria)(nil), "legacy.common.CollectionCriteria")
+	proto.RegisterEnum("legacy.common.CollectionType", CollectionType_name, CollectionType_value)
 }
 
 func init() { proto.RegisterFile("common/collection.proto", fileDescriptor_collection_451c6dbeb05528aa) }

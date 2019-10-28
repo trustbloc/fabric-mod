@@ -82,7 +82,7 @@ func (m *SignedChaincodeDeploymentSpec) GetOwnerEndorsements() []*Endorsement {
 }
 
 func init() {
-	proto.RegisterType((*SignedChaincodeDeploymentSpec)(nil), "protos.SignedChaincodeDeploymentSpec")
+	proto.RegisterType((*SignedChaincodeDeploymentSpec)(nil), "legacy.protos.SignedChaincodeDeploymentSpec")
 }
 
 func init() {

@@ -426,7 +426,7 @@ func init() {
 	proto.RegisterType((*LogSpecRequest)(nil), "protos.LogSpecRequest")
 	proto.RegisterType((*LogSpecResponse)(nil), "protos.LogSpecResponse")
 	proto.RegisterType((*AdminOperation)(nil), "protos.AdminOperation")
-	proto.RegisterEnum("protos.ServerStatus_StatusCode", ServerStatus_StatusCode_name, ServerStatus_StatusCode_value)
+	proto.RegisterEnum("legacy.protos.ServerStatus_StatusCode", ServerStatus_StatusCode_name, ServerStatus_StatusCode_value)
 }
 
 // Reference imports to suppress errors if they are not otherwise used.

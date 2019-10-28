@@ -294,10 +294,10 @@ func (m *Endorsement) GetSignature() []byte {
 }
 
 func init() {
-	proto.RegisterType((*ProposalResponse)(nil), "protos.ProposalResponse")
-	proto.RegisterType((*Response)(nil), "protos.Response")
-	proto.RegisterType((*ProposalResponsePayload)(nil), "protos.ProposalResponsePayload")
-	proto.RegisterType((*Endorsement)(nil), "protos.Endorsement")
+	proto.RegisterType((*ProposalResponse)(nil), "legacy.protos.ProposalResponse")
+	proto.RegisterType((*Response)(nil), "legacy.protos.Response")
+	proto.RegisterType((*ProposalResponsePayload)(nil), "legacy.protos.ProposalResponsePayload")
+	proto.RegisterType((*Endorsement)(nil), "legacy.protos.Endorsement")
 }
 
 func init() {
