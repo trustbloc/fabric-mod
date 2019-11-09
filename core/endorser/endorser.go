@@ -152,7 +152,7 @@ func NewEndorserServer(privDist privateDataDistributor, s Support, pr *platforms
 			&qeProviderFactory{
 				getLedger: peer.GetLedger,
 			},
-			blockpublisher.GetProvider()),
+			blockpublisher.ProviderInstance),
 	}
 	return e
 }

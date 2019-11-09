@@ -9,11 +9,15 @@ package blockpublisher
 import (
 	"github.com/hyperledger/fabric/extensions/gossip/api"
 	cb "github.com/hyperledger/fabric/protos/common"
-	"sync"
 )
 
-var blockPublisherProvider *Provider
-var once sync.Once
+// ProviderInstance manages a block publisher for each channel
+var ProviderInstance = &Provider{}
+
+// ForChannel returns the block publisher for the given channel
+func ForChannel(channelID string) api.BlockPublisher {
+	return ProviderInstance.ForChannel(channelID)
+}
 
 // Provider is a noop block publisher provider
 type Provider struct {
@@ -27,14 +31,6 @@ func (p *Provider) ForChannel(channelID string) api.BlockPublisher {
 // Close does nothing
 func (p *Provider) Close() {
 	// Nothing to do
-}
-
-// GetProvider returns block publisher provider
-func GetProvider() *Provider {
-	once.Do(func() {
-		blockPublisherProvider = &Provider{}
-	})
-	return blockPublisherProvider
 }
 
 type publisher struct {
