@@ -18,7 +18,7 @@ const (
 )
 
 func TestProvider(t *testing.T) {
-	p := GetProvider()
+	p := ProviderInstance
 	require.NotNil(t, p)
 
 	publisher := p.ForChannel(channelID)

@@ -43,6 +43,7 @@ import (
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	"github.com/hyperledger/fabric/extensions/collections/storeprovider"
 	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
+	"github.com/hyperledger/fabric/extensions/resource"
 	transientstoreext "github.com/hyperledger/fabric/extensions/storage/transientstore"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/service"
@@ -443,7 +444,7 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 		ChannelID:                       bundle.ConfigtxValidator().ChainID(),
 	}, sccp, pm, NewChannelPolicyManagerGetter())
 
-	blkPublisher := blockpublisher.GetProvider().ForChannel(cid)
+	blkPublisher := blockpublisher.ForChannel(cid)
 	xstate.ChannelJoined(cid, ledger, blkPublisher)
 
 	c := committer.NewLedgerCommitterReactive(ledger, func(block *common.Block) error {
@@ -499,6 +500,8 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 		cb:        cb,
 		committer: c,
 	}
+
+	resource.ChannelJoined(cid)
 
 	return nil
 }

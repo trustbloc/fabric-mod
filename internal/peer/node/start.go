@@ -75,6 +75,7 @@ import (
 	extcc "github.com/hyperledger/fabric/extensions/chaincode"
 	supportapi "github.com/hyperledger/fabric/extensions/collections/api/support"
 	collretriever "github.com/hyperledger/fabric/extensions/collections/retriever"
+	"github.com/hyperledger/fabric/extensions/resource"
 	gossipcommon "github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/service"
 	peergossip "github.com/hyperledger/fabric/internal/peer/gossip"
@@ -255,7 +256,7 @@ func serve(args []string) error {
 		func() supportapi.GossipAdapter {
 			return service.GetGossipService()
 		},
-		blockpublisher.GetProvider().ForChannel,
+		blockpublisher.ProviderInstance.ForChannel,
 	)
 
 	// initialize resource management exit
@@ -490,7 +491,11 @@ func serve(args []string) error {
 	// get the list of system chain codes provided by extensions
 	extscc := extcc.CreateSCC(
 		sccp, aclProvider, lifecycleValidatorCommitter,
-		newGossipProvider(), blockpublisher.GetProvider())
+		blockpublisher.ProviderInstance,
+		newGossipProvider(),
+		newLedgerProvider(),
+		newMSPProvider(),
+	)
 
 	for _, cc := range append([]scc.SelfDescribingSysCC{lsccInst, csccInst, qsccInst, lifecycleSCC}, append(sccs, extscc...)...) {
 		sccp.RegisterSysCC(cc)
@@ -657,6 +662,17 @@ func serve(args []string) error {
 		syscall.SIGINT:  func() { serve <- nil },
 		syscall.SIGTERM: func() { serve <- nil },
 	}))
+
+	err = resource.Initialize(
+		blockpublisher.ProviderInstance,
+		newGossipProvider(),
+		newLedgerProvider(),
+		newMSPProvider(),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer resource.Close()
 
 	logger.Infof("Started peer with ID=[%s], network ID=[%s], address=[%s]", coreConfig.PeerID, coreConfig.NetworkID, coreConfig.PeerAddress)
 
