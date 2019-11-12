@@ -21,8 +21,9 @@ const (
 )
 
 func TestFilterPubSimulationResults(t *testing.T) {
-	f := NewCollRWSetFilter(&mockQEProviderFactory{}, &mockBlockPublisherProvider{})
+	f := NewCollRWSetFilter()
 	require.NotNil(t, f)
+	require.Equal(t, f, f.Initialize())
 	pubSimulationResults := &rwset.TxReadWriteSet{}
 	p, err := f.Filter(channelID, pubSimulationResults)
 	assert.NoError(t, err)

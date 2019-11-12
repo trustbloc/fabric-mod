@@ -20,6 +20,11 @@ func NewProviderFactory() *StoreProvider {
 type StoreProvider struct {
 }
 
+// Initialize initializes the store provider
+func (sp *StoreProvider) Initialize() {
+	// Noop by default
+}
+
 // StoreForChannel returns a noop store
 func (sp *StoreProvider) StoreForChannel(channel string) storeapi.Store {
 	return &store{}

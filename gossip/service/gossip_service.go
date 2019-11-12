@@ -7,7 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package service
 
 import (
-	xgossipservice "github.com/hyperledger/fabric/extensions/gossip/service"
 	"sync"
 
 	"github.com/hyperledger/fabric/common/metrics"
@@ -20,6 +19,7 @@ import (
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	extgossipapi "github.com/hyperledger/fabric/extensions/gossip/api"
 	"github.com/hyperledger/fabric/extensions/gossip/dispatcher"
+	xgossipservice "github.com/hyperledger/fabric/extensions/gossip/service"
 	"github.com/hyperledger/fabric/gossip/api"
 	gossipCommon "github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/election"
@@ -41,6 +41,8 @@ import (
 var (
 	gossipServiceInstance *gossipServiceImpl
 	once                  sync.Once
+
+	dispatcherProvider = dispatcher.NewProvider()
 )
 
 type gossipSvc gossip.Gossip
@@ -318,7 +320,7 @@ func (g *gossipServiceImpl) InitializeChannel(chainID string, endpoints []string
 	blockingMode := !viper.GetBool("peer.gossip.nonBlockingCommitMode")
 	g.chains[chainID] = state.NewGossipStateProvider(chainID, servicesAdapter, coordinator,
 		g.metrics.StateMetrics, blockingMode,
-		dispatcher.New(chainID, support.CollDataStore, servicesAdapter, support.Ledger, support.BlockPublisher), &extgossipapi.Support{Ledger: support.Ledger, LedgerHeightProvider: support.BlockPublisher, BlockEventer: support.BlockEventer})
+		dispatcherProvider.ForChannel(chainID, support.CollDataStore), &extgossipapi.Support{Ledger: support.Ledger, LedgerHeightProvider: support.BlockPublisher, BlockEventer: support.BlockEventer})
 	if g.deliveryService[chainID] == nil {
 		var err error
 		g.deliveryService[chainID], err = g.deliveryFactory.Service(g, endpoints, g.mcs)

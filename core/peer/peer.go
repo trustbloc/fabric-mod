@@ -11,10 +11,6 @@ import (
 	"net"
 	"sync"
 
-	xchannel "github.com/hyperledger/fabric/extensions/channel"
-
-	xstate "github.com/hyperledger/fabric/extensions/gossip/state"
-
 	"github.com/hyperledger/fabric/common/channelconfig"
 	cc "github.com/hyperledger/fabric/common/config"
 	"github.com/hyperledger/fabric/common/configtx"
@@ -40,9 +36,11 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/customtx"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
 	"github.com/hyperledger/fabric/core/transientstore"
+	xchannel "github.com/hyperledger/fabric/extensions/channel"
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	"github.com/hyperledger/fabric/extensions/collections/storeprovider"
 	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
+	xstate "github.com/hyperledger/fabric/extensions/gossip/state"
 	"github.com/hyperledger/fabric/extensions/resource"
 	transientstoreext "github.com/hyperledger/fabric/extensions/storage/transientstore"
 	"github.com/hyperledger/fabric/gossip/api"
@@ -99,21 +97,12 @@ type chainSupport struct {
 
 var TransientStoreFactory = &storeProvider{stores: make(map[string]transientstore.Store)}
 
-var collectionDataStoreFactory CollStoreProvider
-var initCollDataStoreFactoryOnce sync.Once
+var collectionDataStoreFactory = storeprovider.NewProviderFactory()
 
 // CollStoreProvider manages the collection stores for multiple channels
 type CollStoreProvider interface {
 	StoreForChannel(channelID string) storeapi.Store
 	OpenStore(channelID string) (storeapi.Store, error)
-}
-
-// CollectionDataStoreFactory returns transient data stores by channel ID
-func CollectionDataStoreFactory() CollStoreProvider {
-	initCollDataStoreFactoryOnce.Do(func() {
-		collectionDataStoreFactory = storeprovider.NewProviderFactory()
-	})
-	return collectionDataStoreFactory
 }
 
 type storeProvider struct {
@@ -471,7 +460,7 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 	if err != nil {
 		return errors.Wrapf(err, "[channel %s] failed opening transient store", bundle.ConfigtxValidator().ChainID())
 	}
-	collDataStore, err := CollectionDataStoreFactory().OpenStore(bundle.ConfigtxValidator().ChainID())
+	collDataStore, err := collectionDataStoreFactory.OpenStore(bundle.ConfigtxValidator().ChainID())
 	if err != nil {
 		return errors.Wrapf(err, "[channel %s] failed opening transient data store", bundle.ConfigtxValidator().ChainID())
 	}
