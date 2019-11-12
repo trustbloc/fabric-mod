@@ -46,7 +46,7 @@ type Invocation func() (interface{}, error)
 // Invoke invokes the given invocation with the given retry options
 func Invoke(invoke Invocation, opts ...Opt) (interface{}, error) {
 	retryOpts := &retryOpts{
-		MaxAttempts:    5,
+		MaxAttempts:    10,
 		BackoffFactor:  1.5,
 		InitialBackoff: 250 * time.Millisecond,
 		MaxBackoff:     5 * time.Second,
