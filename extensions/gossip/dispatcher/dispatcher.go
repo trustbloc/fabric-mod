@@ -7,9 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 package dispatcher
 
 import (
-	"github.com/hyperledger/fabric/core/ledger"
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
-	gossipapi "github.com/hyperledger/fabric/extensions/gossip/api"
+	"github.com/hyperledger/fabric/extensions/collections/api/support"
 	gossip "github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/discovery"
@@ -22,17 +21,27 @@ type gossipAdapter interface {
 	IdentityInfo() gossip.PeerIdentitySet
 }
 
-type blockPublisher interface {
-	AddCCUpgradeHandler(handler gossipapi.ChaincodeUpgradeHandler)
+type collConfigRetrieverProvider interface {
+	ForChannel(channelID string) support.CollectionConfigRetriever
 }
 
-// New returns a new Gossip message dispatcher
-func New(
-	channelID string,
-	dataStore storeapi.Store,
-	gossipAdapter gossipAdapter,
-	ledger ledger.PeerLedger,
-	blockPublisher blockPublisher) *Dispatcher {
+// Provider is a Gossip dispatcher provider
+type Provider struct {
+}
+
+// New returns a new Gossip message dispatcher provider
+func NewProvider() *Provider {
+	return &Provider{}
+}
+
+// Initialize initializes the provider
+func (p *Provider) Initialize(gossipAdapter gossipAdapter, ccProvider collConfigRetrieverProvider) *Provider {
+	// Noop
+	return p
+}
+
+// ForChannel returns a new dispatcher for the given channel
+func (p *Provider) ForChannel(channelID string, dataStore storeapi.Store) *Dispatcher {
 	return &Dispatcher{}
 }
 

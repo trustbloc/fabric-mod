@@ -9,7 +9,6 @@ package endorser
 import (
 	"context"
 	"fmt"
-	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
 	"strconv"
 	"time"
 
@@ -23,12 +22,9 @@ import (
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/common/validation"
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/peer"
 	xendorser "github.com/hyperledger/fabric/extensions/endorser"
-	xendorserapi "github.com/hyperledger/fabric/extensions/endorser/api"
 	"github.com/hyperledger/fabric/internal/pkg/identity"
 	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/ledger/rwset"
 	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protos/transientstore"
 	"github.com/hyperledger/fabric/protoutil"
@@ -107,18 +103,13 @@ type Support interface {
 	GetDeployedCCInfoProvider() ledger.DeployedChaincodeInfoProvider
 }
 
-type rwSetFilter interface {
-	Filter(channelID string, pubSimulationResults *rwset.TxReadWriteSet) (*rwset.TxReadWriteSet, error)
-}
-
 // Endorser provides the Endorser service ProcessProposal
 type Endorser struct {
 	distributePrivateData privateDataDistributor
 	s                     Support
 	PlatformRegistry      *platforms.Registry
 	PvtRWSetAssembler
-	Metrics     *EndorserMetrics
-	rwSetFilter rwSetFilter
+	Metrics *EndorserMetrics
 }
 
 // validateResult provides the result of endorseProposal verification
@@ -130,15 +121,7 @@ type validateResult struct {
 	resp    *pb.ProposalResponse
 }
 
-type ledgerProvider func(cid string) ledger.PeerLedger
-
-type qeProviderFactory struct {
-	getLedger ledgerProvider
-}
-
-func (q *qeProviderFactory) GetQueryExecutorProvider(channelID string) xendorserapi.QueryExecutorProvider {
-	return q.getLedger(channelID)
-}
+var rwSetFilter = xendorser.NewCollRWSetFilter()
 
 // NewEndorserServer creates and returns a new Endorser server instance.
 func NewEndorserServer(privDist privateDataDistributor, s Support, pr *platforms.Registry, metricsProv metrics.Provider) *Endorser {
@@ -148,11 +131,6 @@ func NewEndorserServer(privDist privateDataDistributor, s Support, pr *platforms
 		PlatformRegistry:      pr,
 		PvtRWSetAssembler:     &rwSetAssembler{},
 		Metrics:               NewEndorserMetrics(metricsProv),
-		rwSetFilter: xendorser.NewCollRWSetFilter(
-			&qeProviderFactory{
-				getLedger: peer.GetLedger,
-			},
-			blockpublisher.ProviderInstance),
 	}
 	return e
 }
@@ -325,7 +303,7 @@ func (e *Endorser) SimulateProposal(txParams *ccprovider.TransactionParams, cid 
 		}
 
 		txParams.TXSimulator.Done()
-		pubSimRes, err := e.rwSetFilter.Filter(txParams.ChannelID, simResult.PubSimulationResults)
+		pubSimRes, err := rwSetFilter.Filter(txParams.ChannelID, simResult.PubSimulationResults)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}

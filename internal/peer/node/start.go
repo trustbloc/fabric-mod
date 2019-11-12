@@ -8,7 +8,6 @@ package node
 
 import (
 	"fmt"
-	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
 	"net"
 	"net/http"
 	"os"
@@ -73,8 +72,8 @@ import (
 	"github.com/hyperledger/fabric/discovery/support/config"
 	"github.com/hyperledger/fabric/discovery/support/gossip"
 	extcc "github.com/hyperledger/fabric/extensions/chaincode"
-	supportapi "github.com/hyperledger/fabric/extensions/collections/api/support"
 	collretriever "github.com/hyperledger/fabric/extensions/collections/retriever"
+	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
 	"github.com/hyperledger/fabric/extensions/resource"
 	gossipcommon "github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/service"
@@ -250,14 +249,7 @@ func serve(args []string) error {
 
 	lifecycleCache := lifecycle.NewCache(lifecycleResources, mspID, metadataManager)
 
-	collDataProvider := collretriever.NewProvider(
-		peer.CollectionDataStoreFactory().StoreForChannel,
-		peer.GetLedger,
-		func() supportapi.GossipAdapter {
-			return service.GetGossipService()
-		},
-		blockpublisher.ProviderInstance.ForChannel,
-	)
+	collDataProvider := collretriever.NewProvider()
 
 	// initialize resource management exit
 	ledgermgmt.Initialize(

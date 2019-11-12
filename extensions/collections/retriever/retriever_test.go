@@ -14,9 +14,9 @@ import (
 )
 
 func TestNewProvider(t *testing.T) {
-	p := NewProvider(nil, nil, nil, nil)
+	p := NewProvider()
 	require.NotNil(t, p)
-
+	require.Equal(t, p, p.Initialize())
 	assert.PanicsWithValue(t, "not implemented", func() {
 		p.RetrieverForChannel("testchannel")
 	})
