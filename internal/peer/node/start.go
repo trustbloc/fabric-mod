@@ -571,6 +571,18 @@ func serve(args []string) error {
 		service.GetGossipService().UpdateChaincodes(chaincodes.AsChaincodes(), gossipcommon.ChainID(channel))
 	}))
 
+	// Initialize all of the registered resources
+	err = resource.Initialize(
+		blockpublisher.ProviderInstance,
+		newGossipProvider(),
+		newLedgerProvider(),
+		newMSPProvider(),
+	)
+	if err != nil {
+		panic(err)
+	}
+	defer resource.Close()
+
 	// this brings up all the channels
 	peer.Initialize(
 		func(cid string) {
@@ -654,17 +666,6 @@ func serve(args []string) error {
 		syscall.SIGINT:  func() { serve <- nil },
 		syscall.SIGTERM: func() { serve <- nil },
 	}))
-
-	err = resource.Initialize(
-		blockpublisher.ProviderInstance,
-		newGossipProvider(),
-		newLedgerProvider(),
-		newMSPProvider(),
-	)
-	if err != nil {
-		panic(err)
-	}
-	defer resource.Close()
 
 	logger.Infof("Started peer with ID=[%s], network ID=[%s], address=[%s]", coreConfig.PeerID, coreConfig.NetworkID, coreConfig.PeerAddress)
 
