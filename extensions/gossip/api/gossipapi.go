@@ -79,3 +79,8 @@ type Support struct {
 	LedgerHeightProvider LedgerHeightProvider
 	BlockEventer         BlockEventer
 }
+
+// GossipService contains Gossip function
+type GossipService interface {
+	// It's up to extensions which functions are exposed
+}

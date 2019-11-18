@@ -9,12 +9,21 @@ package node
 import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/peer"
+	"github.com/hyperledger/fabric/extensions/gossip/api"
 	"github.com/hyperledger/fabric/gossip/service"
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/msp/mgmt"
 )
 
-func newGossipProvider() service.GossipService {
+type gossipProvider struct {
+}
+
+func newGossipProvider() *gossipProvider {
+	return &gossipProvider{}
+}
+
+// GetGossipService returns the Gossip service
+func (p *gossipProvider) GetGossipService() api.GossipService {
 	return service.GetGossipService()
 }
 
