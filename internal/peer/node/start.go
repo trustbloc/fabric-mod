@@ -477,17 +477,23 @@ func serve(args []string) error {
 		qsccInst = scc.Throttle(maxConcurrency, qsccInst)
 	}
 
-	//Now that chaincode is initialized, register all system chaincodes.
-	sccs := scc.CreatePluginSysCCs(sccp)
-
-	// get the list of system chain codes provided by extensions
-	extscc := extcc.CreateSCC(
-		sccp, aclProvider, lifecycleValidatorCommitter,
+	// Initialize all of the registered resources
+	err = resource.Initialize(
 		blockpublisher.ProviderInstance,
 		newGossipProvider(),
 		newLedgerProvider(),
 		newMSPProvider(),
 	)
+	if err != nil {
+		panic(err)
+	}
+	defer resource.Close()
+
+	//Now that chaincode is initialized, register all system chaincodes.
+	sccs := scc.CreatePluginSysCCs(sccp)
+
+	// get the list of system chain codes provided by extensions
+	extscc := extcc.CreateSCC(sccp, aclProvider, lifecycleValidatorCommitter)
 
 	for _, cc := range append([]scc.SelfDescribingSysCC{lsccInst, csccInst, qsccInst, lifecycleSCC}, append(sccs, extscc...)...) {
 		sccp.RegisterSysCC(cc)
@@ -570,18 +576,6 @@ func serve(args []string) error {
 	metadataManager.AddListener(lifecycle.HandleMetadataUpdateFunc(func(channel string, chaincodes ccdef.MetadataSet) {
 		service.GetGossipService().UpdateChaincodes(chaincodes.AsChaincodes(), gossipcommon.ChainID(channel))
 	}))
-
-	// Initialize all of the registered resources
-	err = resource.Initialize(
-		blockpublisher.ProviderInstance,
-		newGossipProvider(),
-		newLedgerProvider(),
-		newMSPProvider(),
-	)
-	if err != nil {
-		panic(err)
-	}
-	defer resource.Close()
 
 	// this brings up all the channels
 	peer.Initialize(
