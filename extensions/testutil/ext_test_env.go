@@ -24,6 +24,13 @@ func SetupExtTestEnv() (addr string, cleanup func(string), stop func()) {
 		}
 }
 
+// SetupResources sets up all of the mock resource providers
+func SetupResources() func() {
+	return func() {
+		//do nothing
+	}
+}
+
 func GetExtStateDBProvider(t testing.TB, dbProvider statedb.VersionedDBProvider) statedb.VersionedDBProvider {
 	return nil
 }
