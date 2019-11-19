@@ -26,7 +26,7 @@ func TestPluginLoadingFailure(t *testing.T) {
 	addr, _, destroy := xtestutil.SetupExtTestEnv()
 	defer destroy()
 	gt := NewGomegaWithT(t)
-	peer, err := gexec.Build("github.com/hyperledger/fabric/cmd/peer")
+	peer, err := gexec.Build("github.com/hyperledger/fabric/cmd/peer", "-tags", "testing")
 	gt.Expect(err).NotTo(HaveOccurred())
 	defer gexec.CleanupBuildArtifacts()
 

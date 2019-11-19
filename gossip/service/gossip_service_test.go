@@ -183,8 +183,8 @@ func TestLeaderElectionWithDeliverClient(t *testing.T) {
 }
 
 func TestWithStaticDeliverClientLeader(t *testing.T) {
-	_, _, destroy := xtestutil.SetupExtTestEnv()
-	defer destroy()
+	clearResources := xtestutil.SetupResources()
+	defer clearResources()
 
 	//Tests check if static leader flag works ok.
 	//Leader election flag set to false, and static leader flag set to true
