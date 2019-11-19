@@ -22,6 +22,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/transientstore"
 	extmocks "github.com/hyperledger/fabric/extensions/gossip/mocks"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/gossip/api"
 	gcomm "github.com/hyperledger/fabric/gossip/comm"
 	gossipCommon "github.com/hyperledger/fabric/gossip/common"
@@ -182,6 +183,9 @@ func TestLeaderElectionWithDeliverClient(t *testing.T) {
 }
 
 func TestWithStaticDeliverClientLeader(t *testing.T) {
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	//Tests check if static leader flag works ok.
 	//Leader election flag set to false, and static leader flag set to true
 	//Two gossip service instances (peers) created.
