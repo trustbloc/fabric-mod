@@ -40,7 +40,6 @@ import (
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	"github.com/hyperledger/fabric/extensions/collections/storeprovider"
 	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
-	xstate "github.com/hyperledger/fabric/extensions/gossip/state"
 	"github.com/hyperledger/fabric/extensions/resource"
 	transientstoreext "github.com/hyperledger/fabric/extensions/storage/transientstore"
 	"github.com/hyperledger/fabric/gossip/api"
@@ -433,9 +432,6 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 		ChannelID:                       bundle.ConfigtxValidator().ChainID(),
 	}, sccp, pm, NewChannelPolicyManagerGetter())
 
-	blkPublisher := blockpublisher.ForChannel(cid)
-	xstate.ChannelJoined(cid, ledger, blkPublisher)
-
 	c := committer.NewLedgerCommitterReactive(ledger, func(block *common.Block) error {
 		// Updating CSCC with new configuration block
 		if protoutil.IsConfigBlock(block) {
@@ -446,7 +442,7 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 			}
 		}
 		// Inform applicable registered handlers of the new block
-		blkPublisher.Publish(block)
+		blockpublisher.ForChannel(cid).Publish(block)
 		return nil
 	})
 
@@ -478,7 +474,7 @@ func createChain(cid string, ledger ledger.PeerLedger, cb *common.Block,
 		Cs:                   simpleCollectionStore,
 		IdDeserializeFactory: csStoreSupport,
 		Ledger:               ledger,
-		BlockPublisher:       blkPublisher,
+		BlockPublisher:       blockpublisher.ForChannel(cid),
 		BlockEventer:         c,
 	})
 

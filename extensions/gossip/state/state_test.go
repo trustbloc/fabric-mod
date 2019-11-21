@@ -45,8 +45,4 @@ func TestProviderExtension(t *testing.T) {
 	height, err := extension.LedgerHeight(handleLedgerheight)()
 	require.Equal(t, 99, int(height))
 	require.NoError(t, err)
-
-	require.NotPanics(t, func() {
-		ChannelJoined("testchannel", nil, nil)
-	})
 }
