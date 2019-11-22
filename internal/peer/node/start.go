@@ -73,7 +73,6 @@ import (
 	"github.com/hyperledger/fabric/discovery/support/gossip"
 	extcc "github.com/hyperledger/fabric/extensions/chaincode"
 	collretriever "github.com/hyperledger/fabric/extensions/collections/retriever"
-	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
 	"github.com/hyperledger/fabric/extensions/resource"
 	gossipcommon "github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/service"
@@ -479,10 +478,10 @@ func serve(args []string) error {
 
 	// Initialize all of the registered resources
 	err = resource.Initialize(
-		blockpublisher.ProviderInstance,
 		newGossipProvider(),
 		newLedgerProvider(),
 		newMSPProvider(),
+		newCCEventMgrProvider(),
 	)
 	if err != nil {
 		panic(err)
