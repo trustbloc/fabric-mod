@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -21,17 +22,14 @@ import (
 	"time"
 
 	docker "github.com/fsouza/go-dockerclient"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/util"
+	"github.com/hyperledger/fabric/core/chaincode/persistence"
 	"github.com/hyperledger/fabric/core/container"
 	"github.com/hyperledger/fabric/core/container/ccintf"
-	cutil "github.com/hyperledger/fabric/core/container/util"
 	"github.com/pkg/errors"
 )
-
-// ContainerType is the string which the docker container type
-// is registered with the container.VMController
-const ContainerType = "DOCKER"
 
 var (
 	dockerLogger = flogging.MustGetLogger("dockercontroller")
@@ -39,7 +37,7 @@ var (
 	imageRegExp  = regexp.MustCompile("^[a-z0-9]+(([._-][a-z0-9]+)+)?$")
 )
 
-//go:generate counterfeiter -o mock/dockerclient.go --fake-name DockerClient dockerClient
+//go:generate counterfeiter -o mock/dockerclient.go --fake-name DockerClient . dockerClient
 
 // dockerClient represents a docker client
 type dockerClient interface {
@@ -70,41 +68,57 @@ type dockerClient interface {
 	// WaitContainer blocks until the given container stops, and returns the exit
 	// code of the container status.
 	WaitContainer(containerID string) (int, error)
+	// InspectImage returns an image by its name or ID.
+	InspectImage(imageName string) (*docker.Image, error)
 }
 
-// Provider implements container.VMProvider
-type Provider struct {
-	PeerID        string
-	NetworkID     string
-	BuildMetrics  *BuildMetrics
-	HostConfig    *docker.HostConfig
-	Client        dockerClient
-	AttachStdOut  bool
-	ChaincodePull bool
+type PlatformBuilder interface {
+	GenerateDockerBuild(ccType, path string, codePackage io.Reader) (io.Reader, error)
+}
+
+type ContainerInstance struct {
+	CCID     string
+	Type     string
+	DockerVM *DockerVM
+}
+
+func (ci *ContainerInstance) Start(peerConnection *ccintf.PeerConnection) error {
+	return ci.DockerVM.Start(ci.CCID, ci.Type, peerConnection)
+}
+
+func (ci *ContainerInstance) ChaincodeServerInfo() (*ccintf.ChaincodeServerInfo, error) {
+	return nil, nil
+}
+
+func (ci *ContainerInstance) Stop() error {
+	return ci.DockerVM.Stop(ci.CCID)
+}
+
+func (ci *ContainerInstance) Wait() (int, error) {
+	return ci.DockerVM.Wait(ci.CCID)
 }
 
 // DockerVM is a vm. It is identified by an image id
 type DockerVM struct {
-	PeerID        string
-	NetworkID     string
-	BuildMetrics  *BuildMetrics
-	HostConfig    *docker.HostConfig
-	Client        dockerClient
-	AttachStdOut  bool
-	ChaincodePull bool
+	PeerID          string
+	NetworkID       string
+	BuildMetrics    *BuildMetrics
+	HostConfig      *docker.HostConfig
+	Client          dockerClient
+	AttachStdOut    bool
+	ChaincodePull   bool
+	NetworkMode     string
+	PlatformBuilder PlatformBuilder
+	LoggingEnv      []string
 }
 
-// NewVM creates a new DockerVM instance
-func (p *Provider) NewVM() container.VM {
-	return &DockerVM{
-		PeerID:        p.PeerID,
-		NetworkID:     p.NetworkID,
-		Client:        p.Client,
-		BuildMetrics:  p.BuildMetrics,
-		AttachStdOut:  p.AttachStdOut,
-		HostConfig:    p.HostConfig,
-		ChaincodePull: p.ChaincodePull,
+// HealthCheck checks if the DockerVM is able to communicate with the Docker
+// daemon.
+func (vm *DockerVM) HealthCheck(ctx context.Context) error {
+	if err := vm.Client.PingWithContext(ctx); err != nil {
+		return errors.Wrap(err, "failed to ping to Docker daemon")
 	}
+	return nil
 }
 
 func (vm *DockerVM) createContainer(imageID, containerID string, args, env []string) error {
@@ -128,7 +142,7 @@ func (vm *DockerVM) createContainer(imageID, containerID string, args, env []str
 	return nil
 }
 
-func (vm *DockerVM) deployImage(ccid ccintf.CCID, reader io.Reader) error {
+func (vm *DockerVM) buildImage(ccid string, reader io.Reader) error {
 	id, err := vm.GetVMNameForDocker(ccid)
 	if err != nil {
 		return err
@@ -138,6 +152,7 @@ func (vm *DockerVM) deployImage(ccid ccintf.CCID, reader io.Reader) error {
 	opts := docker.BuildImageOptions{
 		Name:         id,
 		Pull:         vm.ChaincodePull,
+		NetworkMode:  vm.NetworkMode,
 		InputStream:  reader,
 		OutputStream: outputbuf,
 	}
@@ -146,7 +161,7 @@ func (vm *DockerVM) deployImage(ccid ccintf.CCID, reader io.Reader) error {
 	err = vm.Client.BuildImage(opts)
 
 	vm.BuildMetrics.ChaincodeImageBuildDuration.With(
-		"chaincode", ccid.String(),
+		"chaincode", ccid,
 		"success", strconv.FormatBool(err == nil),
 	).Observe(time.Since(startTime).Seconds())
 
@@ -160,8 +175,105 @@ func (vm *DockerVM) deployImage(ccid ccintf.CCID, reader io.Reader) error {
 	return nil
 }
 
+// Build is responsible for building an image if it does not already exist.
+func (vm *DockerVM) Build(ccid string, metadata *persistence.ChaincodePackageMetadata, codePackage io.Reader) (container.Instance, error) {
+	imageName, err := vm.GetVMNameForDocker(ccid)
+	if err != nil {
+		return nil, err
+	}
+
+	// This is an awkward translation, but better here in a future dead path
+	// than elsewhere.  The old enum types are capital, but at least as implemented
+	// lifecycle tools seem to allow type to be set lower case.
+	ccType := strings.ToUpper(metadata.Type)
+
+	_, err = vm.Client.InspectImage(imageName)
+	switch err {
+	case docker.ErrNoSuchImage:
+		dockerfileReader, err := vm.PlatformBuilder.GenerateDockerBuild(ccType, metadata.Path, codePackage)
+		if err != nil {
+			return nil, errors.Wrap(err, "platform builder failed")
+		}
+		err = vm.buildImage(ccid, dockerfileReader)
+		if err != nil {
+			return nil, errors.Wrap(err, "docker image build failed")
+		}
+	case nil:
+	default:
+		return nil, errors.Wrap(err, "docker image inspection failed")
+	}
+
+	return &ContainerInstance{
+		DockerVM: vm,
+		CCID:     ccid,
+		Type:     ccType,
+	}, nil
+}
+
+// In order to support starting chaincode containers built with Fabric v1.4 and earlier,
+// we must check for the precense of the start.sh script for Node.js chaincode before
+// attempting to call it.
+var nodeStartScript = `
+set -e
+if [ -x /chaincode/start.sh ]; then
+	/chaincode/start.sh --peer.address %[1]s
+else
+	cd /usr/local/src
+	npm start -- --peer.address %[1]s
+fi
+`
+
+func (vm *DockerVM) GetArgs(ccType string, peerAddress string) ([]string, error) {
+	// language specific arguments, possibly should be pushed back into platforms, but were simply
+	// ported from the container_runtime chaincode component
+	switch ccType {
+	case pb.ChaincodeSpec_GOLANG.String(), pb.ChaincodeSpec_CAR.String():
+		return []string{"chaincode", fmt.Sprintf("-peer.address=%s", peerAddress)}, nil
+	case pb.ChaincodeSpec_JAVA.String():
+		return []string{"/root/chaincode-java/start", "--peerAddress", peerAddress}, nil
+	case pb.ChaincodeSpec_NODE.String():
+		return []string{"/bin/sh", "-c", fmt.Sprintf(nodeStartScript, peerAddress)}, nil
+	default:
+		return nil, errors.Errorf("unknown chaincodeType: %s", ccType)
+	}
+}
+
+const (
+	// Mutual TLS auth client key and cert paths in the chaincode container
+	TLSClientKeyPath      string = "/etc/hyperledger/fabric/client.key"
+	TLSClientCertPath     string = "/etc/hyperledger/fabric/client.crt"
+	TLSClientKeyFile      string = "/etc/hyperledger/fabric/client_pem.key"
+	TLSClientCertFile     string = "/etc/hyperledger/fabric/client_pem.crt"
+	TLSClientRootCertFile string = "/etc/hyperledger/fabric/peer.crt"
+)
+
+func (vm *DockerVM) GetEnv(ccid string, tlsConfig *ccintf.TLSConfig) []string {
+	// common environment variables
+	// FIXME: we are using the env variable CHAINCODE_ID to store
+	// the package ID; in the legacy lifecycle they used to be the
+	// same but now they are not, so we should use a different env
+	// variable. However chaincodes built by older versions of the
+	// peer still adopt this broken convention. (FAB-14630)
+	envs := []string{fmt.Sprintf("CORE_CHAINCODE_ID_NAME=%s", ccid)}
+	envs = append(envs, vm.LoggingEnv...)
+
+	// Pass TLS options to chaincode
+	if tlsConfig != nil {
+		envs = append(envs, "CORE_PEER_TLS_ENABLED=true")
+		envs = append(envs, fmt.Sprintf("CORE_TLS_CLIENT_KEY_PATH=%s", TLSClientKeyPath))
+		envs = append(envs, fmt.Sprintf("CORE_TLS_CLIENT_CERT_PATH=%s", TLSClientCertPath))
+		envs = append(envs, fmt.Sprintf("CORE_TLS_CLIENT_KEY_FILE=%s", TLSClientKeyFile))
+		envs = append(envs, fmt.Sprintf("CORE_TLS_CLIENT_CERT_FILE=%s", TLSClientCertFile))
+		envs = append(envs, fmt.Sprintf("CORE_PEER_TLS_ROOTCERT_FILE=%s", TLSClientRootCertFile))
+	} else {
+		envs = append(envs, "CORE_PEER_TLS_ENABLED=false")
+	}
+
+	return envs
+}
+
 // Start starts a container using a previously created docker image
-func (vm *DockerVM) Start(ccid ccintf.CCID, args, env []string, filesToUpload map[string][]byte, builder container.Builder) error {
+func (vm *DockerVM) Start(ccid string, ccType string, peerConnection *ccintf.PeerConnection) error {
 	imageName, err := vm.GetVMNameForDocker(ccid)
 	if err != nil {
 		return err
@@ -170,26 +282,19 @@ func (vm *DockerVM) Start(ccid ccintf.CCID, args, env []string, filesToUpload ma
 	containerName := vm.GetVMName(ccid)
 	logger := dockerLogger.With("imageName", imageName, "containerName", containerName)
 
-	vm.stopInternal(containerName, 0, false, false)
+	vm.stopInternal(containerName)
+
+	args, err := vm.GetArgs(ccType, peerConnection.Address)
+	if err != nil {
+		return errors.WithMessage(err, "could not get args")
+	}
+	dockerLogger.Debugf("start container with args: %s", strings.Join(args, " "))
+
+	env := vm.GetEnv(ccid, peerConnection.TLSConfig)
+	dockerLogger.Debugf("start container with env:\n\t%s", strings.Join(env, "\n\t"))
 
 	err = vm.createContainer(imageName, containerName, args, env)
-	if err == docker.ErrNoSuchImage {
-		reader, err := builder.Build()
-		if err != nil {
-			return errors.Wrapf(err, "failed to generate Dockerfile to build %s", containerName)
-		}
-
-		err = vm.deployImage(ccid, reader)
-		if err != nil {
-			return err
-		}
-
-		err = vm.createContainer(imageName, containerName, args, env)
-		if err != nil {
-			logger.Errorf("failed to create container: %s", err)
-			return err
-		}
-	} else if err != nil {
+	if err != nil {
 		logger.Errorf("create container failed: %s", err)
 		return err
 	}
@@ -200,22 +305,29 @@ func (vm *DockerVM) Start(ccid ccintf.CCID, args, env []string, filesToUpload ma
 		streamOutput(dockerLogger, vm.Client, containerName, containerLogger)
 	}
 
-	// upload specified files to the container before starting it
-	// this can be used for configurations such as TLS key and certs
-	if len(filesToUpload) != 0 {
+	// upload TLS files to the container before starting it if needed
+	if peerConnection.TLSConfig != nil {
 		// the docker upload API takes a tar file, so we need to first
 		// consolidate the file entries to a tar
 		payload := bytes.NewBuffer(nil)
 		gw := gzip.NewWriter(payload)
 		tw := tar.NewWriter(gw)
 
-		for path, fileToUpload := range filesToUpload {
-			cutil.WriteBytesToPackage(path, fileToUpload, tw)
+		// Note, we goofily base64 encode 2 of the TLS artifacts but not the other for strange historical reasons
+		err = addFiles(tw, map[string][]byte{
+			TLSClientKeyPath:      []byte(base64.StdEncoding.EncodeToString(peerConnection.TLSConfig.ClientKey)),
+			TLSClientCertPath:     []byte(base64.StdEncoding.EncodeToString(peerConnection.TLSConfig.ClientCert)),
+			TLSClientKeyFile:      peerConnection.TLSConfig.ClientKey,
+			TLSClientCertFile:     peerConnection.TLSConfig.ClientCert,
+			TLSClientRootCertFile: peerConnection.TLSConfig.RootCert,
+		})
+		if err != nil {
+			return fmt.Errorf("error writing files to upload to Docker instance into a temporary tar blob: %s", err)
 		}
 
 		// Write the tar file out
 		if err := tw.Close(); err != nil {
-			return fmt.Errorf("Error writing files to upload to Docker instance into a temporary tar blob: %s", err)
+			return fmt.Errorf("error writing files to upload to Docker instance into a temporary tar blob: %s", err)
 		}
 
 		gw.Close()
@@ -238,6 +350,26 @@ func (vm *DockerVM) Start(ccid ccintf.CCID, args, env []string, filesToUpload ma
 	}
 
 	dockerLogger.Debugf("Started container %s", containerName)
+	return nil
+}
+
+func addFiles(tw *tar.Writer, contents map[string][]byte) error {
+	for name, payload := range contents {
+		err := tw.WriteHeader(&tar.Header{
+			Name: name,
+			Size: int64(len(payload)),
+			Mode: 0100644,
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = tw.Write(payload)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -302,48 +434,35 @@ func streamOutput(logger *flogging.FabricLogger, client dockerClient, containerN
 }
 
 // Stop stops a running chaincode
-func (vm *DockerVM) Stop(ccid ccintf.CCID, timeout uint, dontkill bool, dontremove bool) error {
+func (vm *DockerVM) Stop(ccid string) error {
 	id := vm.ccidToContainerID(ccid)
-	return vm.stopInternal(id, timeout, dontkill, dontremove)
+	return vm.stopInternal(id)
 }
 
 // Wait blocks until the container stops and returns the exit code of the container.
-func (vm *DockerVM) Wait(ccid ccintf.CCID) (int, error) {
+func (vm *DockerVM) Wait(ccid string) (int, error) {
 	id := vm.ccidToContainerID(ccid)
 	return vm.Client.WaitContainer(id)
 }
 
-func (vm *DockerVM) ccidToContainerID(ccid ccintf.CCID) string {
+func (vm *DockerVM) ccidToContainerID(ccid string) string {
 	return strings.Replace(vm.GetVMName(ccid), ":", "_", -1)
 }
 
-// HealthCheck checks if the DockerVM is able to communicate with the Docker
-// daemon.
-func (vm *DockerVM) HealthCheck(ctx context.Context) error {
-	if err := vm.Client.PingWithContext(ctx); err != nil {
-		return errors.Wrap(err, "failed to ping to Docker daemon")
-	}
-	return nil
-}
-
-func (vm *DockerVM) stopInternal(id string, timeout uint, dontkill, dontremove bool) error {
+func (vm *DockerVM) stopInternal(id string) error {
 	logger := dockerLogger.With("id", id)
 
 	logger.Debugw("stopping container")
-	err := vm.Client.StopContainer(id, timeout)
+	err := vm.Client.StopContainer(id, 0)
 	dockerLogger.Debugw("stop container result", "error", err)
 
-	if !dontkill {
-		logger.Debugw("killing container")
-		err = vm.Client.KillContainer(docker.KillContainerOptions{ID: id})
-		logger.Debugw("kill container result", "error", err)
-	}
+	logger.Debugw("killing container")
+	err = vm.Client.KillContainer(docker.KillContainerOptions{ID: id})
+	logger.Debugw("kill container result", "error", err)
 
-	if !dontremove {
-		logger.Debugw("removing container")
-		err = vm.Client.RemoveContainer(docker.RemoveContainerOptions{ID: id, Force: true})
-		logger.Debugw("remove container result", "error", err)
-	}
+	logger.Debugw("removing container")
+	err = vm.Client.RemoveContainer(docker.RemoveContainerOptions{ID: id, Force: true})
+	logger.Debugw("remove container result", "error", err)
 
 	return err
 }
@@ -351,7 +470,7 @@ func (vm *DockerVM) stopInternal(id string, timeout uint, dontkill, dontremove b
 // GetVMName generates the VM name from peer information. It accepts a format
 // function parameter to allow different formatting based on the desired use of
 // the name.
-func (vm *DockerVM) GetVMName(ccid ccintf.CCID) string {
+func (vm *DockerVM) GetVMName(ccid string) string {
 	// replace any invalid characters with "-" (either in network id, peer id, or in the
 	// entire name returned by any format function)
 	return vmRegExp.ReplaceAllString(vm.preFormatImageName(ccid), "-")
@@ -362,8 +481,11 @@ func (vm *DockerVM) GetVMName(ccid ccintf.CCID) string {
 // environment (such as a development environment). It computes the hash for the
 // supplied image name and then appends it to the lowercase image name to ensure
 // uniqueness.
-func (vm *DockerVM) GetVMNameForDocker(ccid ccintf.CCID) (string, error) {
+func (vm *DockerVM) GetVMNameForDocker(ccid string) (string, error) {
 	name := vm.preFormatImageName(ccid)
+	// pre-2.0 used "-" as the separator in the ccid, so replace ":" with
+	// "-" here to ensure 2.0 peers can find pre-2.0 cc images
+	name = strings.ReplaceAll(name, ":", "-")
 	hash := hex.EncodeToString(util.ComputeSHA256([]byte(name)))
 	saniName := vmRegExp.ReplaceAllString(name, "-")
 	imageName := strings.ToLower(fmt.Sprintf("%s-%s", saniName, hash))
@@ -377,8 +499,8 @@ func (vm *DockerVM) GetVMNameForDocker(ccid ccintf.CCID) (string, error) {
 	return imageName, nil
 }
 
-func (vm *DockerVM) preFormatImageName(ccid ccintf.CCID) string {
-	name := ccid.String()
+func (vm *DockerVM) preFormatImageName(ccid string) string {
+	name := ccid
 
 	if vm.NetworkID != "" && vm.PeerID != "" {
 		name = fmt.Sprintf("%s-%s-%s", vm.NetworkID, vm.PeerID, name)

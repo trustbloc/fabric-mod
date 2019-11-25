@@ -10,30 +10,30 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/hyperledger/fabric-chaincode-go/shim"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/aclmgmt"
-	"github.com/hyperledger/fabric/core/chaincode/shim"
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/peer"
-	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 )
 
+// LedgerGetter gets the PeerLedger associated with a channel.
+type LedgerGetter interface {
+	GetLedger(cid string) ledger.PeerLedger
+}
+
 // New returns an instance of QSCC.
 // Typically this is called once per peer.
-func New(aclProvider aclmgmt.ACLProvider) *LedgerQuerier {
+func New(aclProvider aclmgmt.ACLProvider, ledgers LedgerGetter) *LedgerQuerier {
 	return &LedgerQuerier{
 		aclProvider: aclProvider,
+		ledgers:     ledgers,
 	}
 }
 
 func (e *LedgerQuerier) Name() string              { return "qscc" }
-func (e *LedgerQuerier) Path() string              { return "github.com/hyperledger/fabric/core/scc/qscc" }
-func (e *LedgerQuerier) InitArgs() [][]byte        { return nil }
 func (e *LedgerQuerier) Chaincode() shim.Chaincode { return e }
-func (e *LedgerQuerier) InvokableExternal() bool   { return true }
-func (e *LedgerQuerier) InvokableCC2CC() bool      { return true }
-func (e *LedgerQuerier) Enabled() bool             { return true }
 
 // LedgerQuerier implements the ledger query functions, including:
 // - GetChainInfo returns BlockchainInfo
@@ -42,6 +42,7 @@ func (e *LedgerQuerier) Enabled() bool             { return true }
 // - GetTransactionByID returns a transaction
 type LedgerQuerier struct {
 	aclProvider aclmgmt.ACLProvider
+	ledgers     LedgerGetter
 }
 
 var qscclogger = flogging.MustGetLogger("qscc")
@@ -77,14 +78,29 @@ func (e *LedgerQuerier) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	if len(args) < 2 {
 		return shim.Error(fmt.Sprintf("Incorrect number of arguments, %d", len(args)))
 	}
+
 	fname := string(args[0])
 	cid := string(args[1])
+
+	sp, err := stub.GetSignedProposal()
+	if err != nil {
+		return shim.Error(fmt.Sprintf("Failed getting signed proposal from stub, %s: %s", cid, err))
+	}
+
+	name, err := protoutil.InvokedChaincodeName(sp.ProposalBytes)
+	if err != nil {
+		return shim.Error(fmt.Sprintf("Failed to identify the called chaincode: %s", err))
+	}
+
+	if name != e.Name() {
+		return shim.Error(fmt.Sprintf("Rejecting invoke of QSCC from another chaincode because of potential for deadlocks, original invocation for '%s'", name))
+	}
 
 	if fname != GetChainInfo && len(args) < 3 {
 		return shim.Error(fmt.Sprintf("missing 3rd argument for %s", fname))
 	}
 
-	targetLedger := peer.GetLedger(cid)
+	targetLedger := e.ledgers.GetLedger(cid)
 	if targetLedger == nil {
 		return shim.Error(fmt.Sprintf("Invalid chain ID, %s", cid))
 	}
@@ -92,13 +108,6 @@ func (e *LedgerQuerier) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	qscclogger.Debugf("Invoke function: %s on chain: %s", fname, cid)
 
 	// Handle ACL:
-	// 1. get the signed proposal
-	sp, err := stub.GetSignedProposal()
-	if err != nil {
-		return shim.Error(fmt.Sprintf("Failed getting signed proposal from stub, %s: %s", cid, err))
-	}
-
-	// 2. check the channel reader policy
 	res := getACLResource(fname)
 	if err = e.aclProvider.CheckACL(res, cid, sp); err != nil {
 		return shim.Error(fmt.Sprintf("access denied for [%s][%s]: [%s]", fname, cid, err))

@@ -11,11 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/hyperledger/fabric/common/metrics/disabled"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 	"github.com/hyperledger/fabric/extensions/testutil"
-	"github.com/stretchr/testify/assert"
 )
 
 var couchAddress string
@@ -29,6 +30,10 @@ type TestVDBEnv struct {
 
 // NewTestVDBEnv instantiates and new couch db backed TestVDB
 func NewTestVDBEnv(t testing.TB) *TestVDBEnv {
+	return newTestVDBEnvWithCache(t, &statedb.Cache{})
+}
+
+func newTestVDBEnvWithCache(t testing.TB, cache *statedb.Cache) *TestVDBEnv {
 	t.Logf("Creating new TestVDBEnv")
 	redoPath, err := ioutil.TempDir("", "cvdbenv")
 	if err != nil {
@@ -45,7 +50,7 @@ func NewTestVDBEnv(t testing.TB) *TestVDBEnv {
 		RequestTimeout:      35 * time.Second,
 		RedoLogPath:         redoPath,
 	}
-	dbProvider, err := NewVersionedDBProvider(config, &disabled.Provider{})
+	dbProvider, err := NewVersionedDBProvider(config, &disabled.Provider{}, cache)
 	if err != nil {
 		t.Fatalf("Error creating CouchDB Provider: %s", err)
 	}
@@ -60,33 +65,43 @@ func NewTestVDBEnv(t testing.TB) *TestVDBEnv {
 
 func (env *TestVDBEnv) CloseAndReopen() {
 	env.DBProvider.Close()
-	dbProvider, _ := NewVersionedDBProvider(env.config, &disabled.Provider{})
+	dbProvider, _ := NewVersionedDBProvider(env.config, &disabled.Provider{}, &statedb.Cache{})
 	env.DBProvider = dbProvider
 }
 
 // Cleanup drops the test couch databases and closes the db provider
 func (env *TestVDBEnv) Cleanup() {
 	env.t.Logf("Cleaningup TestVDBEnv")
-	CleanupDB(env.t, env.DBProvider)
+	cleanupDB(env.t, env.DBProvider.(*VersionedDBProvider).couchInstance)
 	env.DBProvider.Close()
 	os.RemoveAll(env.config.RedoLogPath)
 }
 
+// CleanupDB deletes all the databases other than fabric internal database
 func CleanupDB(t testing.TB, dbProvider statedb.VersionedDBProvider) {
 	if extDbProvider := testutil.GetExtStateDBProvider(t, dbProvider); extDbProvider != nil {
 		dbProvider = extDbProvider
 	}
 
-	couchdbProvider, _ := dbProvider.(*VersionedDBProvider)
-	for _, v := range couchdbProvider.databases {
-		if _, err := v.metadataDB.DropDatabase(); err != nil {
-			assert.Failf(t, "DropDatabase %s fails. err: %v", v.metadataDB.DBName, err)
-		}
+	cleanupDB(t, dbProvider.(*VersionedDBProvider).couchInstance)
+}
 
-		for _, db := range v.namespaceDBs {
-			if _, err := db.DropDatabase(); err != nil {
-				assert.Failf(t, "DropDatabase %s fails. err: %v", db.DBName, err)
-			}
+func cleanupDB(t testing.TB, couchInstance *couchdb.CouchInstance) {
+	dbNames, err := couchInstance.RetrieveApplicationDBNames()
+	require.NoError(t, err)
+	for _, dbName := range dbNames {
+		if dbName != fabricInternalDBName {
+			testutilDropDB(t, couchInstance, dbName)
 		}
 	}
+}
+
+func testutilDropDB(t testing.TB, couchInstance *couchdb.CouchInstance, dbName string) {
+	db := &couchdb.CouchDatabase{
+		CouchInstance: couchInstance,
+		DBName:        dbName,
+	}
+	response, err := db.DropDatabase()
+	require.NoError(t, err)
+	require.True(t, response.Ok)
 }

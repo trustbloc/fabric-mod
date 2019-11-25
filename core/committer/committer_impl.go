@@ -7,10 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 package committer
 
 import (
+	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/pkg/errors"
 )
 
 var logger = flogging.MustGetLogger("committer")
@@ -27,11 +26,13 @@ type PeerLedgerSupport interface {
 
 	GetPvtDataByNum(blockNum uint64, filter ledger.PvtNsCollFilter) ([]*ledger.TxPvtData, error)
 
-	CommitWithPvtData(blockAndPvtdata *ledger.BlockAndPvtData) error
+	CommitLegacy(blockAndPvtdata *ledger.BlockAndPvtData, commitOpts *ledger.CommitOptions) error
 
-	CommitPvtDataOfOldBlocks(blockPvtData []*ledger.BlockPvtData) ([]*ledger.PvtdataHashMismatch, error)
+	CommitPvtDataOfOldBlocks(reconciledPvtdata []*ledger.ReconciledPvtdata) ([]*ledger.PvtdataHashMismatch, error)
 
 	GetBlockchainInfo() (*common.BlockchainInfo, error)
+
+	DoesPvtDataInfoExist(blockNum uint64) (bool, error)
 
 	GetBlockByNumber(blockNumber uint64) (*common.Block, error)
 
@@ -47,46 +48,18 @@ type PeerLedgerSupport interface {
 // chain information
 type LedgerCommitter struct {
 	PeerLedgerSupport
-	eventer BlockEventer
 }
-
-// BlockEventer callback function proto type to define action
-// upon arrival of a new block
-type BlockEventer func(block *common.Block) error
 
 // NewLedgerCommitter is a factory function to create an instance of the committer
 // which passes incoming blocks via validation and commits them into the ledger.
 func NewLedgerCommitter(ledger PeerLedgerSupport) *LedgerCommitter {
-	return NewLedgerCommitterReactive(ledger, func(_ *common.Block) error { return nil })
+	return &LedgerCommitter{PeerLedgerSupport: ledger}
 }
 
-// NewLedgerCommitterReactive is a factory function to create an instance of the committer
-// same as way as NewLedgerCommitter, while also provides an option to specify callback to
-// be called upon new block arrival and commit event
-func NewLedgerCommitterReactive(ledger PeerLedgerSupport, eventer BlockEventer) *LedgerCommitter {
-	return &LedgerCommitter{PeerLedgerSupport: ledger, eventer: eventer}
-}
-
-// PreCommit takes care to validate the block and update based on its
-// content
-func (lc *LedgerCommitter) PreCommit(block *common.Block) error {
-	logger.Debug("Received block, calling eventer")
-	if err := lc.eventer(block); err != nil {
-		return errors.WithMessage(err, "error returned from block eventer")
-	}
-	return nil
-}
-
-// CommitWithPvtData commits blocks atomically with private data
-func (lc *LedgerCommitter) CommitWithPvtData(blockAndPvtData *ledger.BlockAndPvtData) error {
-	// Do validation and whatever needed before
-	// committing new block
-	if err := lc.PreCommit(blockAndPvtData.Block); err != nil {
-		return err
-	}
-
+// CommitLegacy commits blocks atomically with private data
+func (lc *LedgerCommitter) CommitLegacy(blockAndPvtData *ledger.BlockAndPvtData, commitOpts *ledger.CommitOptions) error {
 	// Committing new block
-	if err := lc.PeerLedgerSupport.CommitWithPvtData(blockAndPvtData); err != nil {
+	if err := lc.PeerLedgerSupport.CommitLegacy(blockAndPvtData, commitOpts); err != nil {
 		return err
 	}
 
@@ -100,14 +73,19 @@ func (lc *LedgerCommitter) GetPvtDataAndBlockByNum(seqNum uint64) (*ledger.Block
 
 // LedgerHeight returns recently committed block sequence number
 func (lc *LedgerCommitter) LedgerHeight() (uint64, error) {
-	var info *common.BlockchainInfo
-	var err error
-	if info, err = lc.GetBlockchainInfo(); err != nil {
+	info, err := lc.GetBlockchainInfo()
+	if err != nil {
 		logger.Errorf("Cannot get blockchain info, %s", info)
-		return uint64(0), err
+		return 0, err
 	}
 
 	return info.Height, nil
+}
+
+// DoesPvtDataInfoExistInLedger returns true if the ledger has pvtdata info
+// about a given block number.
+func (lc *LedgerCommitter) DoesPvtDataInfoExistInLedger(blockNum uint64) (bool, error) {
+	return lc.DoesPvtDataInfoExist(blockNum)
 }
 
 // GetBlocks used to retrieve blocks with sequence numbers provided in the slice

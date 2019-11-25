@@ -10,36 +10,59 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/hyperledger/fabric/core/common/ccprovider"
+	"github.com/hyperledger/fabric/core/chaincode/accesscontrol"
 	"github.com/hyperledger/fabric/core/container/ccintf"
-	"github.com/hyperledger/fabric/core/container/inproccontroller"
 	"github.com/pkg/errors"
 )
 
 // LaunchRegistry tracks launching chaincode instances.
 type LaunchRegistry interface {
-	Launching(packageID ccintf.CCID) (launchState *LaunchState, started bool)
-	Deregister(packageID ccintf.CCID) error
-}
-
-// PackageProvider gets chaincode packages from the filesystem.
-type PackageProvider interface {
-	GetChaincodeCodePackage(ccci *ccprovider.ChaincodeContainerInfo) ([]byte, error)
+	Launching(ccid string) (launchState *LaunchState, started bool)
+	Deregister(ccid string) error
 }
 
 // RuntimeLauncher is responsible for launching chaincode runtimes.
 type RuntimeLauncher struct {
-	Runtime         Runtime
-	Registry        LaunchRegistry
-	PackageProvider PackageProvider
-	StartupTimeout  time.Duration
-	Metrics         *LaunchMetrics
+	Runtime        Runtime
+	Registry       LaunchRegistry
+	StartupTimeout time.Duration
+	Metrics        *LaunchMetrics
+	PeerAddress    string
+	CACert         []byte
+	CertGenerator  CertGenerator
 }
 
-func (r *RuntimeLauncher) Launch(ccci *ccprovider.ChaincodeContainerInfo) error {
+// CertGenerator generates client certificates for chaincode.
+type CertGenerator interface {
+	// Generate returns a certificate and private key and associates
+	// the hash of the certificates with the given chaincode name
+	Generate(ccName string) (*accesscontrol.CertAndPrivKeyPair, error)
+}
+
+func (r *RuntimeLauncher) ChaincodeClientInfo(ccid string) (*ccintf.PeerConnection, error) {
+	var tlsConfig *ccintf.TLSConfig
+	if r.CertGenerator != nil {
+		certKeyPair, err := r.CertGenerator.Generate(string(ccid))
+		if err != nil {
+			return nil, errors.WithMessagef(err, "failed to generate TLS certificates for %s", ccid)
+		}
+
+		tlsConfig = &ccintf.TLSConfig{
+			ClientCert: certKeyPair.Cert,
+			ClientKey:  certKeyPair.Key,
+			RootCert:   r.CACert,
+		}
+	}
+
+	return &ccintf.PeerConnection{
+		Address:   r.PeerAddress,
+		TLSConfig: tlsConfig,
+	}, nil
+}
+
+func (r *RuntimeLauncher) Launch(ccid string) error {
 	var startFailCh chan error
 	var timeoutCh <-chan time.Time
-	ccid := ccintf.New(ccci.PackageID)
 
 	startTime := time.Now()
 	launchState, alreadyStarted := r.Registry.Launching(ccid)
@@ -47,17 +70,31 @@ func (r *RuntimeLauncher) Launch(ccci *ccprovider.ChaincodeContainerInfo) error 
 		startFailCh = make(chan error, 1)
 		timeoutCh = time.NewTimer(r.StartupTimeout).C
 
-		codePackage, err := r.getCodePackage(ccci)
-		if err != nil {
-			return err
-		}
-
 		go func() {
-			if err := r.Runtime.Start(ccci, codePackage); err != nil {
+			var ccservinfo *ccintf.ChaincodeServerInfo
+			ccservinfo, err := r.Runtime.Build(ccid)
+			if err != nil {
+				startFailCh <- errors.WithMessage(err, "error building chaincode")
+				return
+			}
+			if ccservinfo != nil {
+				startFailCh <- errors.New("peer as client to be implemented")
+				return
+			}
+			ccinfo, err := r.ChaincodeClientInfo(ccid)
+			if err != nil {
+				startFailCh <- errors.WithMessage(err, "could not get connection info")
+				return
+			}
+			if ccinfo == nil {
+				startFailCh <- errors.New("could not get connection info")
+				return
+			}
+			if err = r.Runtime.Start(ccid, ccinfo); err != nil {
 				startFailCh <- errors.WithMessage(err, "error starting container")
 				return
 			}
-			exitCode, err := r.Runtime.Wait(ccci)
+			exitCode, err := r.Runtime.Wait(ccid)
 			if err != nil {
 				launchState.Notify(errors.Wrap(err, "failed to wait on container exit"))
 			}
@@ -71,11 +108,11 @@ func (r *RuntimeLauncher) Launch(ccci *ccprovider.ChaincodeContainerInfo) error 
 		err = errors.WithMessage(launchState.Err(), "chaincode registration failed")
 	case err = <-startFailCh:
 		launchState.Notify(err)
-		r.Metrics.LaunchFailures.With("chaincode", ccid.String()).Add(1)
+		r.Metrics.LaunchFailures.With("chaincode", ccid).Add(1)
 	case <-timeoutCh:
-		err = errors.Errorf("timeout expired while starting chaincode %s for transaction", ccci.PackageID)
+		err = errors.Errorf("timeout expired while starting chaincode %s for transaction", ccid)
 		launchState.Notify(err)
-		r.Metrics.LaunchTimeouts.With("chaincode", ccid.String()).Add(1)
+		r.Metrics.LaunchTimeouts.With("chaincode", ccid).Add(1)
 	}
 
 	success := true
@@ -83,29 +120,16 @@ func (r *RuntimeLauncher) Launch(ccci *ccprovider.ChaincodeContainerInfo) error 
 		success = false
 		chaincodeLogger.Debugf("stopping due to error while launching: %+v", err)
 		defer r.Registry.Deregister(ccid)
-		if err := r.Runtime.Stop(ccci); err != nil {
+		if err := r.Runtime.Stop(ccid); err != nil {
 			chaincodeLogger.Debugf("stop failed: %+v", err)
 		}
 	}
 
 	r.Metrics.LaunchDuration.With(
-		"chaincode", ccid.String(),
+		"chaincode", ccid,
 		"success", strconv.FormatBool(success),
 	).Observe(time.Since(startTime).Seconds())
 
 	chaincodeLogger.Debug("launch complete")
 	return err
-}
-
-func (r *RuntimeLauncher) getCodePackage(ccci *ccprovider.ChaincodeContainerInfo) ([]byte, error) {
-	if ccci.ContainerType == inproccontroller.ContainerType {
-		return nil, nil
-	}
-
-	codePackage, err := r.PackageProvider.GetChaincodeCodePackage(ccci)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get chaincode package")
-	}
-
-	return codePackage, nil
 }

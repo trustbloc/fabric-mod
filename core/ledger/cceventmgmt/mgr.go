@@ -93,7 +93,7 @@ func (m *Mgr) HandleChaincodeDeploy(chainid string, chaincodeDefinitions []*Chai
 
 // ChaincodeDeployDone is expected to be called when the deploy transaction state is committed
 func (m *Mgr) ChaincodeDeployDone(chainid string) {
-	// release the lock aquired in function `HandleChaincodeDeploy`
+	// release the lock acquired in function `HandleChaincodeDeploy`
 	defer m.rwlock.RUnlock()
 	if m.callbackStatus.isDeployPending(chainid) {
 		m.invokeDoneOnHandlers(chainid, true)
@@ -116,6 +116,13 @@ func (m *Mgr) HandleChaincodeInstall(chaincodeDefinition *ChaincodeDefinition, d
 		}
 		if deployedCCInfo == nil {
 			logger.Debugf("Channel [%s]: Chaincode [%s] is not deployed on channel hence not creating chaincode artifacts.",
+				chainid, chaincodeDefinition)
+			continue
+		}
+		if !deployedCCInfo.IsLegacy {
+			// the chaincode has already been defined via new lifecycle, we reach here because of a subsequent
+			// install of chaincode using legacy package. So, ignoring this event
+			logger.Debugf("Channel [%s]: Chaincode [%s] is already defined in new lifecycle hence not creating chaincode artifacts.",
 				chainid, chaincodeDefinition)
 			continue
 		}

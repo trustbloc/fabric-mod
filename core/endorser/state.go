@@ -7,10 +7,10 @@ SPDX-License-Identifier: Apache-2.0
 package endorser
 
 import (
+	"github.com/hyperledger/fabric-protos-go/ledger/rwset"
 	endorsement "github.com/hyperledger/fabric/core/handlers/endorsement/api/state"
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/transientstore"
-	"github.com/hyperledger/fabric/protos/ledger/rwset"
+	storageapi "github.com/hyperledger/fabric/extensions/storage/api"
 	"github.com/pkg/errors"
 )
 
@@ -22,7 +22,7 @@ type QueryCreator interface {
 
 // ChannelState defines state operations
 type ChannelState struct {
-	transientstore.Store
+	storageapi.TransientStore
 	QueryCreator
 }
 
@@ -34,27 +34,27 @@ func (cs *ChannelState) FetchState() (endorsement.State, error) {
 	}
 
 	return &StateContext{
-		QueryExecutor: qe,
-		Store:         cs.Store,
+		QueryExecutor:  qe,
+		TransientStore: cs.TransientStore,
 	}, nil
 }
 
 // StateContext defines an execution context that interacts with the state
 type StateContext struct {
-	transientstore.Store
+	storageapi.TransientStore
 	ledger.QueryExecutor
 }
 
 // GetTransientByTXID returns the private data associated with this transaction ID.
 func (sc *StateContext) GetTransientByTXID(txID string) ([]*rwset.TxPvtReadWriteSet, error) {
-	scanner, err := sc.Store.GetTxPvtRWSetByTxid(txID, nil)
+	scanner, err := sc.TransientStore.GetTxPvtRWSetByTxid(txID, nil)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 	defer scanner.Close()
 	var data []*rwset.TxPvtReadWriteSet
 	for {
-		res, err := scanner.NextWithConfig()
+		res, err := scanner.Next()
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}

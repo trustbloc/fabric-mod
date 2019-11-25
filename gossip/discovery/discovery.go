@@ -9,9 +9,9 @@ package discovery
 import (
 	"fmt"
 
+	proto "github.com/hyperledger/fabric-protos-go/gossip"
 	"github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/protoext"
-	proto "github.com/hyperledger/fabric/protos/gossip"
 )
 
 // CryptoService is an interface that the discovery expects to be implemented and passed on creation
@@ -67,6 +67,9 @@ type CommService interface {
 	// Forward sends message to the next hop, excluding the hop
 	// from which message was initially received
 	Forward(msg protoext.ReceivedMessage)
+
+	// IdentitySwitch returns a read-only channel about identity change events
+	IdentitySwitch() <-chan common.PKIidType
 }
 
 // NetworkMember is a peer's representation

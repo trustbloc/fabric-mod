@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hyperledger/fabric/bccsp"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/chaincode/platforms"
 	"github.com/hyperledger/fabric/internal/peer/common"
@@ -18,9 +19,10 @@ import (
 )
 
 const (
-	lifecycleName   = "_lifecycle"
-	approveFuncName = "ApproveChaincodeDefinitionForMyOrg"
-	commitFuncName  = "CommitChaincodeDefinition"
+	lifecycleName                = "_lifecycle"
+	approveFuncName              = "ApproveChaincodeDefinitionForMyOrg"
+	commitFuncName               = "CommitChaincodeDefinition"
+	checkCommitReadinessFuncName = "CheckCommitReadiness"
 )
 
 var logger = flogging.MustGetLogger("cli.lifecycle.chaincode")
@@ -36,16 +38,17 @@ func addFlags(cmd *cobra.Command) {
 }
 
 // Cmd returns the cobra command for Chaincode
-func Cmd() *cobra.Command {
+func Cmd(cryptoProvider bccsp.BCCSP) *cobra.Command {
 	addFlags(chaincodeCmd)
 
 	chaincodeCmd.AddCommand(PackageCmd(nil))
-	chaincodeCmd.AddCommand(InstallCmd(nil))
-	chaincodeCmd.AddCommand(QueryInstalledCmd(nil))
-	chaincodeCmd.AddCommand(ApproveForMyOrgCmd(nil))
-	chaincodeCmd.AddCommand(queryApprovalStatusCmd(nil))
-	chaincodeCmd.AddCommand(CommitCmd(nil))
-	chaincodeCmd.AddCommand(QueryCommittedCmd(nil))
+	chaincodeCmd.AddCommand(InstallCmd(nil, cryptoProvider))
+	chaincodeCmd.AddCommand(QueryInstalledCmd(nil, cryptoProvider))
+	chaincodeCmd.AddCommand(GetInstalledPackageCmd(nil, cryptoProvider))
+	chaincodeCmd.AddCommand(ApproveForMyOrgCmd(nil, cryptoProvider))
+	chaincodeCmd.AddCommand(CheckCommitReadinessCmd(nil, cryptoProvider))
+	chaincodeCmd.AddCommand(CommitCmd(nil, cryptoProvider))
+	chaincodeCmd.AddCommand(QueryCommittedCmd(nil, cryptoProvider))
 
 	return chaincodeCmd
 }
@@ -71,12 +74,14 @@ var (
 	packageID             string
 	sequence              int
 	initRequired          bool
+	output                string
+	outputDirectory       string
 )
 
 var chaincodeCmd = &cobra.Command{
 	Use:   "chaincode",
-	Short: "Perform chaincode operations: package|install|queryinstalled|approveformyorg|queryapprovalstatus|commit|querycommitted",
-	Long:  "Perform _lifecycle operations: package|install|queryinstalled|approveformyorg|queryapprovalstatus|commit|querycommitted",
+	Short: "Perform chaincode operations: package|install|queryinstalled|getinstalledpackage|approveformyorg|checkcommitreadiness|commit|querycommitted",
+	Long:  "Perform chaincode operations: package|install|queryinstalled|getinstalledpackage|approveformyorg|checkcommitreadiness|commit|querycommitted",
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		common.InitCmd(cmd, args)
 		common.SetOrdererEnv(cmd, args)
@@ -120,6 +125,8 @@ func ResetFlags() {
 	flags.StringVarP(&packageID, "package-id", "", "", "The identifier of the chaincode install package")
 	flags.IntVarP(&sequence, "sequence", "", 1, "The sequence number of the chaincode definition for the channel")
 	flags.BoolVarP(&initRequired, "init-required", "", false, "Whether the chaincode requires invoking 'init'")
+	flags.StringVarP(&output, "output", "O", "", "The output format for query results. Default is human-readable plain-text. json is currently the only supported format.")
+	flags.StringVarP(&outputDirectory, "output-directory", "", "", "The output directory to use when writing a chaincode install package to disk. Default is the current working directory.")
 }
 
 func attachFlags(cmd *cobra.Command, names []string) {

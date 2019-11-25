@@ -16,11 +16,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func pvtDataConf() *ledger.PrivateData {
-	return &ledger.PrivateData{
-		BatchesInterval: 1000,
-		MaxBatchSize:    5000,
-		PurgeInterval:   2,
+func pvtDataConf() *PrivateDataConfig {
+	return &PrivateDataConfig{
+		PrivateDataConfig: &ledger.PrivateDataConfig{
+			BatchesInterval: 1000,
+			MaxBatchSize:    5000,
+			PurgeInterval:   2,
+		},
+		StorePath: "",
 	}
 }
 
@@ -31,7 +34,7 @@ type StoreEnv struct {
 	TestStore         Store
 	ledgerid          string
 	btlPolicy         pvtdatapolicy.BTLPolicy
-	conf              *ledger.PrivateData
+	conf              *PrivateDataConfig
 }
 
 // NewTestStoreEnv construct a StoreEnv for testing
@@ -39,7 +42,7 @@ func NewTestStoreEnv(
 	t *testing.T,
 	ledgerid string,
 	btlPolicy pvtdatapolicy.BTLPolicy,
-	conf *ledger.PrivateData) *StoreEnv {
+	conf *PrivateDataConfig) *StoreEnv {
 
 	storeDir, err := ioutil.TempDir("", "pdstore")
 	if err != nil {
@@ -47,7 +50,8 @@ func NewTestStoreEnv(
 	}
 	assert := assert.New(t)
 	conf.StorePath = storeDir
-	testStoreProvider := NewProvider(conf)
+	testStoreProvider, err := NewProvider(conf)
+	assert.NoError(err)
 	testStore, err := testStoreProvider.OpenStore(ledgerid)
 	testStore.Init(btlPolicy)
 	assert.NoError(err)
@@ -58,7 +62,8 @@ func NewTestStoreEnv(
 func (env *StoreEnv) CloseAndReopen() {
 	var err error
 	env.TestStoreProvider.Close()
-	env.TestStoreProvider = NewProvider(env.conf)
+	env.TestStoreProvider, err = NewProvider(env.conf)
+	assert.NoError(env.t, err)
 	env.TestStore, err = env.TestStoreProvider.OpenStore(env.ledgerid)
 	env.TestStore.Init(env.btlPolicy)
 	assert.NoError(env.t, err)

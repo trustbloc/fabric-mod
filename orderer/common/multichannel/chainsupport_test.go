@@ -7,36 +7,40 @@ SPDX-License-Identifier: Apache-2.0
 package multichannel
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/common/capabilities"
-	"github.com/hyperledger/fabric/common/ledger/blockledger"
-	"github.com/hyperledger/fabric/common/metrics/disabled"
-	"github.com/hyperledger/fabric/orderer/consensus"
-	"github.com/stretchr/testify/require"
-
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/orderer"
+	"github.com/hyperledger/fabric/bccsp/sw"
 	"github.com/hyperledger/fabric/common/channelconfig"
-	"github.com/hyperledger/fabric/common/configtx"
 	"github.com/hyperledger/fabric/common/deliver/mock"
-	"github.com/hyperledger/fabric/common/ledger/blockledger/mocks"
-	"github.com/hyperledger/fabric/common/mocks/config"
-	mockconfigtx "github.com/hyperledger/fabric/common/mocks/configtx"
-	mockpolicies "github.com/hyperledger/fabric/common/mocks/policies"
+	mockblockledger "github.com/hyperledger/fabric/common/ledger/blockledger/mocks"
 	"github.com/hyperledger/fabric/common/policies"
-	"github.com/hyperledger/fabric/internal/configtxgen/configtxgentest"
+	"github.com/hyperledger/fabric/core/config/configtest"
 	"github.com/hyperledger/fabric/internal/configtxgen/encoder"
-	"github.com/hyperledger/fabric/internal/configtxgen/localconfig"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/orderer"
+	"github.com/hyperledger/fabric/internal/configtxgen/genesisconfig"
+	msgprocessormocks "github.com/hyperledger/fabric/orderer/common/msgprocessor/mocks"
+	"github.com/hyperledger/fabric/orderer/common/multichannel/mocks"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
 
+//go:generate counterfeiter -o mocks/policy_manager.go --fake-name PolicyManager . policyManager
+
+type policyManager interface {
+	policies.Manager
+}
+
+//go:generate counterfeiter -o mocks/policy.go --fake-name Policy . policy
+
+type policy interface {
+	policies.Policy
+}
+
 func TestChainSupportBlock(t *testing.T) {
-	ledger := &mocks.ReadWriter{}
+	ledger := &mockblockledger.ReadWriter{}
 	ledger.On("Height").Return(uint64(100))
 	iterator := &mock.BlockIterator{}
 	iterator.NextReturns(&common.Block{Header: &common.BlockHeader{Number: 99}}, common.Status_SUCCESS)
@@ -45,55 +49,76 @@ func TestChainSupportBlock(t *testing.T) {
 			Specified: &orderer.SeekSpecified{Number: 99},
 		},
 	}).Return(iterator, uint64(99))
-	cs := &ChainSupport{ledgerResources: &ledgerResources{ReadWriter: ledger}}
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
+	cs := &ChainSupport{
+		ledgerResources: &ledgerResources{ReadWriter: ledger},
+		BCCSP:           cryptoProvider,
+	}
 
 	assert.Nil(t, cs.Block(100))
 	assert.Equal(t, uint64(99), cs.Block(99).Header.Number)
 }
 
 type mutableResourcesMock struct {
-	config.Resources
+	*mocks.Resources
+	newConsensusMetadataVal []byte
 }
 
 func (*mutableResourcesMock) Update(*channelconfig.Bundle) {
 	panic("implement me")
 }
 
+func (mrm *mutableResourcesMock) CreateBundle(channelID string, c *common.Config) (channelconfig.Resources, error) {
+	mockOrderer := &mocks.OrdererConfig{}
+	mockOrderer.ConsensusMetadataReturns(mrm.newConsensusMetadataVal)
+	mockResources := &mocks.Resources{}
+	mockResources.OrdererConfigReturns(mockOrderer, true)
+
+	return mockResources, nil
+
+}
+
 func TestVerifyBlockSignature(t *testing.T) {
-	policyMgr := &mockpolicies.Manager{
-		PolicyMap: make(map[string]policies.Policy),
-	}
+	mockResources := &mocks.Resources{}
+	mockValidator := &mocks.ConfigTXValidator{}
+	mockValidator.ChannelIDReturns("mychannel")
+	mockResources.ConfigtxValidatorReturns(mockValidator)
+
+	mockPolicy := &mocks.Policy{}
+	mockPolicyManager := &mocks.PolicyManager{}
+	mockResources.PolicyManagerReturns(mockPolicyManager)
+
 	ms := &mutableResourcesMock{
-		Resources: config.Resources{
-			ConfigtxValidatorVal: &mockconfigtx.Validator{ChainIDVal: "mychannel"},
-			PolicyManagerVal:     policyMgr,
-		},
+		Resources: mockResources,
 	}
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
 	cs := &ChainSupport{
 		ledgerResources: &ledgerResources{
 			configResources: &configResources{
 				mutableResources: ms,
+				bccsp:            cryptoProvider,
 			},
 		},
+		BCCSP: cryptoProvider,
 	}
 
 	// Scenario I: Policy manager isn't initialized
 	// and thus policy cannot be found
-	err := cs.VerifyBlockSignature([]*protoutil.SignedData{}, nil)
+	mockPolicyManager.GetPolicyReturns(nil, false)
+	err = cs.VerifyBlockSignature([]*protoutil.SignedData{}, nil)
 	assert.EqualError(t, err, "policy /Channel/Orderer/BlockValidation wasn't found")
 
+	mockPolicyManager.GetPolicyReturns(mockPolicy, true)
 	// Scenario II: Policy manager finds policy, but it evaluates
 	// to error.
-	policyMgr.PolicyMap["/Channel/Orderer/BlockValidation"] = &mockpolicies.Policy{
-		Err: errors.New("invalid signature"),
-	}
+	mockPolicy.EvaluateSignedDataReturns(errors.New("invalid signature"))
 	err = cs.VerifyBlockSignature([]*protoutil.SignedData{}, nil)
 	assert.EqualError(t, err, "block verification failed: invalid signature")
 
 	// Scenario III: Policy manager finds policy, and it evaluates to success
-	policyMgr.PolicyMap["/Channel/Orderer/BlockValidation"] = &mockpolicies.Policy{
-		Err: nil,
-	}
+	mockPolicy.EvaluateSignedDataReturns(nil)
 	assert.NoError(t, cs.VerifyBlockSignature([]*protoutil.SignedData{}, nil))
 
 	// Scenario IV: A bad config envelope is passed
@@ -105,9 +130,60 @@ func TestVerifyBlockSignature(t *testing.T) {
 
 }
 
+func TestConsensusMetadataValidation(t *testing.T) {
+	oldConsensusMetadata := []byte("old consensus metadata")
+	newConsensusMetadata := []byte("new consensus metadata")
+	mockValidator := &mocks.ConfigTXValidator{}
+	mockValidator.ChannelIDReturns("mychannel")
+	mockValidator.ProposeConfigUpdateReturns(testConfigEnvelope(t), nil)
+	mockOrderer := &mocks.OrdererConfig{}
+	mockOrderer.ConsensusMetadataReturns(oldConsensusMetadata)
+	mockResources := &mocks.Resources{}
+	mockResources.ConfigtxValidatorReturns(mockValidator)
+	mockResources.OrdererConfigReturns(mockOrderer, true)
+
+	ms := &mutableResourcesMock{
+		Resources:               mockResources,
+		newConsensusMetadataVal: newConsensusMetadata,
+	}
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
+	mv := &msgprocessormocks.MetadataValidator{}
+	cs := &ChainSupport{
+		ledgerResources: &ledgerResources{
+			configResources: &configResources{
+				mutableResources: ms,
+				bccsp:            cryptoProvider,
+			},
+		},
+		MetadataValidator: mv,
+		BCCSP:             cryptoProvider,
+	}
+
+	// case 1: valid consensus metadata update
+	_, err = cs.ProposeConfigUpdate(&common.Envelope{})
+	assert.NoError(t, err)
+
+	// validate arguments to ValidateConsensusMetadata
+	assert.Equal(t, 1, mv.ValidateConsensusMetadataCallCount())
+	om, nm, nc := mv.ValidateConsensusMetadataArgsForCall(0)
+	assert.False(t, nc)
+	assert.Equal(t, oldConsensusMetadata, om)
+	assert.Equal(t, newConsensusMetadata, nm)
+
+	// case 2: invalid consensus metadata update
+	mv.ValidateConsensusMetadataReturns(errors.New("bananas"))
+	_, err = cs.ProposeConfigUpdate(&common.Envelope{})
+	assert.EqualError(t, err, "consensus metadata update for channel config update is invalid: bananas")
+}
+
 func testConfigEnvelope(t *testing.T) *common.ConfigEnvelope {
-	config := configtxgentest.Load(localconfig.SampleInsecureSoloProfile)
-	group, err := encoder.NewChannelGroup(config)
+	conf := genesisconfig.Load(genesisconfig.SampleInsecureSoloProfile, configtest.GetDevConfigDir())
+	group, err := encoder.NewChannelGroup(conf)
+	assert.NoError(t, err)
+	group.Groups["Orderer"].Values["ConsensusType"].Value, err = proto.Marshal(&orderer.ConsensusType{
+		Metadata: []byte("new consensus metadata"),
+	})
 	assert.NoError(t, err)
 	assert.NotNil(t, group)
 	return &common.ConfigEnvelope{
@@ -115,203 +191,4 @@ func testConfigEnvelope(t *testing.T) *common.ConfigEnvelope {
 			ChannelGroup: group,
 		},
 	}
-}
-
-func TestDetectMigration(t *testing.T) {
-	confSys := configtxgentest.Load(localconfig.SampleInsecureSoloProfile)
-	confSys.Orderer.Capabilities[capabilities.OrdererV1_4_2] = true
-	confSys.Capabilities[capabilities.ChannelV1_4_2] = true
-	confSys.Orderer.OrdererType = "kafka"
-	genesisBlock := encoder.New(confSys).GenesisBlock()
-	metadataFull := protoutil.MarshalOrPanic(&common.Metadata{Value: []byte{1, 2, 3, 4}})
-	metadataEmpty := protoutil.MarshalOrPanic(&common.Metadata{Value: []byte{}})
-
-	t.Run("Correct flow", func(t *testing.T) {
-		lf, rl := newRAMLedgerAndFactory(10, localconfig.TestChainID, genesisBlock)
-		appendNextMigBlock(t, rl, localconfig.TestChainID, "kafka", orderer.ConsensusType_STATE_MAINTENANCE,
-			metadataFull, capabilities.OrdererV1_4_2)
-		appendNextMigBlock(t, rl, localconfig.TestChainID, "etcdraft", orderer.ConsensusType_STATE_MAINTENANCE,
-			metadataEmpty, capabilities.OrdererV1_4_2)
-		_, _, chainSupport := createChainsupport(t, lf)
-		assert.True(t, chainSupport.DetectConsensusMigration(), "correct flow")
-	})
-
-	t.Run("Correct flow, disabled", func(t *testing.T) {
-		lf, rl := newRAMLedgerAndFactory(10, localconfig.TestChainID, genesisBlock)
-		appendNextMigBlock(t, rl, localconfig.TestChainID, "kafka", orderer.ConsensusType_STATE_MAINTENANCE,
-			metadataFull, capabilities.OrdererV1_1)
-		appendNextMigBlock(t, rl, localconfig.TestChainID, "etcdraft", orderer.ConsensusType_STATE_MAINTENANCE,
-			metadataEmpty, capabilities.OrdererV1_1)
-		_, _, chainSupport := createChainsupport(t, lf)
-		assert.False(t, chainSupport.DetectConsensusMigration(), "disabled")
-	})
-
-	t.Run("On genesis block, height=1, no migration", func(t *testing.T) {
-		lf, _ := newRAMLedgerAndFactory(10, localconfig.TestChainID, genesisBlock)
-		_, _, chainSupport := createChainsupport(t, lf)
-		assert.False(t, chainSupport.DetectConsensusMigration(), "no migration")
-	})
-
-	t.Run("On config tx, NORMAL state, no migration", func(t *testing.T) {
-		lf, rl := newRAMLedgerAndFactory(10, localconfig.TestChainID, genesisBlock)
-		appendNextMigBlock(t, rl, localconfig.TestChainID, "kafka", orderer.ConsensusType_STATE_NORMAL,
-			metadataFull, capabilities.OrdererV1_4_2)
-		_, _, chainSupport := createChainsupport(t, lf)
-		assert.False(t, chainSupport.DetectConsensusMigration(), "no migration")
-	})
-
-	t.Run("One tx in MAINTENANCE state, not empty metadata, no migration", func(t *testing.T) {
-		lf, rl := newRAMLedgerAndFactory(10, localconfig.TestChainID, genesisBlock)
-		appendNextMigBlock(t, rl, localconfig.TestChainID, "kafka", orderer.ConsensusType_STATE_MAINTENANCE,
-			metadataFull, capabilities.OrdererV1_4_2)
-		_, _, chainSupport := createChainsupport(t, lf)
-		assert.False(t, chainSupport.DetectConsensusMigration(), "no migration")
-	})
-
-	t.Run("One tx in MAINTENANCE state, no previous MAINTENANCE, no migration", func(t *testing.T) {
-		lf, rl := newRAMLedgerAndFactory(10, localconfig.TestChainID, genesisBlock)
-		appendNextMigBlock(t, rl, localconfig.TestChainID, "kafka", orderer.ConsensusType_STATE_MAINTENANCE,
-			metadataEmpty, capabilities.OrdererV1_4_2)
-		_, _, chainSupport := createChainsupport(t, lf)
-		assert.False(t, chainSupport.DetectConsensusMigration(), "no migration")
-	})
-
-	t.Run("Two txs in MAINTENANCE state, no type change, no migration", func(t *testing.T) {
-		lf, rl := newRAMLedgerAndFactory(10, localconfig.TestChainID, genesisBlock)
-		appendNextMigBlock(t, rl, localconfig.TestChainID, "kafka", orderer.ConsensusType_STATE_MAINTENANCE,
-			metadataFull, capabilities.OrdererV1_4_2)
-		appendNextMigBlock(t, rl, localconfig.TestChainID, "kafka", orderer.ConsensusType_STATE_MAINTENANCE,
-			metadataEmpty, capabilities.OrdererV1_4_2)
-		_, _, chainSupport := createChainsupport(t, lf)
-		assert.False(t, chainSupport.DetectConsensusMigration(), "no migration")
-	})
-
-	t.Run("Normal block, no migration", func(t *testing.T) {
-		lf, rl := newRAMLedgerAndFactory(10, localconfig.TestChainID, genesisBlock)
-		appendNextNormalBlock(t, rl, localconfig.TestChainID, 0, metadataFull)
-		_, _, chainSupport := createChainsupport(t, lf)
-		assert.False(t, chainSupport.DetectConsensusMigration(), "no migration")
-	})
-
-	t.Run("Normal block, one tx in MAINTENANCE state, no previous MAINTENANCE, no migration", func(t *testing.T) {
-		lf, rl := newRAMLedgerAndFactory(10, localconfig.TestChainID, genesisBlock)
-		appendNextNormalBlock(t, rl, localconfig.TestChainID, 0, metadataFull)
-		appendNextMigBlock(t, rl, localconfig.TestChainID, "kafka", orderer.ConsensusType_STATE_MAINTENANCE,
-			metadataEmpty, capabilities.OrdererV1_4_2)
-		_, _, chainSupport := createChainsupport(t, lf)
-		assert.False(t, chainSupport.DetectConsensusMigration(), "no migration")
-	})
-}
-
-func appendNextMigBlock(t *testing.T, rl blockledger.ReadWriter, chainID string,
-	ordererType string, state orderer.ConsensusType_State, ordererMetadata []byte, ordCapability string) {
-	nextBlock := blockledger.CreateNextBlock(rl, []*common.Envelope{
-		makeMigConfigTx(t, chainID, ordererType, state, ordCapability),
-	})
-	nextBlock.Metadata.Metadata[common.BlockMetadataIndex_LAST_CONFIG] = protoutil.MarshalOrPanic(&common.Metadata{
-		Value: protoutil.MarshalOrPanic(&common.LastConfig{Index: rl.Height()}),
-	})
-	nextBlock.Metadata.Metadata[common.BlockMetadataIndex_ORDERER] = ordererMetadata
-	err := rl.Append(nextBlock)
-	require.NoError(t, err)
-	return
-}
-
-func appendNextNormalBlock(t *testing.T, rl blockledger.ReadWriter, chainID string, lastConfig uint64, ordererMetadata []byte) {
-	nextBlock := blockledger.CreateNextBlock(rl,
-		[]*common.Envelope{
-			makeMigNormalTx(t, chainID, fmt.Sprintf("tx-%d-1", rl.Height())),
-			makeMigNormalTx(t, chainID, fmt.Sprintf("tx-%d-2", rl.Height())),
-		})
-	nextBlock.Metadata.Metadata[common.BlockMetadataIndex_LAST_CONFIG] = protoutil.MarshalOrPanic(&common.Metadata{
-		Value: protoutil.MarshalOrPanic(&common.LastConfig{Index: lastConfig}),
-	})
-	nextBlock.Metadata.Metadata[common.BlockMetadataIndex_ORDERER] = ordererMetadata
-	err := rl.Append(nextBlock)
-	require.NoError(t, err)
-	return
-}
-
-func createChainsupport(t *testing.T, lf blockledger.Factory) (map[string]consensus.Consenter, *Registrar, *ChainSupport) {
-	consenters := make(map[string]consensus.Consenter)
-	consenters["solo"] = &mockConsenter{}
-	consenters["kafka"] = &mockConsenter{}
-	consenters["etcdraft"] = &mockConsenter{}
-	manager := NewRegistrar(lf, mockCrypto(), &disabled.Provider{})
-	manager.Initialize(consenters)
-	require.NotNil(t, manager)
-	chainSupport := manager.GetChain(localconfig.TestChainID)
-	require.NotNil(t, chainSupport)
-	return consenters, manager, chainSupport
-}
-
-func makeMigConfigTx(t *testing.T, chainID string, ordererType string, state orderer.ConsensusType_State, ordCapability string) *common.Envelope {
-	gConf := configtxgentest.Load(localconfig.SampleInsecureSoloProfile)
-	gConf.Orderer.Capabilities = map[string]bool{
-		ordCapability: true,
-	}
-	gConf.Orderer.OrdererType = "kafka"
-	channelGroup, err := encoder.NewChannelGroup(gConf)
-	require.NoError(t, err)
-
-	channelGroup.Groups[channelconfig.OrdererGroupKey].Values[channelconfig.ConsensusTypeKey] = &common.ConfigValue{
-		Value: protoutil.MarshalOrPanic(
-			&orderer.ConsensusType{
-				Type:  ordererType,
-				State: state,
-			}),
-		ModPolicy: channelconfig.AdminsPolicyKey,
-	}
-
-	configUpdateEnv := &common.ConfigUpdateEnvelope{
-		ConfigUpdate: protoutil.MarshalOrPanic(&common.ConfigUpdate{
-			WriteSet: channelGroup,
-		}),
-	}
-
-	configUpdateTx, err := protoutil.CreateSignedEnvelope(common.HeaderType_CONFIG_UPDATE, chainID, mockCrypto(), configUpdateEnv, 0, 0)
-	require.NoError(t, err)
-
-	configTx, err := protoutil.CreateSignedEnvelope(
-		common.HeaderType_CONFIG,
-		chainID,
-		mockCrypto(),
-		&common.ConfigEnvelope{
-			Config: &common.Config{
-				Sequence:     1,
-				ChannelGroup: configtx.UnmarshalConfigUpdateOrPanic(configUpdateEnv.ConfigUpdate).WriteSet,
-			},
-			LastUpdate: configUpdateTx,
-		},
-		0,
-		0)
-	require.NoError(t, err)
-
-	return configTx
-}
-
-func makeMigNormalTx(t *testing.T, chainID string, txId string) *common.Envelope {
-	txBytes := []byte{1, 2, 3, 4, 5, 6, 7, 8}
-
-	cHdr := &common.ChannelHeader{
-		TxId:      txId,
-		Type:      int32(common.HeaderType_ENDORSER_TRANSACTION),
-		ChannelId: chainID,
-	}
-	cHdrBytes, err := proto.Marshal(cHdr)
-	require.NoError(t, err)
-	commonPayload := &common.Payload{
-		Header: &common.Header{
-			ChannelHeader: cHdrBytes,
-		},
-		Data: txBytes,
-	}
-
-	payloadBytes, err := proto.Marshal(commonPayload)
-	require.NoError(t, err)
-	envelope := &common.Envelope{
-		Payload: payloadBytes,
-	}
-
-	return envelope
 }

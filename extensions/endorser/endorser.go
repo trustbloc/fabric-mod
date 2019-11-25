@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package endorser
 
 import (
-	"github.com/hyperledger/fabric/protos/ledger/rwset"
+	"github.com/hyperledger/fabric-protos-go/ledger/rwset"
 )
 
 // NewCollRWSetFilter returns a new collection RW set filter

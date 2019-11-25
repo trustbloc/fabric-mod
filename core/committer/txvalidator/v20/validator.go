@@ -12,6 +12,10 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	mspprotos "github.com/hyperledger/fabric-protos-go/msp"
+	"github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric/bccsp"
 	"github.com/hyperledger/fabric/common/channelconfig"
 	"github.com/hyperledger/fabric/common/configtx"
 	commonerrors "github.com/hyperledger/fabric/common/errors"
@@ -23,9 +27,6 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	ledgerUtil "github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/hyperledger/fabric/msp"
-	"github.com/hyperledger/fabric/protos/common"
-	mspprotos "github.com/hyperledger/fabric/protos/msp"
-	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 )
@@ -50,7 +51,7 @@ type ChannelResources interface {
 
 	// GetMSPIDs returns the IDs for the application MSPs
 	// that have been defined in the channel
-	GetMSPIDs(cid string) []string
+	GetMSPIDs() []string
 
 	// Capabilities defines the capabilities for the application portion of this channel
 	Capabilities() channelconfig.ApplicationCapabilities
@@ -93,17 +94,24 @@ type ChannelPolicyManagerGetter interface {
 	policies.ChannelPolicyManagerGetter
 }
 
+//go:generate mockery -dir . -name PolicyManager -case underscore -output mocks/
+
+type PolicyManager interface {
+	policies.Manager
+}
+
 //go:generate mockery -dir plugindispatcher/ -name CollectionResources -case underscore -output mocks/
 
 // TxValidator is the implementation of Validator interface, keeps
 // reference to the ledger to enable tx simulation
 // and execution of plugins
 type TxValidator struct {
-	ChainID          string
+	ChannelID        string
 	Semaphore        Semaphore
 	ChannelResources ChannelResources
 	LedgerResources  LedgerResources
 	Dispatcher       Dispatcher
+	CryptoProvider   bccsp.BCCSP
 }
 
 var logger = flogging.MustGetLogger("committer.txvalidator")
@@ -123,7 +131,7 @@ type blockValidationResult struct {
 
 // NewTxValidator creates new transactions validator
 func NewTxValidator(
-	chainID string,
+	channelID string,
 	sem Semaphore,
 	cr ChannelResources,
 	ler LedgerResources,
@@ -131,15 +139,17 @@ func NewTxValidator(
 	cor plugindispatcher.CollectionResources,
 	pm plugin.Mapper,
 	channelPolicyManagerGetter policies.ChannelPolicyManagerGetter,
+	cryptoProvider bccsp.BCCSP,
 ) *TxValidator {
 	// Encapsulates interface implementation
 	pluginValidator := plugindispatcher.NewPluginValidator(pm, ler, &dynamicDeserializer{cr: cr}, &dynamicCapabilities{cr: cr}, channelPolicyManagerGetter, cor)
 	return &TxValidator{
-		ChainID:          chainID,
+		ChannelID:        channelID,
 		Semaphore:        sem,
 		ChannelResources: cr,
 		LedgerResources:  ler,
-		Dispatcher:       plugindispatcher.New(chainID, cr, ler, lcr, pluginValidator),
+		Dispatcher:       plugindispatcher.New(channelID, cr, ler, lcr, pluginValidator),
+		CryptoProvider:   cryptoProvider,
 	}
 }
 
@@ -173,7 +183,7 @@ func (v *TxValidator) Validate(block *common.Block) error {
 	var errPos int
 
 	startValidation := time.Now() // timer to log Validate block duration
-	logger.Debugf("[%s] START Block Validation for block [%d]", v.ChainID, block.Header.Number)
+	logger.Debugf("[%s] START Block Validation for block [%d]", v.ChannelID, block.Header.Number)
 
 	// Initialize trans as valid here, then set invalidation reason code upon invalidation below
 	txsfltr := ledgerUtil.NewTxValidationFlags(len(block.Data.Data))
@@ -250,7 +260,7 @@ func (v *TxValidator) Validate(block *common.Block) error {
 	block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER] = txsfltr
 
 	elapsedValidation := time.Since(startValidation) / time.Millisecond // duration in ms
-	logger.Infof("[%s] Validated block [%d] in %dms", v.ChainID, block.Header.Number, elapsedValidation)
+	logger.Infof("[%s] Validated block [%d] in %dms", v.ChannelID, block.Header.Number, elapsedValidation)
 
 	return nil
 }
@@ -311,13 +321,13 @@ func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *bl
 		// chain binding proposal to endorsements to tx holds. We do
 		// NOT check the validity of endorsements, though. That's a
 		// job for the validation plugins
-		logger.Debugf("[%s] validateTx starts for block %p env %p txn %d", v.ChainID, block, env, tIdx)
-		defer logger.Debugf("[%s] validateTx completes for block %p env %p txn %d", v.ChainID, block, env, tIdx)
+		logger.Debugf("[%s] validateTx starts for block %p env %p txn %d", v.ChannelID, block, env, tIdx)
+		defer logger.Debugf("[%s] validateTx completes for block %p env %p txn %d", v.ChannelID, block, env, tIdx)
 		var payload *common.Payload
 		var err error
 		var txResult peer.TxValidationCode
 
-		if payload, txResult = validation.ValidateTransaction(env, v.ChannelResources.Capabilities()); txResult != peer.TxValidationCode_VALID {
+		if payload, txResult = validation.ValidateTransaction(env, v.CryptoProvider); txResult != peer.TxValidationCode_VALID {
 			logger.Errorf("Invalid transaction with index %d", tIdx)
 			results <- &blockValidationResult{
 				tIdx:           tIdx,
@@ -384,26 +394,6 @@ func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *bl
 					}
 					return
 				}
-			}
-		} else if common.HeaderType(chdr.Type) == common.HeaderType_TOKEN_TRANSACTION {
-
-			txID = chdr.TxId
-			if !v.ChannelResources.Capabilities().FabToken() {
-				logger.Debugf("Unsupported transaction type [%s] in block number [%d] transaction index [%d]: FabToken capability is not enabled",
-					common.HeaderType(chdr.Type), block.Header.Number, tIdx)
-				results <- &blockValidationResult{
-					tIdx:           tIdx,
-					validationCode: peer.TxValidationCode_UNKNOWN_TX_TYPE,
-				}
-				return
-			}
-
-			// Check if there is a duplicate of such transaction in the ledger and
-			// obtain the corresponding result that acknowledges the error type
-			erroneousResultEntry := v.checkTxIdDupsLedger(tIdx, chdr, v.LedgerResources)
-			if erroneousResultEntry != nil {
-				results <- erroneousResultEntry
-				return
 			}
 		} else if common.HeaderType(chdr.Type) == common.HeaderType_CONFIG {
 			configEnvelope, err := configtx.UnmarshalConfigEnvelope(payload.Data)
@@ -527,11 +517,6 @@ func (ds *dynamicCapabilities) CollectionUpgrade() bool {
 	return ds.cr.Capabilities().CollectionUpgrade()
 }
 
-// FabToken returns true if fabric token function is supported.
-func (ds *dynamicCapabilities) FabToken() bool {
-	return ds.cr.Capabilities().FabToken()
-}
-
 func (ds *dynamicCapabilities) ForbidDuplicateTXIdInBlock() bool {
 	return ds.cr.Capabilities().ForbidDuplicateTXIdInBlock()
 }
@@ -547,6 +532,10 @@ func (ds *dynamicCapabilities) MetadataLifecycle() bool {
 
 func (ds *dynamicCapabilities) PrivateChannelData() bool {
 	return ds.cr.Capabilities().PrivateChannelData()
+}
+
+func (ds *dynamicCapabilities) StorePvtDataOfInvalidTx() bool {
+	return ds.cr.Capabilities().StorePvtDataOfInvalidTx()
 }
 
 func (ds *dynamicCapabilities) Supported() error {

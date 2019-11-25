@@ -173,7 +173,7 @@ properties will have ensured the private data is available on other peers.
 Referencing collections from chaincode
 --------------------------------------
 
-A set of `shim APIs <https://godoc.org/github.com/hyperledger/fabric/core/chaincode/shim>`_
+A set of `shim APIs <https://godoc.org/github.com/hyperledger/fabric-chaincode-go/shim>`_
 are available for setting and retrieving private data.
 
 The same chaincode data operations can be applied to channel state data and
@@ -191,8 +191,21 @@ not to include private data in the main part of the chaincode proposal. A specia
 field in the chaincode proposal called the ``transient`` field can be used to pass
 private data from the client (or data that chaincode will use to generate private
 data), to chaincode invocation on the peer.  The chaincode can retrieve the
-``transient`` field by calling the `GetTransient() API <https://github.com/hyperledger/fabric/blob/8b3cbda97e58d1a4ff664219244ffd1d89d7fba8/core/chaincode/shim/interfaces.go#L315-L321>`_.
+``transient`` field by calling the `GetTransient() API <https://godoc.org/github.com/hyperledger/fabric-chaincode-go/shim#ChaincodeStub.GetTransient>`_.
 This ``transient`` field gets excluded from the channel transaction.
+
+Protecting private data content
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+If the private data is relatively simple and predictable (e.g. transaction dollar
+amount), channel members who are not authorized to the private data collection
+could try to guess the content of the private data via brute force hashing of
+the domain space, in hopes of finding a match with the private data hash on the
+chain. Private data that is predictable should therefore include a random "salt"
+that is concatenated with the private data key and included in the private data
+value, so that a matching hash cannot realistically be found via brute force.
+The random "salt" can be generated at the client side (e.g. by sampling a secure
+psuedo-random source) and then passed along with the private data in the transient
+field at the time of chaincode invocation.
 
 Access control for private data
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -210,7 +223,7 @@ configuration definitions and how to set them, refer back to the
           ``memberOnlyRead`` to false. You can then apply your own access
           control logic in chaincode, for example by calling the GetCreator()
           chaincode API or using the client identity
-          `chaincode library <https://github.com/hyperledger/fabric/tree/master/core/chaincode/shim/ext/cid>`__ .
+          `chaincode library <https://godoc.org/github.com/hyperledger/fabric-chaincode-go/shim#ChaincodeStub.GetCreator>`__ .
 
 Querying Private Data
 ~~~~~~~~~~~~~~~~~~~~~

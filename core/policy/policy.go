@@ -10,10 +10,10 @@ import (
 	"errors"
 	"fmt"
 
+	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/msp/mgmt"
-	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 )
 
@@ -62,23 +62,23 @@ func (p *policyChecker) CheckPolicy(channelID, policyName string, signedProp *pb
 	}
 
 	// Get Policy
-	policyManager, _ := p.channelPolicyManagerGetter.Manager(channelID)
+	policyManager := p.channelPolicyManagerGetter.Manager(channelID)
 	if policyManager == nil {
 		return fmt.Errorf("Failed to get policy manager for channel [%s]", channelID)
 	}
 
 	// Prepare SignedData
-	proposal, err := protoutil.GetProposal(signedProp.ProposalBytes)
+	proposal, err := protoutil.UnmarshalProposal(signedProp.ProposalBytes)
 	if err != nil {
 		return fmt.Errorf("Failing extracting proposal during check policy on channel [%s] with policy [%s]: [%s]", channelID, policyName, err)
 	}
 
-	header, err := protoutil.GetHeader(proposal.Header)
+	header, err := protoutil.UnmarshalHeader(proposal.Header)
 	if err != nil {
 		return fmt.Errorf("Failing extracting header during check policy on channel [%s] with policy [%s]: [%s]", channelID, policyName, err)
 	}
 
-	shdr, err := protoutil.GetSignatureHeader(header.SignatureHeader)
+	shdr, err := protoutil.UnmarshalSignatureHeader(header.SignatureHeader)
 	if err != nil {
 		return fmt.Errorf("Invalid Proposal's SignatureHeader during check policy on channel [%s] with policy [%s]: [%s]", channelID, policyName, err)
 	}
@@ -103,17 +103,17 @@ func (p *policyChecker) CheckPolicyNoChannel(policyName string, signedProp *pb.S
 		return fmt.Errorf("Invalid signed proposal during channelless check policy with policy [%s]", policyName)
 	}
 
-	proposal, err := protoutil.GetProposal(signedProp.ProposalBytes)
+	proposal, err := protoutil.UnmarshalProposal(signedProp.ProposalBytes)
 	if err != nil {
 		return fmt.Errorf("Failing extracting proposal during channelless check policy with policy [%s]: [%s]", policyName, err)
 	}
 
-	header, err := protoutil.GetHeader(proposal.Header)
+	header, err := protoutil.UnmarshalHeader(proposal.Header)
 	if err != nil {
 		return fmt.Errorf("Failing extracting header during channelless check policy with policy [%s]: [%s]", policyName, err)
 	}
 
-	shdr, err := protoutil.GetSignatureHeader(header.SignatureHeader)
+	shdr, err := protoutil.UnmarshalSignatureHeader(header.SignatureHeader)
 	if err != nil {
 		return fmt.Errorf("Invalid Proposal's SignatureHeader during channelless check policy with policy [%s]: [%s]", policyName, err)
 	}
@@ -156,7 +156,7 @@ func (p *policyChecker) CheckPolicyBySignedData(channelID, policyName string, sd
 	}
 
 	// Get Policy
-	policyManager, _ := p.channelPolicyManagerGetter.Manager(channelID)
+	policyManager := p.channelPolicyManagerGetter.Manager(channelID)
 	if policyManager == nil {
 		return fmt.Errorf("Failed to get policy manager for channel [%s]", channelID)
 	}
@@ -165,34 +165,10 @@ func (p *policyChecker) CheckPolicyBySignedData(channelID, policyName string, sd
 	policy, _ := policyManager.GetPolicy(policyName)
 
 	// Evaluate the policy
-	err := policy.Evaluate(sd)
+	err := policy.EvaluateSignedData(sd)
 	if err != nil {
 		return fmt.Errorf("Failed evaluating policy on signed data during check policy on channel [%s] with policy [%s]: [%s]", channelID, policyName, err)
 	}
 
 	return nil
-}
-
-var pcFactory PolicyCheckerFactory
-
-// PolicyCheckerFactory defines a factory interface so
-// that the actual implementation can be injected
-type PolicyCheckerFactory interface {
-	NewPolicyChecker() PolicyChecker
-}
-
-// RegisterPolicyCheckerFactory is to be called once to set
-// the factory that will be used to obtain instances of PolicyChecker
-func RegisterPolicyCheckerFactory(f PolicyCheckerFactory) {
-	pcFactory = f
-}
-
-// GetPolicyChecker returns instances of PolicyChecker;
-// the actual implementation is controlled by the factory that
-// is registered via RegisterPolicyCheckerFactory
-func GetPolicyChecker() PolicyChecker {
-	if pcFactory == nil {
-		panic("The factory must be set first via RegisterPolicyCheckerFactory")
-	}
-	return pcFactory.NewPolicyChecker()
 }

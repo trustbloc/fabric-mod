@@ -86,6 +86,43 @@ func BasicSolo() *Config {
 	}
 }
 
+func BasicSoloWithIdemix() *Config {
+	config := BasicSolo()
+
+	// Add idemix organization
+	config.Organizations = append(config.Organizations, &Organization{
+		Name:          "Org3",
+		MSPID:         "Org3MSP",
+		MSPType:       "idemix",
+		Domain:        "org3.example.com",
+		EnableNodeOUs: false,
+		Users:         0,
+		CA:            &CA{Hostname: "ca"},
+	})
+	// Add idemix organization to consortium
+	config.Consortiums[0].Organizations = append(config.Consortiums[0].Organizations, "Org3")
+	config.Profiles[1].Organizations = append(config.Profiles[1].Organizations, "Org3")
+
+	return config
+}
+
+func MultiChannelBasicSolo() *Config {
+	config := BasicSolo()
+
+	config.Channels = []*Channel{
+		{Name: "testchannel", Profile: "TwoOrgsChannel"},
+		{Name: "testchannel2", Profile: "TwoOrgsChannel"}}
+
+	for _, peer := range config.Peers {
+		peer.Channels = []*PeerChannel{
+			{Name: "testchannel", Anchor: true},
+			{Name: "testchannel2", Anchor: true},
+		}
+	}
+
+	return config
+}
+
 func BasicKafka() *Config {
 	config := BasicSolo()
 	config.Consensus.Type = "kafka"
@@ -109,8 +146,18 @@ func BasicEtcdRaft() *Config {
 	return config
 }
 
+func MinimalRaft() *Config {
+	config := BasicEtcdRaft()
+	config.Peers[1].Channels = nil
+	config.Peers[2].Channels = nil
+	config.Peers[3].Channels = nil
+	config.Profiles[1].Organizations = []string{"Org1"}
+	return config
+}
+
 func MultiChannelEtcdRaft() *Config {
-	config := BasicSolo()
+	config := MultiChannelBasicSolo()
+
 	config.Consensus.Type = "etcdraft"
 	config.Profiles = []*Profile{{
 		Name:     "SampleDevModeEtcdRaft",
@@ -121,16 +168,6 @@ func MultiChannelEtcdRaft() *Config {
 		Organizations: []string{"Org1", "Org2"},
 	}}
 	config.SystemChannel.Profile = "SampleDevModeEtcdRaft"
-	config.Channels = []*Channel{
-		{Name: "testchannel1", Profile: "TwoOrgsChannel"},
-		{Name: "testchannel2", Profile: "TwoOrgsChannel"}}
-
-	for _, peer := range config.Peers {
-		peer.Channels = []*PeerChannel{
-			{Name: "testchannel1", Anchor: true},
-			{Name: "testchannel2", Anchor: true},
-		}
-	}
 
 	return config
 }

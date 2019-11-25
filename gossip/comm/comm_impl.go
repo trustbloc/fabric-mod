@@ -17,13 +17,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	proto "github.com/hyperledger/fabric-protos-go/gossip"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/identity"
 	"github.com/hyperledger/fabric/gossip/metrics"
 	"github.com/hyperledger/fabric/gossip/protoext"
 	"github.com/hyperledger/fabric/gossip/util"
-	proto "github.com/hyperledger/fabric/protos/gossip"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
@@ -58,26 +58,27 @@ func NewCommInstance(s *grpc.Server, certs *common.TLSCertificates, idStore iden
 	commMetrics *metrics.CommMetrics, config CommConfig, dialOpts ...grpc.DialOption) (Comm, error) {
 
 	commInst := &commImpl{
-		sa:             sa,
-		pubSub:         util.NewPubSub(),
-		PKIID:          idStore.GetPKIidOfCert(peerIdentity),
-		idMapper:       idStore,
-		logger:         util.GetLogger(util.CommLogger, ""),
-		peerIdentity:   peerIdentity,
-		opts:           dialOpts,
-		secureDialOpts: secureDialOpts,
-		msgPublisher:   NewChannelDemultiplexer(),
-		lock:           &sync.Mutex{},
-		deadEndpoints:  make(chan common.PKIidType, 100),
-		stopping:       int32(0),
-		exitChan:       make(chan struct{}),
-		subscriptions:  make([]chan protoext.ReceivedMessage, 0),
-		tlsCerts:       certs,
-		metrics:        commMetrics,
-		dialTimeout:    config.DialTimeout,
-		connTimeout:    config.ConnTimeout,
-		recvBuffSize:   config.RecvBuffSize,
-		sendBuffSize:   config.SendBuffSize,
+		sa:              sa,
+		pubSub:          util.NewPubSub(),
+		PKIID:           idStore.GetPKIidOfCert(peerIdentity),
+		idMapper:        idStore,
+		logger:          util.GetLogger(util.CommLogger, ""),
+		peerIdentity:    peerIdentity,
+		opts:            dialOpts,
+		secureDialOpts:  secureDialOpts,
+		msgPublisher:    NewChannelDemultiplexer(),
+		lock:            &sync.Mutex{},
+		deadEndpoints:   make(chan common.PKIidType, 100),
+		identityChanges: make(chan common.PKIidType, 1),
+		stopping:        int32(0),
+		exitChan:        make(chan struct{}),
+		subscriptions:   make([]chan protoext.ReceivedMessage, 0),
+		tlsCerts:        certs,
+		metrics:         commMetrics,
+		dialTimeout:     config.DialTimeout,
+		connTimeout:     config.ConnTimeout,
+		recvBuffSize:    config.RecvBuffSize,
+		sendBuffSize:    config.SendBuffSize,
 	}
 
 	connConfig := ConnConfig{
@@ -101,28 +102,29 @@ type CommConfig struct {
 }
 
 type commImpl struct {
-	sa             api.SecurityAdvisor
-	tlsCerts       *common.TLSCertificates
-	pubSub         *util.PubSub
-	peerIdentity   api.PeerIdentityType
-	idMapper       identity.Mapper
-	logger         util.Logger
-	opts           []grpc.DialOption
-	secureDialOpts func() []grpc.DialOption
-	connStore      *connectionStore
-	PKIID          []byte
-	deadEndpoints  chan common.PKIidType
-	msgPublisher   *ChannelDeMultiplexer
-	lock           *sync.Mutex
-	exitChan       chan struct{}
-	stopWG         sync.WaitGroup
-	subscriptions  []chan protoext.ReceivedMessage
-	stopping       int32
-	metrics        *metrics.CommMetrics
-	dialTimeout    time.Duration
-	connTimeout    time.Duration
-	recvBuffSize   int
-	sendBuffSize   int
+	sa              api.SecurityAdvisor
+	tlsCerts        *common.TLSCertificates
+	pubSub          *util.PubSub
+	peerIdentity    api.PeerIdentityType
+	idMapper        identity.Mapper
+	logger          util.Logger
+	opts            []grpc.DialOption
+	secureDialOpts  func() []grpc.DialOption
+	connStore       *connectionStore
+	PKIID           []byte
+	deadEndpoints   chan common.PKIidType
+	identityChanges chan common.PKIidType
+	msgPublisher    *ChannelDeMultiplexer
+	lock            *sync.Mutex
+	exitChan        chan struct{}
+	stopWG          sync.WaitGroup
+	subscriptions   []chan protoext.ReceivedMessage
+	stopping        int32
+	metrics         *metrics.CommMetrics
+	dialTimeout     time.Duration
+	connTimeout     time.Duration
+	recvBuffSize    int
+	sendBuffSize    int
 }
 
 func (c *commImpl) createConnection(endpoint string, expectedPKIID common.PKIidType) (*connection, error) {
@@ -176,13 +178,16 @@ func (c *commImpl) createConnection(endpoint string, expectedPKIID common.PKIidT
 					cc.Close()
 					cancel()
 					return nil, errors.New("authentication failure")
+				} else {
+					c.logger.Infof("Peer %s changed its PKI-ID from %s to %s", endpoint, expectedPKIID, pkiID)
+					c.identityChanges <- expectedPKIID
 				}
 			}
 			connConfig := ConnConfig{
 				RecvBuffSize: c.recvBuffSize,
 				SendBuffSize: c.sendBuffSize,
 			}
-			conn := newConnection(cl, cc, stream, nil, c.metrics, connConfig)
+			conn := newConnection(cl, cc, stream, c.metrics, connConfig)
 			conn.pkiID = pkiID
 			conn.info = connInfo
 			conn.logger = c.logger
@@ -192,7 +197,6 @@ func (c *commImpl) createConnection(endpoint string, expectedPKIID common.PKIidT
 				c.logger.Debug("Got message:", m)
 				c.msgPublisher.DeMultiplex(&ReceivedMessageImpl{
 					conn:                conn,
-					lock:                conn,
 					SignedGossipMessage: m,
 					connInfo:            connInfo,
 				})
@@ -233,6 +237,7 @@ func (c *commImpl) sendToEndpoint(peer *RemotePeer, msg *protoext.SignedGossipMe
 		disConnectOnErr := func(err error) {
 			c.logger.Warningf("%v isn't responsive: %v", peer, err)
 			c.disconnect(peer.PKIID)
+			conn.close()
 		}
 		conn.send(msg, disConnectOnErr, shouldBlock)
 		return
@@ -332,8 +337,8 @@ func (c *commImpl) Accept(acceptor common.MessageAcceptor) <-chan protoext.Recei
 
 		for {
 			select {
-			case msg := <-genericChan:
-				if msg == nil {
+			case msg, channelOpen := <-genericChan:
+				if !channelOpen {
 					return
 				}
 				select {
@@ -351,6 +356,10 @@ func (c *commImpl) Accept(acceptor common.MessageAcceptor) <-chan protoext.Recei
 
 func (c *commImpl) PresumedDead() <-chan common.PKIidType {
 	return c.deadEndpoints
+}
+
+func (c *commImpl) IdentitySwitch() <-chan common.PKIidType {
+	return c.identityChanges
 }
 
 func (c *commImpl) CloseConn(peer *RemotePeer) {
@@ -559,7 +568,6 @@ func (c *commImpl) GossipStream(stream proto.Gossip_GossipStreamServer) error {
 	h := func(m *protoext.SignedGossipMessage) {
 		c.msgPublisher.DeMultiplex(&ReceivedMessageImpl{
 			conn:                conn,
-			lock:                conn,
 			SignedGossipMessage: m,
 			connInfo:            connInfo,
 		})
@@ -570,7 +578,6 @@ func (c *commImpl) GossipStream(stream proto.Gossip_GossipStreamServer) error {
 	defer func() {
 		c.logger.Debug("Client", extractRemoteAddress(stream), " disconnected")
 		c.connStore.closeConnByPKIid(connInfo.ID)
-		conn.close()
 	}()
 
 	return conn.serviceConnection()
@@ -588,30 +595,17 @@ func (c *commImpl) disconnect(pkiID common.PKIidType) {
 	c.connStore.closeConnByPKIid(pkiID)
 }
 
-func readWithTimeout(stream interface{}, timeout time.Duration, address string) (*protoext.SignedGossipMessage, error) {
+func readWithTimeout(stream stream, timeout time.Duration, address string) (*protoext.SignedGossipMessage, error) {
 	incChan := make(chan *protoext.SignedGossipMessage, 1)
 	errChan := make(chan error, 1)
 	go func() {
-		if srvStr, isServerStr := stream.(proto.Gossip_GossipStreamServer); isServerStr {
-			if m, err := srvStr.Recv(); err == nil {
-				msg, err := protoext.EnvelopeToGossipMessage(m)
-				if err != nil {
-					errChan <- err
-					return
-				}
-				incChan <- msg
+		if m, err := stream.Recv(); err == nil {
+			msg, err := protoext.EnvelopeToGossipMessage(m)
+			if err != nil {
+				errChan <- err
+				return
 			}
-		} else if clStr, isClientStr := stream.(proto.Gossip_GossipStreamClient); isClientStr {
-			if m, err := clStr.Recv(); err == nil {
-				msg, err := protoext.EnvelopeToGossipMessage(m)
-				if err != nil {
-					errChan <- err
-					return
-				}
-				incChan <- msg
-			}
-		} else {
-			panic(errors.Errorf("Stream isn't a GossipStreamServer or a GossipStreamClient, but %v. Aborting", reflect.TypeOf(stream)))
+			incChan <- msg
 		}
 	}()
 	select {
@@ -646,7 +640,7 @@ func (c *commImpl) createConnectionMsg(pkiID common.PKIidType, certHash []byte, 
 type stream interface {
 	Send(envelope *proto.Envelope) error
 	Recv() (*proto.Envelope, error)
-	grpc.Stream
+	Context() context.Context
 }
 
 func topicForAck(nonce uint64, pkiID common.PKIidType) string {

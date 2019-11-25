@@ -13,14 +13,14 @@ import (
 	"errors"
 	"io/ioutil"
 	"net"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
-
 	"github.com/golang/protobuf/proto"
+	cb "github.com/hyperledger/fabric-protos-go/common"
+	mspproto "github.com/hyperledger/fabric-protos-go/msp"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
 	configtxtest "github.com/hyperledger/fabric/common/configtx/test"
 	"github.com/hyperledger/fabric/core/comm"
 	"github.com/hyperledger/fabric/core/comm/testpb"
@@ -29,10 +29,6 @@ import (
 	"github.com/hyperledger/fabric/core/peer"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/msp"
-	cb "github.com/hyperledger/fabric/protos/common"
-	mspproto "github.com/hyperledger/fabric/protos/msp"
-	pb "github.com/hyperledger/fabric/protos/peer"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -94,6 +90,18 @@ func createMSPConfig(rootCerts, tlsRootCerts, tlsIntermediateCerts [][]byte,
 		TlsRootCerts:         tlsRootCerts,
 		TlsIntermediateCerts: tlsIntermediateCerts,
 		Name:                 mspID,
+		FabricNodeOus: &mspproto.FabricNodeOUs{
+			Enable: true,
+			ClientOuIdentifier: &mspproto.FabricOUIdentifier{
+				OrganizationalUnitIdentifier: "client",
+			},
+			PeerOuIdentifier: &mspproto.FabricOUIdentifier{
+				OrganizationalUnitIdentifier: "peer",
+			},
+			AdminOuIdentifier: &mspproto.FabricOUIdentifier{
+				OrganizationalUnitIdentifier: "admin",
+			},
+		},
 	}
 
 	fmpsjs, err := proto.Marshal(fmspconf)
@@ -162,21 +170,30 @@ func TestUpdateRootsFromConfigBlock(t *testing.T) {
 	channel3Block, err := createConfigBlock("channel3", org2IntermediateMSPConf, ordererOrgMSPConf, "Org2IntermediateMSP", "OrdererOrgMSP")
 	require.NoError(t, err)
 
-	createChannel := func(cid string, block *cb.Block) {
-		testDir, err := ioutil.TempDir("", "peer-pkg")
-		require.NoError(t, err)
-		defer os.RemoveAll(testDir)
+	serverConfig := comm.ServerConfig{
+		SecOpts: comm.SecureOptions{
+			UseTLS:            true,
+			Certificate:       org1Server1Cert,
+			Key:               org1Server1Key,
+			ServerRootCAs:     [][]byte{org1CA},
+			RequireClientCert: true,
+		},
+	}
 
-		viper.Set("peer.tls.enabled", true)
-		viper.Set("peer.tls.cert.file", filepath.Join("testdata", "Org1-server1-cert.pem"))
-		viper.Set("peer.tls.key.file", filepath.Join("testdata", "Org1-server1-key.pem"))
-		viper.Set("peer.tls.rootcert.file", filepath.Join("testdata", "Org1-cert.pem"))
-		viper.Set("peer.fileSystemPath", testDir)
-		err = peer.Default.CreateChainFromBlock(block, nil, &mock.DeployedChaincodeInfoProvider{}, nil, nil)
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
+	peerInstance, cleanup := peer.NewTestPeer(t)
+	defer cleanup()
+
+	peerInstance.CredentialSupport = comm.NewCredentialSupport()
+
+	createChannel := func(t *testing.T, cid string, block *cb.Block) {
+		err = peerInstance.CreateChannel(cid, block, &mock.DeployedChaincodeInfoProvider{}, nil, nil)
 		if err != nil {
 			t.Fatalf("Failed to create config block (%s)", err)
 		}
-		t.Logf("Channel %s MSPIDs: (%s)", cid, peer.Default.GetMSPIDs(cid))
+		t.Logf("Channel %s MSPIDs: (%s)", cid, peerInstance.GetMSPIDs(cid))
 	}
 
 	org1CertPool, err := createCertPool([][]byte{org1CA})
@@ -217,41 +234,25 @@ func TestUpdateRootsFromConfigBlock(t *testing.T) {
 	var tests = []struct {
 		name          string
 		serverConfig  comm.ServerConfig
-		createChannel func()
+		createChannel func(*testing.T)
 		goodOptions   []grpc.DialOption
 		badOptions    []grpc.DialOption
 		numAppCAs     int
 		numOrdererCAs int
 	}{
 		{
-			name: "MutualTLSOrg1Org1",
-			serverConfig: comm.ServerConfig{
-				SecOpts: &comm.SecureOptions{
-					UseTLS:            true,
-					Certificate:       org1Server1Cert,
-					Key:               org1Server1Key,
-					ServerRootCAs:     [][]byte{org1CA},
-					RequireClientCert: true,
-				},
-			},
-			createChannel: func() { createChannel("channel1", channel1Block) },
+			name:          "MutualTLSOrg1Org1",
+			serverConfig:  serverConfig,
+			createChannel: func(t *testing.T) { createChannel(t, "channel1", channel1Block) },
 			goodOptions:   []grpc.DialOption{grpc.WithTransportCredentials(org1Creds)},
 			badOptions:    []grpc.DialOption{grpc.WithTransportCredentials(ordererOrgCreds)},
 			numAppCAs:     3, // each channel also has a DEFAULT MSP
 			numOrdererCAs: 1,
 		},
 		{
-			name: "MutualTLSOrg1Org2",
-			serverConfig: comm.ServerConfig{
-				SecOpts: &comm.SecureOptions{
-					UseTLS:            true,
-					Certificate:       org1Server1Cert,
-					Key:               org1Server1Key,
-					ServerRootCAs:     [][]byte{org1CA},
-					RequireClientCert: true,
-				},
-			},
-			createChannel: func() { createChannel("channel2", channel2Block) },
+			name:          "MutualTLSOrg1Org2",
+			serverConfig:  serverConfig,
+			createChannel: func(t *testing.T) { createChannel(t, "channel2", channel2Block) },
 			goodOptions: []grpc.DialOption{
 				grpc.WithTransportCredentials(org2Creds),
 			},
@@ -262,17 +263,9 @@ func TestUpdateRootsFromConfigBlock(t *testing.T) {
 			numOrdererCAs: 2,
 		},
 		{
-			name: "MutualTLSOrg1Org2Intermediate",
-			serverConfig: comm.ServerConfig{
-				SecOpts: &comm.SecureOptions{
-					UseTLS:            true,
-					Certificate:       org1Server1Cert,
-					Key:               org1Server1Key,
-					ServerRootCAs:     [][]byte{org1CA},
-					RequireClientCert: true,
-				},
-			},
-			createChannel: func() { createChannel("channel3", channel3Block) },
+			name:          "MutualTLSOrg1Org2Intermediate",
+			serverConfig:  serverConfig,
+			createChannel: func(t *testing.T) { createChannel(t, "channel3", channel3Block) },
 			goodOptions: []grpc.DialOption{
 				grpc.WithTransportCredentials(org2IntermediateCreds),
 			},
@@ -284,52 +277,50 @@ func TestUpdateRootsFromConfigBlock(t *testing.T) {
 		},
 	}
 
-	_, _, destroy := xtestutil.SetupExtTestEnv()
-	cleanup := ledgermgmt.InitializeTestEnv(t)
-
-	defer cleanup()
-	defer destroy()
-
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Logf("Running test %s ...", test.name)
-			server, err := peer.NewPeerServer("localhost:0", test.serverConfig)
+			server, err := comm.NewGRPCServer("localhost:0", test.serverConfig)
 			if err != nil {
-				t.Fatalf("NewPeerServer failed with error [%s]", err)
-			} else {
-				assert.NoError(t, err, "NewPeerServer should not have returned an error")
-				assert.NotNil(t, server, "NewPeerServer should have created a server")
-				// register a GRPC test service
-				testpb.RegisterTestServiceServer(server.Server(), &testServiceServer{})
-				go server.Start()
-				defer server.Stop()
-
-				// extract dynamic listen port
-				_, port, err := net.SplitHostPort(server.Listener().Addr().String())
-				if err != nil {
-					t.Fatal(err)
-				}
-				t.Logf("listenAddress: %s", server.Listener().Addr())
-				testAddress := "localhost:" + port
-				t.Logf("testAddress: %s", testAddress)
-
-				// invoke the EmptyCall service with good options but should fail
-				// until channel is created and root CAs are updated
-				_, err = invokeEmptyCall(testAddress, test.goodOptions)
-				assert.Error(t, err, "Expected error invoking the EmptyCall service ")
-
-				// creating channel should update the trusted client roots
-				test.createChannel()
-
-				// invoke the EmptyCall service with good options
-				_, err = invokeEmptyCall(testAddress, test.goodOptions)
-				assert.NoError(t, err, "Failed to invoke the EmptyCall service")
-
-				// invoke the EmptyCall service with bad options
-				_, err = invokeEmptyCall(testAddress, test.badOptions)
-				assert.Error(t, err, "Expected error using bad dial options")
+				t.Fatalf("NewGRPCServer failed with error [%s]", err)
+				return
 			}
+
+			peerInstance.Server = server
+			peerInstance.ServerConfig = test.serverConfig
+
+			assert.NoError(t, err, "NewGRPCServer should not have returned an error")
+			assert.NotNil(t, server, "NewGRPCServer should have created a server")
+			// register a GRPC test service
+			testpb.RegisterTestServiceServer(server.Server(), &testServiceServer{})
+			go server.Start()
+			defer server.Stop()
+
+			// extract dynamic listen port
+			_, port, err := net.SplitHostPort(server.Listener().Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("listenAddress: %s", server.Listener().Addr())
+			testAddress := "localhost:" + port
+			t.Logf("testAddress: %s", testAddress)
+
+			// invoke the EmptyCall service with good options but should fail
+			// until channel is created and root CAs are updated
+			_, err = invokeEmptyCall(testAddress, test.goodOptions)
+			assert.Error(t, err, "Expected error invoking the EmptyCall service ")
+
+			// creating channel should update the trusted client roots
+			test.createChannel(t)
+
+			// invoke the EmptyCall service with good options
+			_, err = invokeEmptyCall(testAddress, test.goodOptions)
+			assert.NoError(t, err, "Failed to invoke the EmptyCall service")
+
+			// invoke the EmptyCall service with bad options
+			_, err = invokeEmptyCall(testAddress, test.badOptions)
+			assert.Error(t, err, "Expected error using bad dial options")
 		})
 	}
 

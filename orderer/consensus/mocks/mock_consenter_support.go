@@ -4,11 +4,11 @@ package mocks
 import (
 	"sync"
 
+	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/common/channelconfig"
 	"github.com/hyperledger/fabric/orderer/common/blockcutter"
 	"github.com/hyperledger/fabric/orderer/common/msgprocessor"
 	"github.com/hyperledger/fabric/orderer/consensus"
-	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protoutil"
 )
 
@@ -45,16 +45,6 @@ type FakeConsenterSupport struct {
 	blockCutterReturnsOnCall map[int]struct {
 		result1 blockcutter.Receiver
 	}
-	ChainIDStub        func() string
-	chainIDMutex       sync.RWMutex
-	chainIDArgsForCall []struct {
-	}
-	chainIDReturns struct {
-		result1 string
-	}
-	chainIDReturnsOnCall map[int]struct {
-		result1 string
-	}
 	ChannelConfigStub        func() channelconfig.Channel
 	channelConfigMutex       sync.RWMutex
 	channelConfigArgsForCall []struct {
@@ -64,6 +54,16 @@ type FakeConsenterSupport struct {
 	}
 	channelConfigReturnsOnCall map[int]struct {
 		result1 channelconfig.Channel
+	}
+	ChannelIDStub        func() string
+	channelIDMutex       sync.RWMutex
+	channelIDArgsForCall []struct {
+	}
+	channelIDReturns struct {
+		result1 string
+	}
+	channelIDReturnsOnCall map[int]struct {
+		result1 string
 	}
 	ClassifyMsgStub        func(*common.ChannelHeader) msgprocessor.Classification
 	classifyMsgMutex       sync.RWMutex
@@ -86,16 +86,6 @@ type FakeConsenterSupport struct {
 	}
 	createNextBlockReturnsOnCall map[int]struct {
 		result1 *common.Block
-	}
-	DetectConsensusMigrationStub        func() bool
-	detectConsensusMigrationMutex       sync.RWMutex
-	detectConsensusMigrationArgsForCall []struct {
-	}
-	detectConsensusMigrationReturns struct {
-		result1 bool
-	}
-	detectConsensusMigrationReturnsOnCall map[int]struct {
-		result1 bool
 	}
 	HeightStub        func() uint64
 	heightMutex       sync.RWMutex
@@ -395,58 +385,6 @@ func (fake *FakeConsenterSupport) BlockCutterReturnsOnCall(i int, result1 blockc
 	}{result1}
 }
 
-func (fake *FakeConsenterSupport) ChainID() string {
-	fake.chainIDMutex.Lock()
-	ret, specificReturn := fake.chainIDReturnsOnCall[len(fake.chainIDArgsForCall)]
-	fake.chainIDArgsForCall = append(fake.chainIDArgsForCall, struct {
-	}{})
-	fake.recordInvocation("ChainID", []interface{}{})
-	fake.chainIDMutex.Unlock()
-	if fake.ChainIDStub != nil {
-		return fake.ChainIDStub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	fakeReturns := fake.chainIDReturns
-	return fakeReturns.result1
-}
-
-func (fake *FakeConsenterSupport) ChainIDCallCount() int {
-	fake.chainIDMutex.RLock()
-	defer fake.chainIDMutex.RUnlock()
-	return len(fake.chainIDArgsForCall)
-}
-
-func (fake *FakeConsenterSupport) ChainIDCalls(stub func() string) {
-	fake.chainIDMutex.Lock()
-	defer fake.chainIDMutex.Unlock()
-	fake.ChainIDStub = stub
-}
-
-func (fake *FakeConsenterSupport) ChainIDReturns(result1 string) {
-	fake.chainIDMutex.Lock()
-	defer fake.chainIDMutex.Unlock()
-	fake.ChainIDStub = nil
-	fake.chainIDReturns = struct {
-		result1 string
-	}{result1}
-}
-
-func (fake *FakeConsenterSupport) ChainIDReturnsOnCall(i int, result1 string) {
-	fake.chainIDMutex.Lock()
-	defer fake.chainIDMutex.Unlock()
-	fake.ChainIDStub = nil
-	if fake.chainIDReturnsOnCall == nil {
-		fake.chainIDReturnsOnCall = make(map[int]struct {
-			result1 string
-		})
-	}
-	fake.chainIDReturnsOnCall[i] = struct {
-		result1 string
-	}{result1}
-}
-
 func (fake *FakeConsenterSupport) ChannelConfig() channelconfig.Channel {
 	fake.channelConfigMutex.Lock()
 	ret, specificReturn := fake.channelConfigReturnsOnCall[len(fake.channelConfigArgsForCall)]
@@ -496,6 +434,58 @@ func (fake *FakeConsenterSupport) ChannelConfigReturnsOnCall(i int, result1 chan
 	}
 	fake.channelConfigReturnsOnCall[i] = struct {
 		result1 channelconfig.Channel
+	}{result1}
+}
+
+func (fake *FakeConsenterSupport) ChannelID() string {
+	fake.channelIDMutex.Lock()
+	ret, specificReturn := fake.channelIDReturnsOnCall[len(fake.channelIDArgsForCall)]
+	fake.channelIDArgsForCall = append(fake.channelIDArgsForCall, struct {
+	}{})
+	fake.recordInvocation("ChannelID", []interface{}{})
+	fake.channelIDMutex.Unlock()
+	if fake.ChannelIDStub != nil {
+		return fake.ChannelIDStub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	fakeReturns := fake.channelIDReturns
+	return fakeReturns.result1
+}
+
+func (fake *FakeConsenterSupport) ChannelIDCallCount() int {
+	fake.channelIDMutex.RLock()
+	defer fake.channelIDMutex.RUnlock()
+	return len(fake.channelIDArgsForCall)
+}
+
+func (fake *FakeConsenterSupport) ChannelIDCalls(stub func() string) {
+	fake.channelIDMutex.Lock()
+	defer fake.channelIDMutex.Unlock()
+	fake.ChannelIDStub = stub
+}
+
+func (fake *FakeConsenterSupport) ChannelIDReturns(result1 string) {
+	fake.channelIDMutex.Lock()
+	defer fake.channelIDMutex.Unlock()
+	fake.ChannelIDStub = nil
+	fake.channelIDReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakeConsenterSupport) ChannelIDReturnsOnCall(i int, result1 string) {
+	fake.channelIDMutex.Lock()
+	defer fake.channelIDMutex.Unlock()
+	fake.ChannelIDStub = nil
+	if fake.channelIDReturnsOnCall == nil {
+		fake.channelIDReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.channelIDReturnsOnCall[i] = struct {
+		result1 string
 	}{result1}
 }
 
@@ -621,58 +611,6 @@ func (fake *FakeConsenterSupport) CreateNextBlockReturnsOnCall(i int, result1 *c
 	}
 	fake.createNextBlockReturnsOnCall[i] = struct {
 		result1 *common.Block
-	}{result1}
-}
-
-func (fake *FakeConsenterSupport) DetectConsensusMigration() bool {
-	fake.detectConsensusMigrationMutex.Lock()
-	ret, specificReturn := fake.detectConsensusMigrationReturnsOnCall[len(fake.detectConsensusMigrationArgsForCall)]
-	fake.detectConsensusMigrationArgsForCall = append(fake.detectConsensusMigrationArgsForCall, struct {
-	}{})
-	fake.recordInvocation("DetectConsensusMigration", []interface{}{})
-	fake.detectConsensusMigrationMutex.Unlock()
-	if fake.DetectConsensusMigrationStub != nil {
-		return fake.DetectConsensusMigrationStub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	fakeReturns := fake.detectConsensusMigrationReturns
-	return fakeReturns.result1
-}
-
-func (fake *FakeConsenterSupport) DetectConsensusMigrationCallCount() int {
-	fake.detectConsensusMigrationMutex.RLock()
-	defer fake.detectConsensusMigrationMutex.RUnlock()
-	return len(fake.detectConsensusMigrationArgsForCall)
-}
-
-func (fake *FakeConsenterSupport) DetectConsensusMigrationCalls(stub func() bool) {
-	fake.detectConsensusMigrationMutex.Lock()
-	defer fake.detectConsensusMigrationMutex.Unlock()
-	fake.DetectConsensusMigrationStub = stub
-}
-
-func (fake *FakeConsenterSupport) DetectConsensusMigrationReturns(result1 bool) {
-	fake.detectConsensusMigrationMutex.Lock()
-	defer fake.detectConsensusMigrationMutex.Unlock()
-	fake.DetectConsensusMigrationStub = nil
-	fake.detectConsensusMigrationReturns = struct {
-		result1 bool
-	}{result1}
-}
-
-func (fake *FakeConsenterSupport) DetectConsensusMigrationReturnsOnCall(i int, result1 bool) {
-	fake.detectConsensusMigrationMutex.Lock()
-	defer fake.detectConsensusMigrationMutex.Unlock()
-	fake.DetectConsensusMigrationStub = nil
-	if fake.detectConsensusMigrationReturnsOnCall == nil {
-		fake.detectConsensusMigrationReturnsOnCall = make(map[int]struct {
-			result1 bool
-		})
-	}
-	fake.detectConsensusMigrationReturnsOnCall[i] = struct {
-		result1 bool
 	}{result1}
 }
 
@@ -1299,16 +1237,14 @@ func (fake *FakeConsenterSupport) Invocations() map[string][][]interface{} {
 	defer fake.blockMutex.RUnlock()
 	fake.blockCutterMutex.RLock()
 	defer fake.blockCutterMutex.RUnlock()
-	fake.chainIDMutex.RLock()
-	defer fake.chainIDMutex.RUnlock()
 	fake.channelConfigMutex.RLock()
 	defer fake.channelConfigMutex.RUnlock()
+	fake.channelIDMutex.RLock()
+	defer fake.channelIDMutex.RUnlock()
 	fake.classifyMsgMutex.RLock()
 	defer fake.classifyMsgMutex.RUnlock()
 	fake.createNextBlockMutex.RLock()
 	defer fake.createNextBlockMutex.RUnlock()
-	fake.detectConsensusMigrationMutex.RLock()
-	defer fake.detectConsensusMigrationMutex.RUnlock()
 	fake.heightMutex.RLock()
 	defer fake.heightMutex.RUnlock()
 	fake.processConfigMsgMutex.RLock()

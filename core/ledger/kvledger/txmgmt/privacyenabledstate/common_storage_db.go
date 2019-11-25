@@ -34,6 +34,16 @@ const (
 	couchDB        = "CouchDB"
 )
 
+// StateDBConfig encapsulates the configuration for stateDB on the ledger.
+type StateDBConfig struct {
+	// ledger.StateDBConfig is used to configure the stateDB for the ledger.
+	*ledger.StateDBConfig
+	// LevelDBPath is the filesystem path when statedb type is "goleveldb".
+	// It is internally computed by the ledger component,
+	// so it is not in ledger.StateDBConfig and not exposed to other components.
+	LevelDBPath string
+}
+
 // CommonStorageDBProvider implements interface DBProvider
 type CommonStorageDBProvider struct {
 	statedb.VersionedDBProvider
@@ -46,16 +56,22 @@ func NewCommonStorageDBProvider(
 	bookkeeperProvider bookkeeping.Provider,
 	metricsProvider metrics.Provider,
 	healthCheckRegistry ledger.HealthCheckRegistry,
-	stateDBConf *ledger.StateDB,
+	stateDBConf *StateDBConfig,
+	sysNamespaces []string,
 ) (DBProvider, error) {
+
 	var vdbProvider statedb.VersionedDBProvider
 	var err error
+
 	if stateDBConf != nil && stateDBConf.StateDatabase == couchDB {
-		if vdbProvider, err = statecouchdb.NewVersionedDBProvider(stateDBConf.CouchDB, metricsProvider); err != nil {
+		cache := statedb.NewCache(stateDBConf.CouchDB.UserCacheSizeMBs, sysNamespaces)
+		if vdbProvider, err = statecouchdb.NewVersionedDBProvider(stateDBConf.CouchDB, metricsProvider, cache); err != nil {
 			return nil, err
 		}
 	} else {
-		vdbProvider = stateleveldb.NewVersionedDBProvider(stateDBConf.LevelDBPath)
+		if vdbProvider, err = stateleveldb.NewVersionedDBProvider(stateDBConf.LevelDBPath); err != nil {
+			return nil, err
+		}
 	}
 
 	dbProvider := &CommonStorageDBProvider{vdbProvider, healthCheckRegistry, bookkeeperProvider}
@@ -68,6 +84,7 @@ func NewCommonStorageDBProvider(
 	return dbProvider, nil
 }
 
+// RegisterHealthChecker implements function from interface DBProvider
 func (p *CommonStorageDBProvider) RegisterHealthChecker() error {
 	if healthChecker, ok := p.VersionedDBProvider.(healthz.HealthChecker); ok {
 		return p.HealthCheckRegistry.RegisterChecker("couchdb", healthChecker)
@@ -234,9 +251,9 @@ func (s *CommonStorageDB) ApplyPrivacyAwareUpdates(updates *UpdateBatch, height 
 
 // GetStateMetadata implements corresponding function in interface DB. This implementation provides
 // an optimization such that it keeps track if a namespaces has never stored metadata for any of
-// its items, the value 'nil' is returned without going to the db. This is intented to be invoked
+// its items, the value 'nil' is returned without going to the db. This is intended to be invoked
 // in the validation and commit path. This saves the chaincodes from paying unnecessary performance
-// penality if they do not use features that leverage metadata (such as key-level endorsement),
+// penalty if they do not use features that leverage metadata (such as key-level endorsement),
 func (s *CommonStorageDB) GetStateMetadata(namespace, key string) ([]byte, error) {
 	if !s.metadataHint.metadataEverUsedFor(namespace) {
 		return nil, nil
@@ -249,7 +266,7 @@ func (s *CommonStorageDB) GetStateMetadata(namespace, key string) ([]byte, error
 }
 
 // GetPrivateDataMetadataByHash implements corresponding function in interface DB. For additional details, see
-// decription of the similar function 'GetStateMetadata'
+// description of the similar function 'GetStateMetadata'
 func (s *CommonStorageDB) GetPrivateDataMetadataByHash(namespace, collection string, keyHash []byte) ([]byte, error) {
 	if !s.metadataHint.metadataEverUsedFor(namespace) {
 		return nil, nil
@@ -262,7 +279,7 @@ func (s *CommonStorageDB) GetPrivateDataMetadataByHash(namespace, collection str
 }
 
 // HandleChaincodeDeploy initializes database artifacts for the database associated with the namespace
-// This function delibrately suppresses the errors that occur during the creation of the indexes on couchdb.
+// This function deliberately suppresses the errors that occur during the creation of the indexes on couchdb.
 // This is because, in the present code, we do not differentiate between the errors because of couchdb interaction
 // and the errors because of bad index files - the later being unfixable by the admin. Note that the error suppression
 // is acceptable since peer can continue in the committing role without the indexes. However, executing chaincode queries

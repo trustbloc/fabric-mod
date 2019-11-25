@@ -9,10 +9,10 @@ package policy
 import (
 	"testing"
 
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/core/policy/mocks"
 	"github.com/hyperledger/fabric/msp/mgmt"
-	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -36,38 +36,6 @@ func TestCheckPolicyInvalidArgs(t *testing.T) {
 	err := pc.CheckPolicy("B", "admin", &peer.SignedProposal{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Failed to get policy manager for channel [B]")
-}
-
-func TestRegisterPolicyCheckerFactoryInvalidArgs(t *testing.T) {
-	RegisterPolicyCheckerFactory(nil)
-	assert.Panics(t, func() {
-		GetPolicyChecker()
-	})
-
-	RegisterPolicyCheckerFactory(nil)
-}
-
-func TestRegisterPolicyCheckerFactory(t *testing.T) {
-	policyManagerGetter := &mocks.MockChannelPolicyManagerGetter{
-		Managers: map[string]policies.Manager{
-			"A": &mocks.MockChannelPolicyManager{
-				MockPolicy: &mocks.MockPolicy{
-					Deserializer: &mocks.MockIdentityDeserializer{
-						Identity: []byte("Alice"),
-						Msg:      []byte("msg1"),
-					},
-				},
-			},
-		},
-	}
-	pc := &policyChecker{channelPolicyManagerGetter: policyManagerGetter}
-
-	factory := &MockPolicyCheckerFactory{}
-	factory.On("NewPolicyChecker").Return(pc)
-
-	RegisterPolicyCheckerFactory(factory)
-	pc2 := GetPolicyChecker()
-	assert.Equal(t, pc, pc2)
 }
 
 func TestCheckPolicyBySignedDataInvalidArgs(t *testing.T) {

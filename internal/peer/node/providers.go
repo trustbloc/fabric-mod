@@ -7,38 +7,27 @@ SPDX-License-Identifier: Apache-2.0
 package node
 
 import (
+	"github.com/hyperledger/fabric/bccsp/factory"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/cceventmgmt"
-	"github.com/hyperledger/fabric/core/peer"
 	ccapi "github.com/hyperledger/fabric/extensions/chaincode/api"
 	"github.com/hyperledger/fabric/extensions/gossip/api"
-	"github.com/hyperledger/fabric/gossip/service"
+	gossipservice "github.com/hyperledger/fabric/gossip/service"
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/msp/mgmt"
 )
 
 type gossipProvider struct {
+	service *gossipservice.GossipService
 }
 
-func newGossipProvider() *gossipProvider {
-	return &gossipProvider{}
+func newGossipProvider(service *gossipservice.GossipService) *gossipProvider {
+	return &gossipProvider{service: service}
 }
 
 // GetGossipService returns the Gossip service
 func (p *gossipProvider) GetGossipService() api.GossipService {
-	return service.GetGossipService()
-}
-
-type ledgerProvider struct {
-}
-
-func newLedgerProvider() *ledgerProvider {
-	return &ledgerProvider{}
-}
-
-// GetLedger returns the ledger for the given channel
-func (p *ledgerProvider) GetLedger(channelID string) ledger.PeerLedger {
-	return peer.GetLedger(channelID)
+	return p.service
 }
 
 type mspProvider struct {
@@ -47,13 +36,26 @@ type mspProvider struct {
 
 func newMSPProvider() *mspProvider {
 	return &mspProvider{
-		MSP: mgmt.GetLocalMSP(),
+		MSP: mgmt.GetLocalMSP(factory.GetDefault()),
 	}
 }
 
 // GetIdentityDeserializer returns the identity deserializer for the given channel
 func (m *mspProvider) GetIdentityDeserializer(channelID string) msp.IdentityDeserializer {
-	return mgmt.GetIdentityDeserializer(channelID)
+	return mgmt.GetIdentityDeserializer(channelID, factory.GetDefault())
+}
+
+type ledgerConfigProvider struct {
+	config *ledger.Config
+}
+
+func newLedgerConfigProvider(config *ledger.Config) *ledgerConfigProvider {
+	return &ledgerConfigProvider{config: config}
+}
+
+// GetLedgerConfig returns the ledger configuration
+func (p *ledgerConfigProvider) GetLedgerConfig() *ledger.Config {
+	return p.config
 }
 
 type ccEventMgr struct {

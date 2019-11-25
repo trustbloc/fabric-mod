@@ -14,6 +14,10 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/msp"
+	"github.com/hyperledger/fabric-protos-go/orderer"
+	"github.com/hyperledger/fabric/bccsp/sw"
 	"github.com/hyperledger/fabric/common/channelconfig"
 	"github.com/hyperledger/fabric/common/configtx"
 	"github.com/hyperledger/fabric/common/flogging"
@@ -21,9 +25,6 @@ import (
 	"github.com/hyperledger/fabric/orderer/common/cluster"
 	"github.com/hyperledger/fabric/orderer/common/cluster/mocks"
 	"github.com/hyperledger/fabric/orderer/common/localconfig"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/msp"
-	"github.com/hyperledger/fabric/protos/orderer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -172,31 +173,6 @@ func TestReplicateChainsFailures(t *testing.T) {
 			},
 			ledgerFactoryError: errors.New("IO error"),
 			expectedPanic:      "Failed to create a ledger for channel channelWeAreNotPartOf: IO error",
-		},
-		{
-			name:                    "pulled genesis block is malformed",
-			latestBlockSeqInOrderer: 21,
-			channelsReturns: []cluster.ChannelGenesisBlock{
-				{ChannelName: "channelWeAreNotPartOf", GenesisBlock: &common.Block{Header: &common.BlockHeader{}}},
-			},
-			expectedPanic: "Failed converting channel creation block for channel channelWeAreNotPartOf to genesis" +
-				" block: block data is nil",
-		},
-		{
-			name:                    "pulled genesis block is malformed - bad payload",
-			latestBlockSeqInOrderer: 21,
-			channelsReturns: []cluster.ChannelGenesisBlock{
-				{ChannelName: "channelWeAreNotPartOf", GenesisBlock: &common.Block{
-					Header: &common.BlockHeader{},
-					Data: &common.BlockData{
-						Data: [][]byte{protoutil.MarshalOrPanic(&common.Envelope{
-							Payload: []byte{1, 2, 3},
-						})},
-					},
-				}},
-			},
-			expectedPanic: "Failed converting channel creation block for channel channelWeAreNotPartOf" +
-				" to genesis block: no payload in envelope: proto: common.Payload: illegal tag 0 (wire type 1)",
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -856,6 +832,9 @@ func TestBlockPullerFromConfigBlockFailures(t *testing.T) {
 	validBlock := &common.Block{}
 	assert.NoError(t, proto.Unmarshal(blockBytes, validBlock))
 
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
+
 	for _, testCase := range []struct {
 		name         string
 		expectedErr  string
@@ -897,7 +876,7 @@ func TestBlockPullerFromConfigBlockFailures(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			verifierRetriever := &mocks.VerifierRetriever{}
 			verifierRetriever.On("RetrieveVerifier", mock.Anything).Return(&cluster.NoopBlockVerifier{})
-			bp, err := cluster.BlockPullerFromConfigBlock(testCase.pullerConfig, testCase.block, verifierRetriever)
+			bp, err := cluster.BlockPullerFromConfigBlock(testCase.pullerConfig, testCase.block, verifierRetriever, cryptoProvider)
 			assert.EqualError(t, err, testCase.expectedErr)
 			assert.Nil(t, bp)
 		})
@@ -923,7 +902,7 @@ func testBlockPullerFromConfig(t *testing.T, blockVerifiers []cluster.BlockVerif
 	osn.srv.Stop()
 	// Replace the gRPC server with a TLS one
 	osn.srv, err = comm.NewGRPCServer("127.0.0.1:0", comm.ServerConfig{
-		SecOpts: &comm.SecureOptions{
+		SecOpts: comm.SecureOptions{
 			Key:               tlsKey,
 			RequireClientCert: true,
 			Certificate:       tlsCert,
@@ -968,6 +947,9 @@ func testBlockPullerFromConfig(t *testing.T, blockVerifiers []cluster.BlockVerif
 		osn.addExpectPullAssert(0)
 	}
 
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
+
 	bp, err := cluster.BlockPullerFromConfigBlock(cluster.PullerConfig{
 		TLSCert:             tlsCert,
 		TLSKey:              tlsKey,
@@ -975,7 +957,7 @@ func testBlockPullerFromConfig(t *testing.T, blockVerifiers []cluster.BlockVerif
 		Channel:             "mychannel",
 		Signer:              &mocks.SignerSerializer{},
 		Timeout:             time.Hour,
-	}, validBlock, verifierRetriever)
+	}, validBlock, verifierRetriever, cryptoProvider)
 	bp.RetryTimeout = time.Millisecond * 10
 	assert.NoError(t, err)
 	defer bp.Close()
@@ -1085,7 +1067,7 @@ func injectGlobalOrdererEndpoint(t *testing.T, block *common.Block, endpoint str
 	// Unwrap the layers until we reach the orderer addresses
 	env, err := protoutil.ExtractEnvelope(block, 0)
 	assert.NoError(t, err)
-	payload, err := protoutil.ExtractPayload(env)
+	payload, err := protoutil.UnmarshalPayload(env.Payload)
 	assert.NoError(t, err)
 	confEnv, err := configtx.UnmarshalConfigEnvelope(payload.Data)
 	assert.NoError(t, err)
@@ -1109,7 +1091,7 @@ func injectTLSCACert(t *testing.T, block *common.Block, tlsCA []byte) {
 	// Unwrap the layers until we reach the TLS CA certificates
 	env, err := protoutil.ExtractEnvelope(block, 0)
 	assert.NoError(t, err)
-	payload, err := protoutil.ExtractPayload(env)
+	payload, err := protoutil.UnmarshalPayload(env.Payload)
 	assert.NoError(t, err)
 	confEnv, err := configtx.UnmarshalConfigEnvelope(payload.Data)
 	assert.NoError(t, err)
@@ -1129,12 +1111,13 @@ func injectTLSCACert(t *testing.T, block *common.Block, tlsCA []byte) {
 	block.Data.Data[0] = protoutil.MarshalOrPanic(env)
 }
 
-func TestIsNewChannelBlock(t *testing.T) {
+func TestExtractGenesisBlock(t *testing.T) {
 	for _, testCase := range []struct {
-		name         string
-		expectedErr  string
-		returnedName string
-		block        *common.Block
+		name               string
+		expectedErr        string
+		returnedName       string
+		block              *common.Block
+		returnGenesisBlock bool
 	}{
 		{
 			name:        "nil block",
@@ -1157,7 +1140,7 @@ func TestIsNewChannelBlock(t *testing.T) {
 		},
 		{
 			name:        "corrupt payload in envelope",
-			expectedErr: "no payload in envelope: proto: common.Payload: illegal tag 0 (wire type 1)",
+			expectedErr: "error unmarshaling Payload: proto: common.Payload: illegal tag 0 (wire type 1)",
 			block: &common.Block{
 				Data: &common.BlockData{
 					Data: [][]byte{protoutil.MarshalOrPanic(&common.Envelope{
@@ -1374,16 +1357,22 @@ func TestIsNewChannelBlock(t *testing.T) {
 					})},
 				},
 			},
+			returnGenesisBlock: true,
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			channelName, err := cluster.IsNewChannelBlock(testCase.block)
+			channelName, gb, err := cluster.ExtractGenesisBlock(flogging.MustGetLogger("test"), testCase.block)
 			if testCase.expectedErr != "" {
 				assert.EqualError(t, err, testCase.expectedErr)
 			} else {
 				assert.NoError(t, err)
 			}
 			assert.Equal(t, testCase.returnedName, channelName)
+			if testCase.returnGenesisBlock {
+				assert.NotNil(t, gb)
+			} else {
+				assert.Nil(t, gb)
+			}
 		})
 	}
 }
@@ -1487,9 +1476,9 @@ func TestChannels(t *testing.T) {
 				systemChain[len(systemChain)-2].Data.Data = [][]byte{{1, 2, 3}}
 			},
 			assertion: func(t *testing.T, ci *cluster.ChainInspector) {
-				panicValue := "Failed classifying block [2]: block data does not carry" +
-					" an envelope at index 0: error unmarshaling Envelope: " +
-					"proto: common.Envelope: illegal tag 0 (wire type 1)"
+				panicValue := "Failed extracting channel genesis block from config block: " +
+					"block data does not carry an envelope at index 0: error unmarshaling " +
+					"Envelope: proto: common.Envelope: illegal tag 0 (wire type 1)"
 				assert.PanicsWithValue(t, panicValue, func() {
 					ci.Channels()
 				})
@@ -1594,47 +1583,6 @@ func simulateNonParticipantChannelPull(osn *deliverServer) {
 	}
 
 	osn.blockResponses <- nil
-}
-
-func TestChannelCreationBlockToGenesisBlock(t *testing.T) {
-	for _, testCase := range []struct {
-		name        string
-		expectedErr string
-		block       *common.Block
-	}{
-		{
-			name:        "nil block",
-			expectedErr: "nil block",
-		},
-		{
-			name:        "no data",
-			expectedErr: "block data is nil",
-			block:       &common.Block{},
-		},
-		{
-			name:        "no block data",
-			expectedErr: "envelope index out of bounds",
-			block: &common.Block{
-				Data: &common.BlockData{},
-			},
-		},
-		{
-			name: "bad block data",
-			expectedErr: "block data does not carry an envelope at index 0:" +
-				" error unmarshaling Envelope: proto: common.Envelope:" +
-				" illegal tag 0 (wire type 1)",
-			block: &common.Block{
-				Data: &common.BlockData{
-					Data: [][]byte{{1, 2, 3}},
-				},
-			},
-		},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			_, err := cluster.ChannelCreationBlockToGenesisBlock(testCase.block)
-			assert.EqualError(t, err, testCase.expectedErr)
-		})
-	}
 }
 
 func TestFilter(t *testing.T) {

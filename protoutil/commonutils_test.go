@@ -12,10 +12,9 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
+	cb "github.com/hyperledger/fabric-protos-go/common"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/crypto"
-	"github.com/hyperledger/fabric/internal/pkg/identity"
-	cb "github.com/hyperledger/fabric/protos/common"
-	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil/fakes"
 	"github.com/stretchr/testify/assert"
 )
@@ -23,7 +22,7 @@ import (
 //go:generate counterfeiter -o fakes/signer_serializer.go --fake-name SignerSerializer . signerSerializer
 
 type signerSerializer interface {
-	identity.SignerSerializer
+	Signer
 }
 
 func TestNonceRandomness(t *testing.T) {
@@ -69,6 +68,53 @@ func TestUnmarshalPayload(t *testing.T) {
 		_ = UnmarshalPayloadOrPanic(bad)
 	}, "Expected panic unmarshaling malformed payload")
 
+}
+
+func TestUnmarshalSignatureHeader(t *testing.T) {
+	t.Run("invalid header", func(t *testing.T) {
+		sighdrBytes := []byte("invalid signature header")
+		_, err := UnmarshalSignatureHeader(sighdrBytes)
+		assert.Error(t, err, "Expected unmarshaling error")
+	})
+
+	t.Run("valid empty header", func(t *testing.T) {
+		sighdr := &cb.SignatureHeader{}
+		sighdrBytes := MarshalOrPanic(sighdr)
+		sighdr, err := UnmarshalSignatureHeader(sighdrBytes)
+		assert.NoError(t, err, "Unexpected error unmarshaling signature header")
+		assert.Nil(t, sighdr.Creator)
+		assert.Nil(t, sighdr.Nonce)
+	})
+
+	t.Run("valid header", func(t *testing.T) {
+		sighdr := &cb.SignatureHeader{
+			Creator: []byte("creator"),
+			Nonce:   []byte("nonce"),
+		}
+		sighdrBytes := MarshalOrPanic(sighdr)
+		sighdr, err := UnmarshalSignatureHeader(sighdrBytes)
+		assert.NoError(t, err, "Unexpected error unmarshaling signature header")
+		assert.Equal(t, []byte("creator"), sighdr.Creator)
+		assert.Equal(t, []byte("nonce"), sighdr.Nonce)
+	})
+}
+
+func TestUnmarshalSignatureHeaderOrPanic(t *testing.T) {
+
+	t.Run("panic due to invalid header", func(t *testing.T) {
+		sighdrBytes := []byte("invalid signature header")
+		assert.Panics(t, func() {
+			UnmarshalSignatureHeaderOrPanic(sighdrBytes)
+		}, "Expected panic with invalid header")
+	})
+
+	t.Run("no panic as the header is valid", func(t *testing.T) {
+		sighdr := &cb.SignatureHeader{}
+		sighdrBytes := MarshalOrPanic(sighdr)
+		sighdr = UnmarshalSignatureHeaderOrPanic(sighdrBytes)
+		assert.Nil(t, sighdr.Creator)
+		assert.Nil(t, sighdr.Nonce)
+	})
 }
 
 func TestUnmarshalEnvelope(t *testing.T) {
@@ -212,7 +258,7 @@ func TestExtractEnvelopeOrPanic(t *testing.T) {
 }
 
 func TestExtractPayload(t *testing.T) {
-	if payload, err := ExtractPayload(testEnvelope()); err != nil {
+	if payload, err := UnmarshalPayload(testEnvelope().Payload); err != nil {
 		t.Fatalf("Expected payload extraction to succeed: %s", err)
 	} else if !proto.Equal(payload, testPayload()) {
 		t.Fatal("Expected extracted payload to match test payload")
@@ -226,7 +272,7 @@ func TestExtractPayloadOrPanic(t *testing.T) {
 		}
 	}()
 
-	if !proto.Equal(ExtractPayloadOrPanic(testEnvelope()), testPayload()) {
+	if !proto.Equal(UnmarshalPayloadOrPanic(testEnvelope().Payload), testPayload()) {
 		t.Fatal("Expected extracted payload to match test payload")
 	}
 }
@@ -263,7 +309,6 @@ func TestNewSignatureHeaderOrPanic(t *testing.T) {
 	assert.Panics(t, func() {
 		_ = NewSignatureHeaderOrPanic(id)
 	}, "Expected panic with signature header error")
-
 }
 
 func TestSignOrPanic(t *testing.T) {

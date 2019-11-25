@@ -16,7 +16,7 @@ import (
 )
 
 type gossipAdapter interface {
-	PeersOfChannel(common.ChainID) []discovery.NetworkMember
+	PeersOfChannel(id common.ChannelID) []discovery.NetworkMember
 	SelfMembershipInfo() discovery.NetworkMember
 	IdentityInfo() gossip.PeerIdentitySet
 }

@@ -10,12 +10,12 @@ import (
 	"sync"
 
 	"github.com/golang/protobuf/proto"
+	cb "github.com/hyperledger/fabric-protos-go/common"
 	newchannelconfig "github.com/hyperledger/fabric/common/channelconfig"
 	"github.com/hyperledger/fabric/common/configtx"
 	"github.com/hyperledger/fabric/common/ledger/blockledger"
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/internal/pkg/identity"
-	cb "github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protoutil"
 )
 
@@ -55,11 +55,11 @@ func newBlockWriter(lastBlock *cb.Block, r *Registrar, support blockWriterSuppor
 		var err error
 		bw.lastConfigBlockNum, err = protoutil.GetLastConfigIndexFromBlock(lastBlock)
 		if err != nil {
-			logger.Panicf("[channel: %s] Error extracting last config block from block metadata: %s", support.ChainID(), err)
+			logger.Panicf("[channel: %s] Error extracting last config block from block metadata: %s", support.ChannelID(), err)
 		}
 	}
 
-	logger.Debugf("[channel: %s] Creating block writer for tip of chain (blockNumber=%d, lastConfigBlockNum=%d, lastConfigSeq=%d)", support.ChainID(), lastBlock.Header.Number, bw.lastConfigBlockNum, bw.lastConfigSeq)
+	logger.Debugf("[channel: %s] Creating block writer for tip of chain (blockNumber=%d, lastConfigBlockNum=%d, lastConfigSeq=%d)", support.ChannelID(), lastBlock.Header.Number, bw.lastConfigBlockNum, bw.lastConfigSeq)
 	return bw
 }
 
@@ -135,7 +135,7 @@ func (bw *BlockWriter) WriteConfigBlock(block *cb.Block, encodedMetadataValue []
 
 		oc, ok := bundle.OrdererConfig()
 		if !ok {
-			logger.Panicf("[channel: %s] OrdererConfig missing from bundle", bw.support.ChainID())
+			logger.Panicf("[channel: %s] OrdererConfig missing from bundle", bw.support.ChannelID())
 		}
 
 		currentType := bw.support.SharedConfig().ConsensusType()
@@ -143,7 +143,7 @@ func (bw *BlockWriter) WriteConfigBlock(block *cb.Block, encodedMetadataValue []
 		if currentType != nextType {
 			encodedMetadataValue = nil
 			logger.Debugf("[channel: %s] Consensus-type migration: maintenance mode, change from %s to %s, setting metadata to nil",
-				bw.support.ChainID(), currentType, nextType)
+				bw.support.ChannelID(), currentType, nextType)
 		}
 
 		// Avoid Bundle update before the go-routine in WriteBlock() finished writing the previous block.
@@ -178,29 +178,24 @@ func (bw *BlockWriter) WriteBlock(block *cb.Block, encodedMetadataValue []byte) 
 // commitBlock should only ever be invoked with the bw.committingBlock held
 // this ensures that the encoded config sequence numbers stay in sync
 func (bw *BlockWriter) commitBlock(encodedMetadataValue []byte) {
-	// Set the orderer-related metadata field
-	if encodedMetadataValue != nil {
-		bw.lastBlock.Metadata.Metadata[cb.BlockMetadataIndex_ORDERER] = protoutil.MarshalOrPanic(&cb.Metadata{Value: encodedMetadataValue})
-	}
-
-	bw.addLastConfigSignature(bw.lastBlock)
-	bw.addBlockSignature(bw.lastBlock)
+	bw.addLastConfig(bw.lastBlock)
+	bw.addBlockSignature(bw.lastBlock, encodedMetadataValue)
 
 	err := bw.support.Append(bw.lastBlock)
 	if err != nil {
-		logger.Panicf("[channel: %s] Could not append block: %s", bw.support.ChainID(), err)
+		logger.Panicf("[channel: %s] Could not append block: %s", bw.support.ChannelID(), err)
 	}
-	logger.Debugf("[channel: %s] Wrote block [%d]", bw.support.ChainID(), bw.lastBlock.GetHeader().Number)
+	logger.Debugf("[channel: %s] Wrote block [%d]", bw.support.ChannelID(), bw.lastBlock.GetHeader().Number)
 }
 
-func (bw *BlockWriter) addBlockSignature(block *cb.Block) {
+func (bw *BlockWriter) addBlockSignature(block *cb.Block, consenterMetadata []byte) {
 	blockSignature := &cb.MetadataSignature{
 		SignatureHeader: protoutil.MarshalOrPanic(protoutil.NewSignatureHeaderOrPanic(bw.support)),
 	}
 
 	blockSignatureValue := protoutil.MarshalOrPanic(&cb.OrdererBlockMetadata{
 		LastConfig:        &cb.LastConfig{Index: bw.lastConfigBlockNum},
-		ConsenterMetadata: bw.lastBlock.Metadata.Metadata[cb.BlockMetadataIndex_ORDERER],
+		ConsenterMetadata: protoutil.MarshalOrPanic(&cb.Metadata{Value: consenterMetadata}),
 	})
 
 	blockSignature.Signature = protoutil.SignOrPanic(
@@ -216,16 +211,16 @@ func (bw *BlockWriter) addBlockSignature(block *cb.Block) {
 	})
 }
 
-func (bw *BlockWriter) addLastConfigSignature(block *cb.Block) {
+func (bw *BlockWriter) addLastConfig(block *cb.Block) {
 	configSeq := bw.support.Sequence()
 	if configSeq > bw.lastConfigSeq {
-		logger.Debugf("[channel: %s] Detected lastConfigSeq transitioning from %d to %d, setting lastConfigBlockNum from %d to %d", bw.support.ChainID(), bw.lastConfigSeq, configSeq, bw.lastConfigBlockNum, block.Header.Number)
+		logger.Debugf("[channel: %s] Detected lastConfigSeq transitioning from %d to %d, setting lastConfigBlockNum from %d to %d", bw.support.ChannelID(), bw.lastConfigSeq, configSeq, bw.lastConfigBlockNum, block.Header.Number)
 		bw.lastConfigBlockNum = block.Header.Number
 		bw.lastConfigSeq = configSeq
 	}
 
 	lastConfigValue := protoutil.MarshalOrPanic(&cb.LastConfig{Index: bw.lastConfigBlockNum})
-	logger.Debugf("[channel: %s] About to write block, setting its LAST_CONFIG to %d", bw.support.ChainID(), bw.lastConfigBlockNum)
+	logger.Debugf("[channel: %s] About to write block, setting its LAST_CONFIG to %d", bw.support.ChannelID(), bw.lastConfigBlockNum)
 
 	block.Metadata.Metadata[cb.BlockMetadataIndex_LAST_CONFIG] = protoutil.MarshalOrPanic(&cb.Metadata{
 		Value: lastConfigValue,

@@ -7,11 +7,11 @@ SPDX-License-Identifier: Apache-2.0
 package lifecycle
 
 import (
+	"github.com/hyperledger/fabric-chaincode-go/shim"
+	"github.com/hyperledger/fabric-protos-go/ledger/queryresult"
 	commonledger "github.com/hyperledger/fabric/common/ledger"
-	"github.com/hyperledger/fabric/core/chaincode/shim"
 	validatorstate "github.com/hyperledger/fabric/core/handlers/validation/api/state"
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/protos/ledger/queryresult"
 
 	"github.com/pkg/errors"
 )
@@ -106,6 +106,10 @@ func (cls *ChaincodePrivateLedgerShim) DelState(key string) error {
 	return cls.Stub.DelPrivateData(cls.Collection, key)
 }
 
+func (cls *ChaincodePrivateLedgerShim) CollectionName() string {
+	return cls.Collection
+}
+
 // SimpleQueryExecutorShim implements the ReadableState and RangeableState interfaces
 // based on an underlying ledger.SimpleQueryExecutor
 type SimpleQueryExecutorShim struct {
@@ -170,6 +174,10 @@ type PrivateQueryExecutorShim struct {
 
 func (pqes *PrivateQueryExecutorShim) GetStateHash(key string) ([]byte, error) {
 	return pqes.State.GetPrivateDataHash(pqes.Namespace, pqes.Collection, key)
+}
+
+func (pqes *PrivateQueryExecutorShim) CollectionName() string {
+	return pqes.Collection
 }
 
 // DummyQueryExecutorShim implements the ReadableState interface. It is

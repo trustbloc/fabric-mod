@@ -9,11 +9,12 @@ package chaincode
 import (
 	"context"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/golang/protobuf/proto"
+	cb "github.com/hyperledger/fabric-protos-go/common"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
+	lb "github.com/hyperledger/fabric-protos-go/peer/lifecycle"
+	"github.com/hyperledger/fabric/bccsp"
 	"github.com/hyperledger/fabric/core/chaincode/persistence"
-	cb "github.com/hyperledger/fabric/protos/common"
-	pb "github.com/hyperledger/fabric/protos/peer"
-	lb "github.com/hyperledger/fabric/protos/peer/lifecycle"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -52,7 +53,7 @@ func (i *InstallInput) Validate() error {
 }
 
 // InstallCmd returns the cobra command for chaincode install.
-func InstallCmd(i *Installer) *cobra.Command {
+func InstallCmd(i *Installer, cryptoProvider bccsp.BCCSP) *cobra.Command {
 	chaincodeInstallCmd := &cobra.Command{
 		Use:       "install",
 		Short:     "Install a chaincode.",
@@ -69,7 +70,7 @@ func InstallCmd(i *Installer) *cobra.Command {
 					ConnectionProfilePath: connectionProfilePath,
 					TLSEnabled:            viper.GetBool("peer.tls.enabled"),
 				}
-				c, err := NewClientConnections(ccInput)
+				c, err := NewClientConnections(ccInput, cryptoProvider)
 				if err != nil {
 					return err
 				}

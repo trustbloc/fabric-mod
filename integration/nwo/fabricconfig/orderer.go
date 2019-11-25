@@ -11,7 +11,6 @@ import "time"
 type Orderer struct {
 	General    *General           `yaml:"General,omitempty"`
 	FileLedger *FileLedger        `yaml:"FileLedger,omitempty"`
-	RAMLedger  *RAMLedger         `yaml:"RAMLedger,omitempty"`
 	Kafka      *Kafka             `yaml:"Kafka,omitempty"`
 	Operations *OrdererOperations `yaml:"Operations,omitempty"`
 
@@ -19,14 +18,14 @@ type Orderer struct {
 }
 
 type General struct {
-	LedgerType     string                 `yaml:"LedgerType,omitempty"`
 	ListenAddress  string                 `yaml:"ListenAddress,omitempty"`
 	ListenPort     int                    `yaml:"ListenPort,omitempty"`
 	TLS            *OrdererTLS            `yaml:"TLS,omitempty"`
 	Keepalive      *OrdererKeepalive      `yaml:"Keepalive,omitempty"`
 	GenesisMethod  string                 `yaml:"GenesisMethod,omitempty"`
 	GenesisProfile string                 `yaml:"GenesisProfile,omitempty"`
-	GenesisFile    string                 `yaml:"GenesisFile,omitempty"`
+	GenesisFile    string                 `yaml:"GenesisFile,omitempty"` // will be replaced by the BootstrapFile
+	BootstrapFile  string                 `yaml:"BootstrapFile,omitempty"`
 	LocalMSPDir    string                 `yaml:"LocalMSPDir,omitempty"`
 	LocalMSPID     string                 `yaml:"LocalMSPID,omitempty"`
 	Profile        *OrdererProfile        `yaml:"Profile,omitempty"`
@@ -73,10 +72,6 @@ type OrdererTopic struct {
 type FileLedger struct {
 	Location string `yaml:"Location,omitempty"`
 	Prefix   string `yaml:"Prefix,omitempty"`
-}
-
-type RAMLedger struct {
-	HistorySize int `yaml:"HistorySize,omitempty"`
 }
 
 type Kafka struct {

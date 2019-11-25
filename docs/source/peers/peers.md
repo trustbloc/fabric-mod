@@ -18,8 +18,8 @@ other elements in a Fabric network.
 
 *A blockchain network is comprised of peer nodes, each of which can hold copies
 of ledgers and copies of smart contracts. In this example, the network N
-consists of peers P1, P2 and P3, each of which maintain their own instance
-of the distributed ledger L1. P1, P2 and P3 use the same chaincode, S1, to access
+consists of peers P1, P2 and P3, each of which maintain their own instance of
+the distributed ledger L1. P1, P2 and P3 use the same chaincode, S1, to access
 their copy of that distributed ledger*.
 
 Peers can be created, started, stopped, reconfigured, and even deleted. They
@@ -30,11 +30,12 @@ this section.
 ### A word on terminology
 
 Fabric implements **smart contracts** with a technology concept it calls
-**chaincode** --- simply a piece of code that accesses the ledger, written in one
-of the supported programming languages. In this topic, we'll usually use the
+**chaincode** --- simply a piece of code that accesses the ledger, written in
+one of the supported programming languages. In this topic, we'll usually use the
 term **chaincode**, but feel free to read it as **smart contract** if you're
 more used to that term. It's the same thing! If you want to learn more about
-chaincode and smart contracts, check out our [documentation on smart contracts and chaincode](smartcontract/smartcontract.html).
+chaincode and smart contracts, check out our [documentation on smart contracts
+and chaincode](../smartcontract/smartcontract.html).
 
 ## Ledgers and Chaincode
 
@@ -110,8 +111,8 @@ Applications always connect to peers when they need to access ledgers and
 chaincodes. The Fabric Software Development Kit (SDK) makes this
 easy for programmers --- its APIs enable applications to connect to peers, invoke
 chaincodes to generate transactions, submit transactions to the network that
-will get ordered and committed to the distributed ledger, and receive events
-when this process is complete.
+will get ordered, validated and committed to the distributed ledger, and receive
+events when this process is complete.
 
 Through a peer connection, applications can execute chaincodes to query or
 update a ledger. The result of a ledger query transaction is returned
@@ -126,9 +127,9 @@ chaincode S1 to query or update the ledger L1. P1 invokes S1 to generate a
 proposal response that contains a query result or a proposed ledger update.
 Application A receives the proposal response and, for queries,
 the process is now complete. For updates, A builds a transaction
-from all of the responses, which it sends it to O1 for ordering. O1 collects
+from all of the responses, which it sends to O1 for ordering. O1 collects
 transactions from across the network into blocks, and distributes these to all
-peers, including P1. P1 validates the transaction before applying to L1. Once L1
+peers, including P1. P1 validates the transaction before committing to L1. Once L1
 is updated, P1 generates an event, received by A, to signify completion.*
 
 A peer can return the results of a query to an application immediately since
@@ -149,8 +150,8 @@ to the application a **proposed** update --- one that this peer would apply
 subject to other peers' prior agreement. The first extra step --- step four ---
 requires that applications send an appropriate set of matching proposed updates
 to the entire network of peers as a transaction for commitment to their
-respective ledgers. This is achieved by the application using an **orderer** to
-package transactions into blocks, and distribute them to the entire network of
+respective ledgers. This is achieved by the application by using an **orderer** to
+package transactions into blocks, and distributing them to the entire network of
 peers, where they can be verified before being applied to each peer's local copy
 of the ledger. As this whole ordering processing takes some time to complete
 (seconds), the application is notified asynchronously, as shown in step five.
@@ -201,6 +202,7 @@ than a single organization. Peers are central to how this kind of distributed
 network is built because they are owned by --- and are the connection points to
 the network for --- these organizations.
 
+<a name="Peer8"></a>
 ![Peer8](./peers.diagram.8.png)
 
 *Peers in a blockchain network with multiple organizations. The blockchain
@@ -290,9 +292,9 @@ you know more than enough to continue your understanding of peers!
 
 Finally, note that it's not really important where the peer is physically
 located --- it could reside in the cloud, or in a data centre owned by one
-of the organizations, or on a local machine --- it's the identity associated
-with it that identifies it as being owned by a particular organization. In our
-example above, P3 could be hosted in Org1's data center, but as long as the
+of the organizations, or on a local machine --- it's the digital certificate
+associated with it that identifies it as being owned by a particular organization.
+In our example above, P3 could be hosted in Org1's data center, but as long as the
 digital certificate associated with it is issued by CA2, then it's owned by
 Org2.
 
@@ -301,8 +303,8 @@ Org2.
 We've seen that peers form the basis for a blockchain network, hosting ledgers
 and smart contracts which can be queried and updated by peer-connected applications.
 However, the mechanism by which applications and peers interact with each other
-to ensure that every peer's ledger is kept consistent is mediated by special
-nodes called *orderers*, and it's to these nodes we now turn our
+to ensure that every peer's ledger is kept consistent with each other is mediated
+by special nodes called *orderers*, and it's to these nodes we now turn our
 attention.
 
 An update transaction is quite different from a query transaction because a single
@@ -310,20 +312,22 @@ peer cannot, on its own, update the ledger --- updating requires the consent of 
 peers in the network. A peer requires other peers in the network to approve a
 ledger update before it can be applied to a peer's local ledger. This process is
 called *consensus*, which takes much longer to complete than a simple query. But when
-all the peers required to approve the transaction do so, and the transaction is
+all the peers required to approve the transaction    do so, and the transaction is
 committed to the ledger, peers will notify their connected applications that the
 ledger has been updated. You're about to be shown a lot more detail about how
 peers and orderers manage the consensus process in this section.
 
 Specifically, applications that want to update the ledger are involved in a
 3-phase process, which ensures that all the peers in a blockchain network keep
-their ledgers consistent with each other. In the first phase, applications work
-with a subset of *endorsing peers*, each of which provide an endorsement of the
-proposed ledger update to the application, but do not apply the proposed update
-to their copy of the ledger. In the second phase, these separate endorsements
-are collected together as transactions and packaged into blocks. In the final
-phase, these blocks are distributed back to every peer where each transaction is
-validated before being applied to that peer's copy of the ledger.
+their ledgers consistent with each other. 
+
+* In the first phase, applications work with a subset of *endorsing peers*, each of
+  which provide an endorsement of the proposed ledger update to the application,
+  but do not apply the proposed update to their copy of the ledger.
+* In the second phase, these separate endorsements are collected together
+  as transactions and packaged into blocks.
+* In the third and final phase, these blocks are distributed back to every peer where
+  each transaction is validated before being committed to that peer's copy of the ledger.
 
 As you will see, orderer nodes are central to this process, so let's
 investigate in a little more detail how applications and peers use orderers to
@@ -398,7 +402,7 @@ rejected.
 
 The second phase of the transaction workflow is the packaging phase. The orderer
 is pivotal to this process --- it receives transactions containing endorsed
-transaction proposal responses from many applications, and orderes the
+transaction proposal responses from many applications, and orders the
 transactions into blocks. For more details about the
 ordering and packaging phase, check out our
 [conceptual information about the ordering phase](../orderer/ordering_service.html#phase-two-ordering-and-packaging-transactions-into-blocks).
@@ -411,10 +415,10 @@ and packaging them into blocks, ready for distribution to the peers.
 
 The final phase of the transaction workflow involves the distribution and
 subsequent validation of blocks from the orderer to the peers, where they can be
-applied to the ledger. Specifically, at each peer, every transaction within a
+committed to the ledger. Specifically, at each peer, every transaction within a
 block is validated to ensure that it has been consistently endorsed by all
-relevant organizations before it is applied to the ledger. Failed transactions
-are retained for audit, but are not applied to the ledger.
+relevant organizations before it is committed to the ledger. Failed transactions
+are retained for audit, but are not committed to the ledger.
 
 ![Peer12](./peers.diagram.12.png)
 
@@ -457,8 +461,8 @@ ledger when the proposed update was generated. This may not always be possible,
 even when the transaction has been fully endorsed. For example, another
 transaction may have updated the same asset in the ledger such that the
 transaction update is no longer valid and therefore can no longer be applied. In
-this way each peer's copy of the ledger is kept consistent across the network
-because they each follow the same rules for validation.
+this way, the ledger is kept consistent across each peer in the channel because
+they each follow the same rules for validation.
 
 After a peer has successfully validated each individual transaction, it updates
 the ledger. Failed transactions are not applied to the ledger, but they are
@@ -473,7 +477,7 @@ network. This is often helpful as it keeps the logic of the chaincode
 confidential to endorsing organizations. This is in contrast to the output of
 the chaincodes (the transaction proposal responses) which are shared with every
 peer in the channel, whether or not they endorsed the transaction. This
-specialization of endorsing peers is designed to help scalability.
+specialization of endorsing peers is designed to help scalability and confidentiality.
 
 Finally, every time a block is committed to a peer's ledger, that peer
 generates an appropriate *event*. *Block events* include the full block content,

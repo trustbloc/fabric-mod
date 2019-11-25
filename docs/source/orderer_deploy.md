@@ -29,7 +29,7 @@ check out the [Fabric CA user's guide](https://hyperledger-fabric-ca.readthedocs
 
 ## Configure your node
 
-The configuration of the orderer is handled through a `yaml` filed called
+The configuration of the orderer is handled through a `yaml` file called
 `orderer.yaml`. The `FABRIC_CFG_PATH` environment variable is used to point to
 an `orderer.yaml` file you've configured, which will extract a series of files
 and certificates on your file system.
@@ -48,12 +48,11 @@ to [enable TLS](enable_tls.html). If you set this value to `true`, you will have
 to specify the locations of the relevant TLS certificates. Note that this is
 mandatory for Raft nodes.
 
-* `GenesisFile` --- this is the name of the genesis block you will generate for
+* `BootstrapFile` --- this is the name of the genesis block you will generate for
 this ordering service.
 
-* `GenesisMethod` --- the method by which the genesis block is created. This can
-be either `file`, in which the file in the `GenesisFile` is specified, and
-`provisional`, in which the profile in `GenesisProfile` is used.
+* `GenesisMethod` --- the method by which the bootstrap block is given. For now,
+this can only be `file`, in which the file in the `BootstrapFile` is specified.
 
 If you are deploying this node as part of a cluster (for example, as part of a
 cluster of Raft nodes), make note of the `Cluster` and `Consensus` sections.

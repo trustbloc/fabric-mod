@@ -7,9 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 package ledger
 
 import (
+	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	"github.com/hyperledger/fabric/extensions/ledger/api"
-	"github.com/hyperledger/fabric/protos/common"
 )
 
 //NewKVLedgerExtension returns peer ledger extension implementation using block store provided

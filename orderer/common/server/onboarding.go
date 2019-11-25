@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric/bccsp"
 	"github.com/hyperledger/fabric/common/channelconfig"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/ledger/blockledger"
@@ -19,7 +21,6 @@ import (
 	"github.com/hyperledger/fabric/orderer/common/cluster"
 	"github.com/hyperledger/fabric/orderer/common/localconfig"
 	"github.com/hyperledger/fabric/orderer/consensus/etcdraft"
-	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 )
@@ -34,10 +35,11 @@ type replicationInitiator struct {
 	verifierRetriever cluster.VerifierRetriever
 	channelLister     cluster.ChannelLister
 	logger            *flogging.FabricLogger
-	secOpts           *comm.SecureOptions
+	secOpts           comm.SecureOptions
 	conf              *localconfig.TopLevel
 	lf                cluster.LedgerFactory
 	signer            identity.SignerSerializer
+	cryptoProvider    bccsp.BCCSP
 }
 
 func (ri *replicationInitiator) replicateIfNeeded(bootstrapBlock *common.Block) {
@@ -49,13 +51,17 @@ func (ri *replicationInitiator) replicateIfNeeded(bootstrapBlock *common.Block) 
 }
 
 func (ri *replicationInitiator) createReplicator(bootstrapBlock *common.Block, filter func(string) bool) *cluster.Replicator {
-	consenterCert := etcdraft.ConsenterCertificate(ri.secOpts.Certificate)
+	consenterCert := &etcdraft.ConsenterCertificate{
+		ConsenterCertificate: ri.secOpts.Certificate,
+		CryptoProvider:       ri.cryptoProvider,
+	}
+
 	systemChannelName, err := protoutil.GetChainIDFromBlock(bootstrapBlock)
 	if err != nil {
 		ri.logger.Panicf("Failed extracting system channel name from bootstrap block: %v", err)
 	}
 	pullerConfig := cluster.PullerConfigFromTopLevelConfig(systemChannelName, ri.conf, ri.secOpts.Key, ri.secOpts.Certificate, ri.signer)
-	puller, err := cluster.BlockPullerFromConfigBlock(pullerConfig, bootstrapBlock, ri.verifierRetriever)
+	puller, err := cluster.BlockPullerFromConfigBlock(pullerConfig, bootstrapBlock, ri.verifierRetriever, ri.cryptoProvider)
 	if err != nil {
 		ri.logger.Panicf("Failed creating puller config from bootstrap block: %v", err)
 	}
@@ -183,11 +189,9 @@ type chainCreation struct {
 // TrackChain tracks a chain with the given name, and calls the given callback
 // when this chain should be activated.
 func (dc *inactiveChainReplicator) TrackChain(chain string, genesisBlock *common.Block, createChainCallback etcdraft.CreateChainCallback) {
-	if genesisBlock == nil {
-		dc.logger.Panicf("Called with a nil genesis block")
-	}
 	dc.lock.Lock()
 	defer dc.lock.Unlock()
+
 	dc.logger.Infof("Adding %s to the set of chains to track", chain)
 	dc.chains2CreationCallbacks[chain] = chainCreation{
 		genesisBlock: genesisBlock,
@@ -254,8 +258,8 @@ type Factory interface {
 	// or creates it if it does not
 	GetOrCreate(chainID string) (blockledger.ReadWriter, error)
 
-	// ChainIDs returns the chain IDs the Factory is aware of
-	ChainIDs() []string
+	// ChannelIDs returns the channel IDs the Factory is aware of
+	ChannelIDs() []string
 
 	// Close releases all resources acquired by the factory
 	Close()
@@ -281,12 +285,12 @@ type verifiersByChannel map[string]cluster.BlockVerifier
 func (vl *verifierLoader) loadVerifiers() verifiersByChannel {
 	res := make(verifiersByChannel)
 
-	for _, chain := range vl.ledgerFactory.ChainIDs() {
-		v := vl.loadVerifier(chain)
+	for _, channel := range vl.ledgerFactory.ChannelIDs() {
+		v := vl.loadVerifier(channel)
 		if v == nil {
 			continue
 		}
-		res[chain] = v
+		res[channel] = v
 	}
 
 	return res
@@ -332,7 +336,7 @@ func (vl *verifierLoader) loadVerifier(chain string) cluster.BlockVerifier {
 
 // ValidateBootstrapBlock returns whether this block can be used as a bootstrap block.
 // A bootstrap block is a block of a system channel, and needs to have a ConsortiumsConfig.
-func ValidateBootstrapBlock(block *common.Block) error {
+func ValidateBootstrapBlock(block *common.Block, bccsp bccsp.BCCSP) error {
 	if block == nil {
 		return errors.New("nil block")
 	}
@@ -346,7 +350,7 @@ func ValidateBootstrapBlock(block *common.Block) error {
 		return errors.Wrap(err, "failed extracting envelope from block")
 	}
 
-	bundle, err := channelconfig.NewBundleFromEnvelope(firstTransaction)
+	bundle, err := channelconfig.NewBundleFromEnvelope(firstTransaction, bccsp)
 	if err != nil {
 		return err
 	}

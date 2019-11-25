@@ -12,21 +12,20 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	mspprotos "github.com/hyperledger/fabric-protos-go/msp"
+	"github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric/bccsp"
 	"github.com/hyperledger/fabric/common/channelconfig"
 	"github.com/hyperledger/fabric/common/configtx"
 	commonerrors "github.com/hyperledger/fabric/common/errors"
 	"github.com/hyperledger/fabric/common/flogging"
-	"github.com/hyperledger/fabric/core/chaincode/platforms"
-	"github.com/hyperledger/fabric/core/chaincode/platforms/golang"
 	"github.com/hyperledger/fabric/core/committer/txvalidator/plugin"
 	"github.com/hyperledger/fabric/core/common/sysccprovider"
 	"github.com/hyperledger/fabric/core/common/validation"
 	"github.com/hyperledger/fabric/core/ledger"
 	ledgerUtil "github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/hyperledger/fabric/msp"
-	"github.com/hyperledger/fabric/protos/common"
-	mspprotos "github.com/hyperledger/fabric/protos/msp"
-	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 )
@@ -54,7 +53,7 @@ type ChannelResources interface {
 
 	// GetMSPIDs returns the IDs for the application MSPs
 	// that have been defined in the channel
-	GetMSPIDs(cid string) []string
+	GetMSPIDs() []string
 
 	// Capabilities defines the capabilities for the application portion of this channel
 	Capabilities() channelconfig.ApplicationCapabilities
@@ -71,10 +70,11 @@ type vsccValidator interface {
 // reference to the ledger to enable tx simulation
 // and execution of vscc
 type TxValidator struct {
-	ChainID          string
+	ChannelID        string
 	Semaphore        Semaphore
 	ChannelResources ChannelResources
 	Vscc             vsccValidator
+	CryptoProvider   bccsp.BCCSP
 }
 
 var logger = flogging.MustGetLogger("committer.txvalidator")
@@ -95,14 +95,16 @@ type blockValidationResult struct {
 }
 
 // NewTxValidator creates new transactions validator
-func NewTxValidator(chainID string, sem Semaphore, cr ChannelResources, sccp sysccprovider.SystemChaincodeProvider, pm plugin.Mapper) *TxValidator {
+func NewTxValidator(channelID string, sem Semaphore, cr ChannelResources, pm plugin.Mapper, cryptoProvider bccsp.BCCSP) *TxValidator {
 	// Encapsulates interface implementation
 	pluginValidator := NewPluginValidator(pm, cr.Ledger(), &dynamicDeserializer{cr: cr}, &dynamicCapabilities{cr: cr})
 	return &TxValidator{
-		ChainID:          chainID,
+		ChannelID:        channelID,
 		Semaphore:        sem,
 		ChannelResources: cr,
-		Vscc:             newVSCCValidator(chainID, cr, sccp, pluginValidator)}
+		Vscc:             newVSCCValidator(channelID, cr, pluginValidator),
+		CryptoProvider:   cryptoProvider,
+	}
 }
 
 func (v *TxValidator) chainExists(chain string) bool {
@@ -135,7 +137,7 @@ func (v *TxValidator) Validate(block *common.Block) error {
 	var errPos int
 
 	startValidation := time.Now() // timer to log Validate block duration
-	logger.Debugf("[%s] START Block Validation for block [%d]", v.ChainID, block.Header.Number)
+	logger.Debugf("[%s] START Block Validation for block [%d]", v.ChannelID, block.Header.Number)
 
 	// Initialize trans as not_validated here, then set invalidation reason code upon invalidation below
 	txsfltr := ledgerUtil.NewTxValidationFlags(len(block.Data.Data))
@@ -229,7 +231,7 @@ func (v *TxValidator) Validate(block *common.Block) error {
 	block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER] = txsfltr
 
 	elapsedValidation := time.Since(startValidation) / time.Millisecond // duration in ms
-	logger.Infof("[%s] Validated block [%d] in %dms", v.ChainID, block.Header.Number, elapsedValidation)
+	logger.Infof("[%s] Validated block [%d] in %dms", v.ChannelID, block.Header.Number, elapsedValidation)
 
 	return nil
 }
@@ -290,15 +292,15 @@ func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *bl
 		// chain binding proposal to endorsements to tx holds. We do
 		// NOT check the validity of endorsements, though. That's a
 		// job for VSCC below
-		logger.Debugf("[%s] validateTx starts for block %p env %p txn %d", v.ChainID, block, env, tIdx)
-		defer logger.Debugf("[%s] validateTx completes for block %p env %p txn %d", v.ChainID, block, env, tIdx)
+		logger.Debugf("[%s] validateTx starts for block %p env %p txn %d", v.ChannelID, block, env, tIdx)
+		defer logger.Debugf("[%s] validateTx completes for block %p env %p txn %d", v.ChannelID, block, env, tIdx)
 		var payload *common.Payload
 		var err error
 		var txResult peer.TxValidationCode
 		var txsChaincodeName *sysccprovider.ChaincodeInstance
 		var txsUpgradedChaincode *sysccprovider.ChaincodeInstance
 
-		if payload, txResult = validation.ValidateTransaction(env, v.ChannelResources.Capabilities()); txResult != peer.TxValidationCode_VALID {
+		if payload, txResult = validation.ValidateTransaction(env, v.CryptoProvider); txResult != peer.TxValidationCode_VALID {
 			logger.Errorf("Invalid transaction with index %d", tIdx)
 			results <- &blockValidationResult{
 				tIdx:           tIdx,
@@ -378,28 +380,8 @@ func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *bl
 			}
 			txsChaincodeName = invokeCC
 			if upgradeCC != nil {
-				logger.Infof("Find chaincode upgrade transaction for chaincode %s on channel %s with new version %s", upgradeCC.ChaincodeName, upgradeCC.ChainID, upgradeCC.ChaincodeVersion)
+				logger.Infof("Find chaincode upgrade transaction for chaincode %s on channel %s with new version %s", upgradeCC.ChaincodeName, upgradeCC.ChannelID, upgradeCC.ChaincodeVersion)
 				txsUpgradedChaincode = upgradeCC
-			}
-		} else if common.HeaderType(chdr.Type) == common.HeaderType_TOKEN_TRANSACTION {
-
-			txID = chdr.TxId
-			if !v.ChannelResources.Capabilities().FabToken() {
-				logger.Debugf("Unsupported transaction type [%s] in block number [%d] transaction index [%d]: FabToken capability is not enabled",
-					common.HeaderType(chdr.Type), block.Header.Number, tIdx)
-				results <- &blockValidationResult{
-					tIdx:           tIdx,
-					validationCode: peer.TxValidationCode_UNKNOWN_TX_TYPE,
-				}
-				return
-			}
-
-			// Check if there is a duplicate of such transaction in the ledger and
-			// obtain the corresponding result that acknowledges the error type
-			erroneousResultEntry := v.checkTxIdDupsLedger(tIdx, chdr, v.ChannelResources.Ledger())
-			if erroneousResultEntry != nil {
-				results <- erroneousResultEntry
-				return
 			}
 		} else if common.HeaderType(chdr.Type) == common.HeaderType_CONFIG {
 			configEnvelope, err := configtx.UnmarshalConfigEnvelope(payload.Data)
@@ -514,7 +496,7 @@ func (v *TxValidator) invalidTXsForUpgradeCC(txsChaincodeNames map[int]*sysccpro
 		if cc == nil {
 			continue
 		}
-		upgradedCCKey := v.generateCCKey(cc.ChaincodeName, cc.ChainID)
+		upgradedCCKey := v.generateCCKey(cc.ChaincodeName, cc.ChannelID)
 
 		if finalIdx, exist := finalValidUpgradeTXs[upgradedCCKey]; !exist {
 			finalValidUpgradeTXs[upgradedCCKey] = tIdx
@@ -537,7 +519,7 @@ func (v *TxValidator) invalidTXsForUpgradeCC(txsChaincodeNames map[int]*sysccpro
 		if cc == nil {
 			continue
 		}
-		ccKey := v.generateCCKey(cc.ChaincodeName, cc.ChainID)
+		ccKey := v.generateCCKey(cc.ChaincodeName, cc.ChannelID)
 		if _, exist := upgradedChaincodes[ccKey]; exist {
 			if txsfltr.IsValid(tIdx) {
 				logger.Infof("Invalid transaction with index %d: chaincode was upgraded in the same block", tIdx)
@@ -554,33 +536,33 @@ func (v *TxValidator) getTxCCInstance(payload *common.Payload) (invokeCCIns, upg
 		return nil, nil, err
 	}
 
-	// Chain ID
-	chainID := chdr.ChannelId // it is guaranteed to be an existing channel by now
+	// Channel ID
+	channelID := chdr.ChannelId // it is guaranteed to be an existing channel by now
 
 	// ChaincodeID
-	hdrExt, err := protoutil.GetChaincodeHeaderExtension(payload.Header)
+	hdrExt, err := protoutil.UnmarshalChaincodeHeaderExtension(chdr.Extension)
 	if err != nil {
 		return nil, nil, err
 	}
 	invokeCC := hdrExt.ChaincodeId
-	invokeIns := &sysccprovider.ChaincodeInstance{ChainID: chainID, ChaincodeName: invokeCC.Name, ChaincodeVersion: invokeCC.Version}
+	invokeIns := &sysccprovider.ChaincodeInstance{ChannelID: channelID, ChaincodeName: invokeCC.Name, ChaincodeVersion: invokeCC.Version}
 
 	// Transaction
-	tx, err := protoutil.GetTransaction(payload.Data)
+	tx, err := protoutil.UnmarshalTransaction(payload.Data)
 	if err != nil {
 		logger.Errorf("GetTransaction failed: %+v", err)
 		return invokeIns, nil, nil
 	}
 
 	// ChaincodeActionPayload
-	cap, err := protoutil.GetChaincodeActionPayload(tx.Actions[0].Payload)
+	cap, err := protoutil.UnmarshalChaincodeActionPayload(tx.Actions[0].Payload)
 	if err != nil {
 		logger.Errorf("GetChaincodeActionPayload failed: %+v", err)
 		return invokeIns, nil, nil
 	}
 
 	// ChaincodeProposalPayload
-	cpp, err := protoutil.GetChaincodeProposalPayload(cap.ChaincodeProposalPayload)
+	cpp, err := protoutil.UnmarshalChaincodeProposalPayload(cap.ChaincodeProposalPayload)
 	if err != nil {
 		logger.Errorf("GetChaincodeProposalPayload failed: %+v", err)
 		return invokeIns, nil, nil
@@ -596,7 +578,7 @@ func (v *TxValidator) getTxCCInstance(payload *common.Payload) (invokeCCIns, upg
 
 	if invokeCC.Name == "lscc" {
 		if string(cis.ChaincodeSpec.Input.Args[0]) == "upgrade" {
-			upgradeIns, err := v.getUpgradeTxInstance(chainID, cis.ChaincodeSpec.Input.Args[2])
+			upgradeIns, err := v.getUpgradeTxInstance(channelID, cis.ChaincodeSpec.Input.Args[2])
 			if err != nil {
 				return invokeIns, nil, nil
 			}
@@ -607,19 +589,18 @@ func (v *TxValidator) getTxCCInstance(payload *common.Payload) (invokeCCIns, upg
 	return invokeIns, nil, nil
 }
 
-func (v *TxValidator) getUpgradeTxInstance(chainID string, cdsBytes []byte) (*sysccprovider.ChaincodeInstance, error) {
-	cds, err := protoutil.GetChaincodeDeploymentSpec(cdsBytes)
+func (v *TxValidator) getUpgradeTxInstance(channelID string, cdsBytes []byte) (*sysccprovider.ChaincodeInstance, error) {
+	cds, err := protoutil.UnmarshalChaincodeDeploymentSpec(cdsBytes)
 	if err != nil {
 		return nil, err
 	}
 
-	err = platforms.NewRegistry(&golang.Platform{}).ValidateDeploymentSpec(cds.ChaincodeSpec.Type.String(), cds.CodePackage)
-	if err != nil {
-		return nil, err
+	if cds.ChaincodeSpec.Type.String() != "GOLANG" {
+		return nil, errors.Errorf("unexpected chaincode type: %s", cds.ChaincodeSpec.Type.String())
 	}
 
 	return &sysccprovider.ChaincodeInstance{
-		ChainID:          chainID,
+		ChannelID:        channelID,
 		ChaincodeName:    cds.ChaincodeSpec.ChaincodeId.Name,
 		ChaincodeVersion: cds.ChaincodeSpec.ChaincodeId.Version,
 	}, nil
@@ -649,9 +630,8 @@ func (ds *dynamicCapabilities) CollectionUpgrade() bool {
 	return ds.cr.Capabilities().CollectionUpgrade()
 }
 
-// FabToken returns true if fabric token function is supported.
-func (ds *dynamicCapabilities) FabToken() bool {
-	return ds.cr.Capabilities().FabToken()
+func (ds *dynamicCapabilities) StorePvtDataOfInvalidTx() bool {
+	return ds.cr.Capabilities().StorePvtDataOfInvalidTx()
 }
 
 func (ds *dynamicCapabilities) ForbidDuplicateTXIdInBlock() bool {

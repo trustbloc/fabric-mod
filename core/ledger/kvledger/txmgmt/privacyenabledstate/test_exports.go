@@ -57,9 +57,11 @@ func (env *LevelDBCommonStorageTestEnv) Init(t testing.TB) {
 		env.bookkeeperTestEnv.TestProvider,
 		&disabled.Provider{},
 		&mock.HealthCheckRegistry{},
-		&ledger.StateDB{
-			LevelDBPath: dbPath,
+		&StateDBConfig{
+			&ledger.StateDBConfig{},
+			dbPath,
 		},
+		[]string{"lscc", "_lifecycle"},
 	)
 	assert.NoError(t, err)
 	env.t = t
@@ -90,6 +92,7 @@ func (env *LevelDBCommonStorageTestEnv) Cleanup() {
 
 // CouchDBCommonStorageTestEnv implements TestEnv interface for couchdb based storage
 type CouchDBCommonStorageTestEnv struct {
+	couchAddress      string
 	t                 testing.TB
 	provider          DBProvider
 	bookkeeperTestEnv *bookkeeping.TestEnv
@@ -119,21 +122,27 @@ func (env *CouchDBCommonStorageTestEnv) Init(t testing.TB) {
 	if err != nil {
 		t.Fatalf("Failed to create redo log directory: %s", err)
 	}
-	couchAddress := env.setupCouch()
 
-	stateDBConfig := &ledger.StateDB{
-		StateDatabase: "CouchDB",
-		CouchDB: &couchdb.Config{
-			Address:             couchAddress,
-			Username:            "",
-			Password:            "",
-			MaxRetries:          3,
-			MaxRetriesOnStartup: 20,
-			RequestTimeout:      35 * time.Second,
-			InternalQueryLimit:  1000,
-			MaxBatchUpdateSize:  1000,
-			RedoLogPath:         redoPath,
+	if env.couchAddress == "" {
+		env.couchAddress = env.setupCouch()
+	}
+
+	stateDBConfig := &StateDBConfig{
+		StateDBConfig: &ledger.StateDBConfig{
+			StateDatabase: "CouchDB",
+			CouchDB: &couchdb.Config{
+				Address:             env.couchAddress,
+				Username:            "",
+				Password:            "",
+				MaxRetries:          3,
+				MaxRetriesOnStartup: 20,
+				RequestTimeout:      35 * time.Second,
+				InternalQueryLimit:  1000,
+				MaxBatchUpdateSize:  1000,
+				RedoLogPath:         redoPath,
+			},
 		},
+		LevelDBPath: "",
 	}
 
 	env.bookkeeperTestEnv = bookkeeping.NewTestEnv(t)
@@ -142,6 +151,7 @@ func (env *CouchDBCommonStorageTestEnv) Init(t testing.TB) {
 		&disabled.Provider{},
 		&mock.HealthCheckRegistry{},
 		stateDBConfig,
+		[]string{"lscc", "_lifecycle"},
 	)
 	assert.NoError(t, err)
 	env.t = t

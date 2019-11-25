@@ -3,6 +3,7 @@
 package mocks
 
 import mock "github.com/stretchr/testify/mock"
+import msp "github.com/hyperledger/fabric/msp"
 
 import protoutil "github.com/hyperledger/fabric/protoutil"
 
@@ -11,8 +12,22 @@ type Policy struct {
 	mock.Mock
 }
 
-// Evaluate provides a mock function with given fields: signatureSet
-func (_m *Policy) Evaluate(signatureSet []*protoutil.SignedData) error {
+// EvaluateIdentities provides a mock function with given fields: identities
+func (_m *Policy) EvaluateIdentities(identities []msp.Identity) error {
+	ret := _m.Called(identities)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func([]msp.Identity) error); ok {
+		r0 = rf(identities)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// EvaluateSignedData provides a mock function with given fields: signatureSet
+func (_m *Policy) EvaluateSignedData(signatureSet []*protoutil.SignedData) error {
 	ret := _m.Called(signatureSet)
 
 	var r0 error

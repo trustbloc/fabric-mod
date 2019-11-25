@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
+	cb "github.com/hyperledger/fabric-protos-go/common"
+	ab "github.com/hyperledger/fabric-protos-go/orderer"
 	"github.com/hyperledger/fabric/common/capabilities"
-	cb "github.com/hyperledger/fabric/protos/common"
-	ab "github.com/hyperledger/fabric/protos/orderer"
 	"github.com/pkg/errors"
 )
 
@@ -87,7 +87,7 @@ func NewOrdererOrgConfig(orgName string, orgGroup *cb.ConfigGroup, mspConfigHand
 
 	if !channelCapabilities.OrgSpecificOrdererEndpoints() {
 		if _, ok := orgGroup.Values[EndpointsKey]; ok {
-			return nil, errors.Errorf("Orderer Org %s cannot contain endpoints value until V2_0+ capabilities have been enabled", orgName)
+			return nil, errors.Errorf("Orderer Org %s cannot contain endpoints value until V1_4_2+ capabilities have been enabled", orgName)
 		}
 	}
 

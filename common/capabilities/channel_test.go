@@ -9,8 +9,8 @@ package capabilities
 import (
 	"testing"
 
+	cb "github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/msp"
-	cb "github.com/hyperledger/fabric/protos/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -59,7 +59,7 @@ func TestChannelV142(t *testing.T) {
 	assert.NoError(t, cp.Supported())
 	assert.True(t, cp.MSPVersion() == msp.MSPv1_3)
 	assert.True(t, cp.ConsensusTypeMigration())
-	assert.False(t, cp.OrgSpecificOrdererEndpoints())
+	assert.True(t, cp.OrgSpecificOrdererEndpoints())
 
 	cp = NewChannelProvider(map[string]*cb.Capability{
 		ChannelV1_4_2: {},
@@ -67,7 +67,27 @@ func TestChannelV142(t *testing.T) {
 	assert.NoError(t, cp.Supported())
 	assert.True(t, cp.MSPVersion() == msp.MSPv1_3)
 	assert.True(t, cp.ConsensusTypeMigration())
-	assert.False(t, cp.OrgSpecificOrdererEndpoints())
+	assert.True(t, cp.OrgSpecificOrdererEndpoints())
+}
+
+func TestChannelV143(t *testing.T) {
+	cp := NewChannelProvider(map[string]*cb.Capability{
+		ChannelV1_3:   {},
+		ChannelV1_4_2: {},
+		ChannelV1_4_3: {},
+	})
+	assert.NoError(t, cp.Supported())
+	assert.True(t, cp.MSPVersion() == msp.MSPv1_4_3)
+	assert.True(t, cp.ConsensusTypeMigration())
+	assert.True(t, cp.OrgSpecificOrdererEndpoints())
+
+	cp = NewChannelProvider(map[string]*cb.Capability{
+		ChannelV1_4_3: {},
+	})
+	assert.NoError(t, cp.Supported())
+	assert.True(t, cp.MSPVersion() == msp.MSPv1_4_3)
+	assert.True(t, cp.ConsensusTypeMigration())
+	assert.True(t, cp.OrgSpecificOrdererEndpoints())
 }
 
 func TestChannelV20(t *testing.T) {
@@ -75,7 +95,7 @@ func TestChannelV20(t *testing.T) {
 		ChannelV2_0: {},
 	})
 	assert.NoError(t, cp.Supported())
-	assert.True(t, cp.MSPVersion() == msp.MSPv1_3)
+	assert.True(t, cp.MSPVersion() == msp.MSPv1_4_3)
 	assert.True(t, cp.ConsensusTypeMigration())
 	assert.True(t, cp.OrgSpecificOrdererEndpoints())
 }

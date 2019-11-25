@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/orderer"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/comm"
-	"github.com/hyperledger/fabric/protos/orderer"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -131,7 +131,7 @@ func (c *Comm) DispatchConsensus(ctx context.Context, request *orderer.Consensus
 	return c.H.OnConsensus(reqCtx.channel, reqCtx.sender, request)
 }
 
-// classifyRequest identifies the sender and channel of the request and returns
+// requestContext identifies the sender and channel of the request and returns
 // it wrapped in a requestContext
 func (c *Comm) requestContext(ctx context.Context, msg proto.Message) (*requestContext, error) {
 	channel := c.ChanExt.TargetChannel(msg)

@@ -11,21 +11,28 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric/bccsp"
+	"github.com/hyperledger/fabric/bccsp/sw"
+	"github.com/hyperledger/fabric/common/ledger/blkstorage/fsblkstorage"
+	"github.com/hyperledger/fabric/common/ledger/util"
 	"github.com/hyperledger/fabric/common/metrics/disabled"
+	"github.com/hyperledger/fabric/core/chaincode/lifecycle"
+	"github.com/hyperledger/fabric/core/common/privdata"
+	"github.com/hyperledger/fabric/core/container/externalbuilder"
+	"github.com/hyperledger/fabric/core/ledger"
+	"github.com/hyperledger/fabric/core/ledger/kvledger"
+	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
+	"github.com/hyperledger/fabric/core/ledger/mock"
 	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
+	"github.com/hyperledger/fabric/core/scc/lscc"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/msp/mgmt"
 	"github.com/hyperledger/fabric/protoutil"
-
-	"github.com/hyperledger/fabric/common/ledger/blkstorage/fsblkstorage"
-	"github.com/hyperledger/fabric/common/ledger/util"
-	"github.com/hyperledger/fabric/core/common/privdata"
-	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
-	"github.com/hyperledger/fabric/core/peer"
-	"github.com/hyperledger/fabric/core/scc/lscc"
-	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -35,60 +42,144 @@ const (
 	rebuildableStatedb       rebuildable = 1
 	rebuildableBlockIndex    rebuildable = 2
 	rebuildableConfigHistory rebuildable = 4
+	rebuildableHistoryDB     rebuildable = 8
+	rebuildableBookkeeper    rebuildable = 16
 )
 
 type env struct {
 	assert            *assert.Assertions
-	rootPath          string
+	initializer       *ledgermgmt.Initializer
+	ledgerMgr         *ledgermgmt.LedgerMgr
 	cleanupExtTestEnv func()
 	couchDB           *couchdb.Config
 }
 
 func newEnv(t *testing.T) *env {
-	rootPath, err := ioutil.TempDir("", "kvlenv")
-	if err != nil {
-		t.Fatalf("Failed to create root directory: %s", err)
-	}
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
+	return newEnvWithInitializer(t, &ledgermgmt.Initializer{
+		Hasher: cryptoProvider,
+		EbMetadataProvider: &externalbuilder.MetadataProvider{
+			DurablePath: "testdata",
+		},
+	})
+}
+
+func newEnvWithInitializer(t *testing.T, initializer *ledgermgmt.Initializer) *env {
+	populateMissingsWithTestDefaults(t, initializer)
+
 	//setup extension test environment
-	_, _, destroy := xtestutil.SetupExtTestEnv()
-	env := &env{
-		assert:            assert.New(t),
-		rootPath:          rootPath,
-		cleanupExtTestEnv: destroy,
-		couchDB:           xtestutil.TestLedgerConf().StateDB.CouchDB,
+	addr, _, destroy := xtestutil.SetupExtTestEnv()
+	if addr != "" {
+		initializer.Config.StateDBConfig = &ledger.StateDBConfig{
+			StateDatabase: "CouchDB",
+			CouchDB: &couchdb.Config{
+				Address:             addr,
+				MaxRetries:          3,
+				MaxRetriesOnStartup: 3,
+				RequestTimeout:      10 * time.Second,
+				RedoLogPath:         filepath.Join(initializer.Config.RootFSPath, "couchdbRedoLogs"),
+			},
+		}
 	}
-	return env
+	return &env{
+		assert:            assert.New(t),
+		initializer:       initializer,
+		cleanupExtTestEnv: destroy,
+		couchDB:           xtestutil.TestLedgerConf().StateDBConfig.CouchDB,
+	}
 }
 
 func (e *env) cleanup() {
-	closeLedgerMgmt()
+	if e.ledgerMgr != nil {
+		e.ledgerMgr.Close()
+	}
+
 	e.cleanupExtTestEnv()
-	e.assert.NoError(os.RemoveAll(e.rootPath))
+
+	// Ignore RemoveAll error because when a test mounts a dir to a couchdb container,
+	// the mounted dir cannot be deleted in CI builds. This has no impact to CI because it gets a new VM for each build.
+	// When running the test locally (macOS and linux VM), the mounted dirs are deleted without any error.
+	os.RemoveAll(e.initializer.Config.RootFSPath)
 }
 
 func (e *env) closeAllLedgersAndDrop(flags rebuildable) {
-	closeLedgerMgmt()
+	if e.ledgerMgr != nil {
+		e.ledgerMgr.Close()
+	}
 	defer e.initLedgerMgmt()
 
 	if flags&rebuildableBlockIndex == rebuildableBlockIndex {
-		indexPath := filepath.Join(e.rootPath, "ledgersData", "chains", fsblkstorage.IndexDir)
+		indexPath := e.getBlockIndexDBPath()
 		logger.Infof("Deleting blockstore indexdb path [%s]", indexPath)
 		e.verifyNonEmptyDirExists(indexPath)
 		e.assert.NoError(os.RemoveAll(indexPath))
 	}
 
 	if flags&rebuildableStatedb == rebuildableStatedb {
-		statedbPath := filepath.Join(e.rootPath, "ledgersData", "stateLeveldb")
+		statedbPath := e.getLevelstateDBPath()
 		logger.Infof("Deleting statedb path [%s]", statedbPath)
 		e.verifyNonEmptyDirExists(statedbPath)
 		e.assert.NoError(os.RemoveAll(statedbPath))
 	}
 
 	if flags&rebuildableConfigHistory == rebuildableConfigHistory {
-		configHistory := filepath.Join(e.rootPath, "ledgersData", "configHistory")
-		logger.Infof("Deleting configHistory db path [%s]", configHistory)
-		e.verifyNonEmptyDirExists(configHistory)
-		e.assert.NoError(os.RemoveAll(configHistory))
+		configHistoryPath := e.getConfigHistoryDBPath()
+		logger.Infof("Deleting configHistory db path [%s]", configHistoryPath)
+		e.verifyNonEmptyDirExists(configHistoryPath)
+		e.assert.NoError(os.RemoveAll(configHistoryPath))
+	}
+
+	if flags&rebuildableBookkeeper == rebuildableBookkeeper {
+		bookkeeperPath := e.getBookkeeperDBPath()
+		logger.Infof("Deleting bookkeeper db path [%s]", bookkeeperPath)
+		e.verifyNonEmptyDirExists(bookkeeperPath)
+		e.assert.NoError(os.RemoveAll(bookkeeperPath))
+	}
+
+	if flags&rebuildableHistoryDB == rebuildableHistoryDB {
+		historyPath := e.getHistoryDBPath()
+		logger.Infof("Deleting history db path [%s]", historyPath)
+		e.verifyNonEmptyDirExists(historyPath)
+		e.assert.NoError(os.RemoveAll(historyPath))
+	}
+
+	e.verifyRebuilableDoesNotExist(flags)
+}
+
+func (e *env) verifyRebuilablesExist(flags rebuildable) {
+	if flags&rebuildableBlockIndex == rebuildableBlockIndex {
+		e.verifyNonEmptyDirExists(e.getBlockIndexDBPath())
+	}
+	if flags&rebuildableStatedb == rebuildableStatedb {
+		e.verifyNonEmptyDirExists(e.getLevelstateDBPath())
+	}
+	if flags&rebuildableConfigHistory == rebuildableConfigHistory {
+		e.verifyNonEmptyDirExists(e.getConfigHistoryDBPath())
+	}
+	if flags&rebuildableBookkeeper == rebuildableBookkeeper {
+		e.verifyNonEmptyDirExists(e.getBookkeeperDBPath())
+	}
+	if flags&rebuildableHistoryDB == rebuildableHistoryDB {
+		e.verifyNonEmptyDirExists(e.getHistoryDBPath())
+	}
+}
+
+func (e *env) verifyRebuilableDoesNotExist(flags rebuildable) {
+	if flags&rebuildableStatedb == rebuildableStatedb {
+		e.verifyDirDoesNotExist(e.getLevelstateDBPath())
+	}
+	if flags&rebuildableBlockIndex == rebuildableBlockIndex {
+		e.verifyDirDoesNotExist(e.getBlockIndexDBPath())
+	}
+	if flags&rebuildableConfigHistory == rebuildableConfigHistory {
+		e.verifyDirDoesNotExist(e.getConfigHistoryDBPath())
+	}
+	if flags&rebuildableBookkeeper == rebuildableBookkeeper {
+		e.verifyDirDoesNotExist(e.getBookkeeperDBPath())
+	}
+	if flags&rebuildableHistoryDB == rebuildableHistoryDB {
+		e.verifyDirDoesNotExist(e.getHistoryDBPath())
 	}
 }
 
@@ -98,44 +189,109 @@ func (e *env) verifyNonEmptyDirExists(path string) {
 	e.assert.False(empty)
 }
 
-// ########################### ledgermgmt and ledgerconfig related functions wrappers #############################
-// In the current code, ledgermgmt is a packaged scoped APIs and hence so are the following
-// wrapper APIs. As a TODO, both the ledgermgmt can be refactored as separate objects withn
-// instances wrapped inside the `env` struct above.
-// #################################################################################################################
-func (e *env) initLedgerMgmt() {
-	identityDeserializerFactory := func(chainID string) msp.IdentityDeserializer {
-		return mgmt.GetManagerForChain(chainID)
-	}
-	membershipInfoProvider := privdata.NewMembershipInfoProvider(createSelfSignedData(), identityDeserializerFactory)
-
-	ledgerPath := filepath.Join(e.rootPath, "ledgersData")
-	ledgermgmt.InitializeExistingTestEnvWithInitializer(
-		&ledgermgmt.Initializer{
-			CustomTxProcessors:            peer.ConfigTxProcessors,
-			DeployedChaincodeInfoProvider: &lscc.DeployedCCInfoProvider{},
-			MembershipInfoProvider:        membershipInfoProvider,
-			MetricsProvider:               &disabled.Provider{},
-			Config: &ledger.Config{
-				RootFSPath: ledgerPath,
-				StateDB: &ledger.StateDB{
-					StateDatabase: "goleveldb",
-					LevelDBPath:   filepath.Join(ledgerPath, "stateLeveldb"),
-					CouchDB:       e.couchDB,
-				},
-				PrivateData: &ledger.PrivateData{
-					StorePath:       filepath.Join(ledgerPath, "pvtdataStore"),
-					MaxBatchSize:    5000,
-					BatchesInterval: 1000,
-					PurgeInterval:   100,
-				},
-			},
-		},
-	)
+func (e *env) verifyDirDoesNotExist(path string) {
+	exists, _, err := util.FileExists(path)
+	e.assert.NoError(err)
+	e.assert.False(exists)
 }
 
-func createSelfSignedData() protoutil.SignedData {
-	sID := mgmt.GetLocalSigningIdentityOrPanic()
+func (e *env) initLedgerMgmt() {
+	e.ledgerMgr = ledgermgmt.NewLedgerMgr(e.initializer)
+}
+
+func (e *env) closeLedgerMgmt() {
+	e.ledgerMgr.Close()
+}
+
+func (e *env) getLedgerRootPath() string {
+	return e.initializer.Config.RootFSPath
+}
+
+func (e *env) getLevelstateDBPath() string {
+	return kvledger.StateDBPath(e.initializer.Config.RootFSPath)
+}
+
+func (e *env) getBlockIndexDBPath() string {
+	return filepath.Join(kvledger.BlockStorePath(e.initializer.Config.RootFSPath), fsblkstorage.IndexDir)
+}
+
+func (e *env) getConfigHistoryDBPath() string {
+	return kvledger.ConfigHistoryDBPath(e.initializer.Config.RootFSPath)
+}
+
+func (e *env) getHistoryDBPath() string {
+	return kvledger.HistoryDBPath(e.initializer.Config.RootFSPath)
+}
+
+func (e *env) getBookkeeperDBPath() string {
+	return kvledger.BookkeeperDBPath(e.initializer.Config.RootFSPath)
+}
+
+func populateMissingsWithTestDefaults(t *testing.T, initializer *ledgermgmt.Initializer) {
+	if initializer.CustomTxProcessors == nil {
+		initializer.CustomTxProcessors = map[common.HeaderType]ledger.CustomTxProcessor{}
+	}
+
+	if initializer.DeployedChaincodeInfoProvider == nil {
+		initializer.DeployedChaincodeInfoProvider = &lscc.DeployedCCInfoProvider{}
+	}
+
+	if initializer.MembershipInfoProvider == nil {
+		identityDeserializerFactory := func(chainID string) msp.IdentityDeserializer {
+			return mgmt.GetManagerForChain(chainID)
+		}
+		cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+		assert.NoError(t, err)
+		membershipInfoProvider := privdata.NewMembershipInfoProvider(createSelfSignedData(cryptoProvider), identityDeserializerFactory)
+		initializer.MembershipInfoProvider = membershipInfoProvider
+	}
+
+	if initializer.MetricsProvider == nil {
+		initializer.MetricsProvider = &disabled.Provider{}
+	}
+
+	if initializer.Config == nil {
+		rootPath, err := ioutil.TempDir("/tmp", "ledgersData")
+		if err != nil {
+			t.Fatalf("Failed to create root directory: %s", err)
+		}
+
+		initializer.Config = &ledger.Config{
+			RootFSPath: rootPath,
+		}
+	}
+
+	if initializer.Config.StateDBConfig == nil {
+		initializer.Config.StateDBConfig = &ledger.StateDBConfig{
+			StateDatabase: "goleveldb",
+		}
+	}
+
+	if initializer.Config.HistoryDBConfig == nil {
+		initializer.Config.HistoryDBConfig = &ledger.HistoryDBConfig{
+			Enabled: true,
+		}
+	}
+
+	if initializer.Config.PrivateDataConfig == nil {
+		initializer.Config.PrivateDataConfig = &ledger.PrivateDataConfig{
+			MaxBatchSize:    5000,
+			BatchesInterval: 1000,
+			PurgeInterval:   100,
+		}
+	}
+
+	if initializer.HealthCheckRegistry == nil {
+		initializer.HealthCheckRegistry = &mock.HealthCheckRegistry{}
+	}
+
+	if initializer.ChaincodeLifecycleEventProvider == nil {
+		initializer.ChaincodeLifecycleEventProvider = &mock.ChaincodeLifecycleEventProvider{}
+	}
+}
+
+func createSelfSignedData(cryptoProvider bccsp.BCCSP) protoutil.SignedData {
+	sID := mgmt.GetLocalSigningIdentityOrPanic(cryptoProvider)
 	msg := make([]byte, 32)
 	sig, err := sID.Sign(msg)
 	if err != nil {
@@ -152,6 +308,58 @@ func createSelfSignedData() protoutil.SignedData {
 	}
 }
 
-func closeLedgerMgmt() {
-	ledgermgmt.Close()
+// deployedCCInfoProviderWrapper is a wrapper type that overrides ChaincodeImplicitCollections
+type deployedCCInfoProviderWrapper struct {
+	*lifecycle.ValidatorCommitter
+	orgMSPIDs []string
+}
+
+// AllCollectionsConfigPkg overrides the same method in lifecycle.AllCollectionsConfigPkg.
+// It is basically a copy of lifecycle.AllCollectionsConfigPkg and invokes ImplicitCollections in the wrapper.
+// This method is called when the unit test code gets private data code path.
+func (dc *deployedCCInfoProviderWrapper) AllCollectionsConfigPkg(channelName, chaincodeName string, qe ledger.SimpleQueryExecutor) (*peer.CollectionConfigPackage, error) {
+	chaincodeInfo, err := dc.ChaincodeInfo(channelName, chaincodeName, qe)
+	if err != nil {
+		return nil, err
+	}
+	explicitCollectionConfigPkg := chaincodeInfo.ExplicitCollectionConfigPkg
+
+	implicitCollections, _ := dc.ImplicitCollections(channelName, "", nil)
+
+	var combinedColls []*peer.CollectionConfig
+	if explicitCollectionConfigPkg != nil {
+		combinedColls = append(combinedColls, explicitCollectionConfigPkg.Config...)
+	}
+	for _, implicitColl := range implicitCollections {
+		c := &peer.CollectionConfig{}
+		c.Payload = &peer.CollectionConfig_StaticCollectionConfig{StaticCollectionConfig: implicitColl}
+		combinedColls = append(combinedColls, c)
+	}
+	return &peer.CollectionConfigPackage{
+		Config: combinedColls,
+	}, nil
+}
+
+// ImplicitCollections overrides the same method in lifecycle.ValidatorCommitter.
+// It constructs static collection config using known mspids from the sample ledger.
+// This method is called when the unit test code gets collection configuration.
+func (dc *deployedCCInfoProviderWrapper) ImplicitCollections(channelName, chaincodeName string, qe ledger.SimpleQueryExecutor) ([]*peer.StaticCollectionConfig, error) {
+	collConfigs := make([]*peer.StaticCollectionConfig, 0, len(dc.orgMSPIDs))
+	for _, mspID := range dc.orgMSPIDs {
+		collConfigs = append(collConfigs, lifecycle.GenerateImplicitCollectionForOrg(mspID))
+	}
+	return collConfigs, nil
+}
+
+func createDeployedCCInfoProvider(orgMSPIDs []string) ledger.DeployedChaincodeInfoProvider {
+	deployedCCInfoProvider := &lifecycle.ValidatorCommitter{
+		Resources: &lifecycle.Resources{
+			Serializer: &lifecycle.Serializer{},
+		},
+		LegacyDeployedCCInfoProvider: &lscc.DeployedCCInfoProvider{},
+	}
+	return &deployedCCInfoProviderWrapper{
+		ValidatorCommitter: deployedCCInfoProvider,
+		orgMSPIDs:          orgMSPIDs,
+	}
 }

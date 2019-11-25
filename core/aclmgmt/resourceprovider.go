@@ -9,9 +9,9 @@ package aclmgmt
 import (
 	"fmt"
 
+	"github.com/hyperledger/fabric-protos-go/common"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/channelconfig"
-	"github.com/hyperledger/fabric/protos/common"
-	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 )
 
@@ -64,7 +64,7 @@ func (pe *policyEvaluatorImpl) Evaluate(polName string, sd []*protoutil.SignedDa
 		return PolicyNotFound(polName)
 	}
 
-	return policy.Evaluate(sd)
+	return policy.EvaluateSignedData(sd)
 }
 
 //------ resourcePolicyProvider ----------
@@ -98,17 +98,17 @@ func (rp *aclmgmtPolicyProviderImpl) CheckACL(polName string, idinfo interface{}
 	switch idinfo := idinfo.(type) {
 	case *pb.SignedProposal:
 		signedProp := idinfo
-		proposal, err := protoutil.GetProposal(signedProp.ProposalBytes)
+		proposal, err := protoutil.UnmarshalProposal(signedProp.ProposalBytes)
 		if err != nil {
 			return fmt.Errorf("Failing extracting proposal during check policy with policy [%s]: [%s]", polName, err)
 		}
 
-		header, err := protoutil.GetHeader(proposal.Header)
+		header, err := protoutil.UnmarshalHeader(proposal.Header)
 		if err != nil {
 			return fmt.Errorf("Failing extracting header during check policy [%s]: [%s]", polName, err)
 		}
 
-		shdr, err := protoutil.GetSignatureHeader(header.SignatureHeader)
+		shdr, err := protoutil.UnmarshalSignatureHeader(header.SignatureHeader)
 		if err != nil {
 			return fmt.Errorf("Invalid Proposal's SignatureHeader during check policy [%s]: [%s]", polName, err)
 		}

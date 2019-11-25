@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 package api
 
-import "github.com/hyperledger/fabric/protos/common"
+import "github.com/hyperledger/fabric-protos-go/common"
 
 //PeerLedgerExtension is an extension to PeerLedger interface which can be used to extend existing peer ledger features.
 type PeerLedgerExtension interface {

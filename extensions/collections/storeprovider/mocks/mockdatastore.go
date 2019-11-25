@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package mocks
 
 import (
-	proto "github.com/hyperledger/fabric/protos/transientstore"
+	proto "github.com/hyperledger/fabric-protos-go/transientstore"
 )
 
 // DataStore implements a mock private data store

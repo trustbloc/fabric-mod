@@ -10,13 +10,12 @@ import (
 	"bytes"
 	"fmt"
 
+	pb "github.com/hyperledger/fabric-protos-go/peer"
+	lb "github.com/hyperledger/fabric-protos-go/peer/lifecycle"
 	"github.com/hyperledger/fabric/common/chaincode"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/chaincode/persistence"
-	p "github.com/hyperledger/fabric/core/chaincode/persistence/intf"
-	cb "github.com/hyperledger/fabric/protos/common"
-	pb "github.com/hyperledger/fabric/protos/peer"
-	lb "github.com/hyperledger/fabric/protos/peer/lifecycle"
+	"github.com/hyperledger/fabric/core/container"
 	"github.com/hyperledger/fabric/protoutil"
 
 	"github.com/golang/protobuf/proto"
@@ -55,11 +54,12 @@ var (
 	})
 )
 
-// Sequences are the underpinning of the definition framework for lifecycle.  All definitions
-// must have a Sequence field in the public state.  This sequence is incremented by exactly 1 with
-// each redefinition of the namespace.  The private state org approvals also have a Sequence number
-// embedded into the key which matches them either to the vote for the commit, or registers agreement
-// with an already committed definition.
+// Sequences are the underpinning of the definition framework for lifecycle.
+// All definitions must have a Sequence field in the public state.  This
+// sequence is incremented by exactly 1 with each redefinition of the
+// namespace. The private state org approvals also have a Sequence number
+// embedded into the key which matches them either to the vote for the commit,
+// or registers approval for an already committed definition.
 //
 // Public/World DB layout looks like the following:
 // namespaces/metadata/<namespace> -> namespace metadata, including namespace type
@@ -90,10 +90,10 @@ var (
 // chaincode-source/metadata/mycc#1              "LocalPackage"
 // chaincode-source/fields/mycc#1/Hash           "hash1"
 
-// ChaincodePackage is a type of chaincode-source which may be serialized into the
-// org's private data collection.
-// WARNING: This structure is serialized/deserialized from the DB, re-ordering or adding fields
-// will cause opaque checks to fail.
+// ChaincodeLocalPackage is a type of chaincode-source which may be serialized
+// into the org's private data collection.
+// WARNING: This structure is serialized/deserialized from the DB, re-ordering
+// or adding fields will cause opaque checks to fail.
 type ChaincodeLocalPackage struct {
 	PackageID string
 }
@@ -105,7 +105,7 @@ type ChaincodeLocalPackage struct {
 type ChaincodeParameters struct {
 	EndorsementInfo *lb.ChaincodeEndorsementInfo
 	ValidationInfo  *lb.ChaincodeValidationInfo
-	Collections     *cb.CollectionConfigPackage
+	Collections     *pb.CollectionConfigPackage
 }
 
 func (cp *ChaincodeParameters) Equal(ocp *ChaincodeParameters) error {
@@ -134,7 +134,7 @@ type ChaincodeDefinition struct {
 	Sequence        int64
 	EndorsementInfo *lb.ChaincodeEndorsementInfo
 	ValidationInfo  *lb.ChaincodeValidationInfo
-	Collections     *cb.CollectionConfigPackage
+	Collections     *pb.CollectionConfigPackage
 }
 
 // Parameters returns the non-sequence info of the chaincode definition
@@ -172,11 +172,18 @@ func (cd *ChaincodeDefinition) String() string {
 	)
 }
 
+//go:generate counterfeiter -o mock/chaincode_builder.go --fake-name ChaincodeBuilder . ChaincodeBuilder
+
+type ChaincodeBuilder interface {
+	Build(ccid string) error
+}
+
 // ChaincodeStore provides a way to persist chaincodes
 type ChaincodeStore interface {
-	Save(label string, ccInstallPkg []byte) (p.PackageID, error)
+	Save(label string, ccInstallPkg []byte) (string, error)
 	ListInstalledChaincodes() ([]chaincode.InstalledChaincode, error)
-	Load(packageID p.PackageID) (ccInstallPkg []byte, err error)
+	Load(packageID string) (ccInstallPkg []byte, err error)
+	Delete(packageID string) error
 }
 
 type PackageParser interface {
@@ -185,7 +192,13 @@ type PackageParser interface {
 
 //go:generate counterfeiter -o mock/install_listener.go --fake-name InstallListener . InstallListener
 type InstallListener interface {
-	HandleChaincodeInstalled(md *persistence.ChaincodePackageMetadata, packageID p.PackageID)
+	HandleChaincodeInstalled(md *persistence.ChaincodePackageMetadata, packageID string)
+}
+
+//go:generate counterfeiter -o mock/installed_chaincodes_lister.go --fake-name InstalledChaincodesLister . InstalledChaincodesLister
+type InstalledChaincodesLister interface {
+	ListInstalledChaincodes() []*chaincode.InstalledChaincode
+	GetInstalledChaincode(packageID string) (*chaincode.InstalledChaincode, error)
 }
 
 // Resources stores the common functions needed by all components of the lifecycle
@@ -233,19 +246,24 @@ func (r *Resources) ChaincodeDefinitionIfDefined(chaincodeName string, state Rea
 	return true, definedChaincode, nil
 }
 
-// ExternalFunctions is intended primarily to support the SCC functions.  In general,
-// its methods signatures produce writes (which must be commmitted as part of an endorsement
-// flow), or return human readable errors (for instance indicating a chaincode is not found)
-// rather than sentinals.  Instead, use the utility functions attached to the lifecycle Resources
+// ExternalFunctions is intended primarily to support the SCC functions.
+// In general, its methods signatures produce writes (which must be commmitted
+// as part of an endorsement flow), or return human readable errors (for
+// instance indicating a chaincode is not found) rather than sentinals.
+// Instead, use the utility functions attached to the lifecycle Resources
 // when needed.
 type ExternalFunctions struct {
-	Resources       *Resources
-	InstallListener InstallListener
+	Resources                 *Resources
+	InstallListener           InstallListener
+	InstalledChaincodesLister InstalledChaincodesLister
+	ChaincodeBuilder          ChaincodeBuilder
+	BuildRegistry             *container.BuildRegistry
 }
 
-// QueryApprovalStatus takes a chaincode definition, checks that its sequence number is the next allowable sequence number
-// and checks which organizations agree with the definition
-func (ef *ExternalFunctions) QueryApprovalStatus(chname, ccname string, cd *ChaincodeDefinition, publicState ReadWritableState, orgStates []OpaqueState) ([]bool, error) {
+// CheckCommitReadiness takes a chaincode definition, checks that
+// its sequence number is the next allowable sequence number and checks which
+// organizations have approved the definition.
+func (ef *ExternalFunctions) CheckCommitReadiness(chname, ccname string, cd *ChaincodeDefinition, publicState ReadWritableState, orgStates []OpaqueState) (map[string]bool, error) {
 	currentSequence, err := ef.Resources.Serializer.DeserializeFieldAsInt64(NamespacesName, ccname, "Sequence", publicState)
 	if err != nil {
 		return nil, errors.WithMessage(err, "could not get current sequence")
@@ -259,28 +277,24 @@ func (ef *ExternalFunctions) QueryApprovalStatus(chname, ccname string, cd *Chai
 		return nil, errors.WithMessagef(err, "could not set defaults for chaincode definition in channel %s", chname)
 	}
 
-	agreement := make([]bool, len(orgStates))
-	privateName := fmt.Sprintf("%s#%d", ccname, cd.Sequence)
-	for i, orgState := range orgStates {
-		match, err := ef.Resources.Serializer.IsSerialized(NamespacesName, privateName, cd.Parameters(), orgState)
-		if err != nil {
-			return nil, errors.WithMessagef(err, "serialization check failed for key %s", privateName)
-		}
-
-		agreement[i] = match
+	var approvals map[string]bool
+	if approvals, err = ef.QueryOrgApprovals(ccname, cd, orgStates); err != nil {
+		return nil, err
 	}
 
-	logger.Infof("successfully queried approval status for definition %s, name '%s' on channel '%s'", cd, ccname, chname)
+	logger.Infof("successfully checked commit readiness of chaincode definition %s, name '%s' on channel '%s'", cd, ccname, chname)
 
-	return agreement, nil
+	return approvals, nil
 }
 
-// CommitChaincodeDefinition takes a chaincode definition, checks that its sequence number is the next allowable sequence number,
-// checks which organizations agree with the definition, and applies the definition to the public world state.
-// It is the responsibility of the caller to check the agreement to determine if the result is valid (typically
-// this means checking that the peer's own org is in agreement.)
-func (ef *ExternalFunctions) CommitChaincodeDefinition(chname, ccname string, cd *ChaincodeDefinition, publicState ReadWritableState, orgStates []OpaqueState) ([]bool, error) {
-	agreement, err := ef.QueryApprovalStatus(chname, ccname, cd, publicState, orgStates)
+// CommitChaincodeDefinition takes a chaincode definition, checks that its
+// sequence number is the next allowable sequence number, checks which
+// organizations have approved the definition, and applies the definition to
+// the public world state. It is the responsibility of the caller to check
+// the approvals to determine if the result is valid (typically, this means
+// checking that the peer's own org has approved the definition).
+func (ef *ExternalFunctions) CommitChaincodeDefinition(chname, ccname string, cd *ChaincodeDefinition, publicState ReadWritableState, orgStates []OpaqueState) (map[string]bool, error) {
+	approvals, err := ef.CheckCommitReadiness(chname, ccname, cd, publicState, orgStates)
 	if err != nil {
 		return nil, err
 	}
@@ -291,7 +305,7 @@ func (ef *ExternalFunctions) CommitChaincodeDefinition(chname, ccname string, cd
 
 	logger.Infof("successfully committed definition %s, name '%s' on channel '%s'", cd, ccname, chname)
 
-	return agreement, nil
+	return approvals, nil
 }
 
 // DefaultEndorsementPolicyAsBytes returns a marshalled version
@@ -346,7 +360,7 @@ func (ef *ExternalFunctions) SetChaincodeDefinitionDefaults(chname string, cd *C
 // ApproveChaincodeDefinitionForOrg adds a chaincode definition entry into the passed in Org state.  The definition must be
 // for either the currently defined sequence number or the next sequence number.  If the definition is
 // for the current sequence number, then it must match exactly the current definition or it will be rejected.
-func (ef *ExternalFunctions) ApproveChaincodeDefinitionForOrg(chname, ccname string, cd *ChaincodeDefinition, packageID p.PackageID, publicState ReadableState, orgState ReadWritableState) error {
+func (ef *ExternalFunctions) ApproveChaincodeDefinitionForOrg(chname, ccname string, cd *ChaincodeDefinition, packageID string, publicState ReadableState, orgState ReadWritableState) error {
 	// Get the current sequence from the public state
 	currentSequence, err := ef.Resources.Serializer.DeserializeFieldAsInt64(NamespacesName, ccname, "Sequence", publicState)
 	if err != nil {
@@ -402,7 +416,7 @@ func (ef *ExternalFunctions) ApproveChaincodeDefinitionForOrg(chname, ccname str
 	// peers of an org no longer to endorse invocations
 	// for this chaincode
 	if err := ef.Resources.Serializer.Serialize(ChaincodeSourcesName, privateName, &ChaincodeLocalPackage{
-		PackageID: packageID.String(),
+		PackageID: packageID,
 	}, orgState); err != nil {
 		return errors.WithMessage(err, "could not serialize chaincode package info to state")
 	}
@@ -444,6 +458,25 @@ func (ef *ExternalFunctions) QueryChaincodeDefinition(name string, publicState R
 	return definedChaincode, nil
 }
 
+// QueryOrgApprovals returns a map containing the orgs whose orgStates were
+// provided and whether or not they have approved a chaincode definition with
+// the specified parameters.
+func (ef *ExternalFunctions) QueryOrgApprovals(name string, cd *ChaincodeDefinition, orgStates []OpaqueState) (map[string]bool, error) {
+	approvals := map[string]bool{}
+	privateName := fmt.Sprintf("%s#%d", name, cd.Sequence)
+	for _, orgState := range orgStates {
+		match, err := ef.Resources.Serializer.IsSerialized(NamespacesName, privateName, cd.Parameters(), orgState)
+		if err != nil {
+			return nil, errors.WithMessagef(err, "serialization check failed for key %s", privateName)
+		}
+
+		org := OrgFromImplicitCollectionName(orgState.CollectionName())
+		approvals[org] = match
+	}
+
+	return approvals, nil
+}
+
 // InstallChaincode installs a given chaincode to the peer's chaincode store.
 // It returns the hash to reference the chaincode by or an error on failure.
 func (ef *ExternalFunctions) InstallChaincode(chaincodeInstallPackage []byte) (*chaincode.InstalledChaincode, error) {
@@ -462,9 +495,22 @@ func (ef *ExternalFunctions) InstallChaincode(chaincodeInstallPackage []byte) (*
 		return nil, errors.WithMessage(err, "could not save cc install package")
 	}
 
+	buildStatus, ok := ef.BuildRegistry.BuildStatus(packageID)
+	if !ok {
+		err := ef.ChaincodeBuilder.Build(packageID)
+		buildStatus.Notify(err)
+	}
+	<-buildStatus.Done()
+	if err := buildStatus.Err(); err != nil {
+		ef.Resources.ChaincodeStore.Delete(packageID)
+		return nil, errors.WithMessage(err, "could not build chaincode")
+	}
+
 	if ef.InstallListener != nil {
 		ef.InstallListener.HandleChaincodeInstalled(pkg.Metadata, packageID)
 	}
+
+	logger.Infof("successfully installed chaincode with package ID '%s'", packageID)
 
 	return &chaincode.InstalledChaincode{
 		PackageID: packageID,
@@ -472,9 +518,19 @@ func (ef *ExternalFunctions) InstallChaincode(chaincodeInstallPackage []byte) (*
 	}, nil
 }
 
+// GetInstalledChaincodePakcage retreives the installed chaincode with the given package ID
+// from the peer's chaincode store.
+func (ef *ExternalFunctions) GetInstalledChaincodePackage(packageID string) ([]byte, error) {
+	pkgBytes, err := ef.Resources.ChaincodeStore.Load(packageID)
+	if err != nil {
+		return nil, errors.WithMessage(err, "could not load cc install package")
+	}
+
+	return pkgBytes, nil
+}
+
 // QueryNamespaceDefinitions lists the publicly defined namespaces in a channel.  Today it should only ever
-// find Datatype encodings of 'ChaincodeDefinition'.  In the future as we support encodings like 'TokenManagementSystem'
-// or similar, additional statements will be added to the switch.
+// find Datatype encodings of 'ChaincodeDefinition'.
 func (ef *ExternalFunctions) QueryNamespaceDefinitions(publicState RangeableState) (map[string]string, error) {
 	metadatas, err := ef.Resources.Serializer.DeserializeAllMetadata(NamespacesName, publicState)
 	if err != nil {
@@ -494,32 +550,12 @@ func (ef *ExternalFunctions) QueryNamespaceDefinitions(publicState RangeableStat
 	return result, nil
 }
 
-// QueryInstalledChaincode returns the hash of an installed chaincode of a given name and version.
-func (ef *ExternalFunctions) QueryInstalledChaincode(packageID p.PackageID) (*chaincode.InstalledChaincode, error) {
-	ccPackageBytes, err := ef.Resources.ChaincodeStore.Load(packageID)
-	if err != nil {
-		if _, ok := err.(persistence.CodePackageNotFoundErr); ok {
-			return nil, err
-		}
-		return nil, errors.WithMessagef(err, "could not load chaincode with package id '%s'", packageID)
-	}
-
-	parsedCCPackage, err := ef.Resources.PackageParser.Parse(ccPackageBytes)
-	if err != nil {
-		return nil, errors.WithMessagef(err, "could not parse chaincode with package id '%s'", packageID)
-	}
-
-	if parsedCCPackage.Metadata == nil {
-		return nil, errors.Errorf("empty metadata for chaincode with package id '%s'", packageID)
-	}
-
-	return &chaincode.InstalledChaincode{
-		PackageID: packageID,
-		Label:     parsedCCPackage.Metadata.Label,
-	}, nil
+// QueryInstalledChaincode returns metadata for the chaincode with the supplied package ID.
+func (ef *ExternalFunctions) QueryInstalledChaincode(packageID string) (*chaincode.InstalledChaincode, error) {
+	return ef.InstalledChaincodesLister.GetInstalledChaincode(packageID)
 }
 
 // QueryInstalledChaincodes returns a list of installed chaincodes
-func (ef *ExternalFunctions) QueryInstalledChaincodes() ([]chaincode.InstalledChaincode, error) {
-	return ef.Resources.ChaincodeStore.ListInstalledChaincodes()
+func (ef *ExternalFunctions) QueryInstalledChaincodes() []*chaincode.InstalledChaincode {
+	return ef.InstalledChaincodesLister.ListInstalledChaincodes()
 }

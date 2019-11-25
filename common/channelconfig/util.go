@@ -12,12 +12,12 @@ import (
 	"math"
 
 	"github.com/golang/protobuf/proto"
+	cb "github.com/hyperledger/fabric-protos-go/common"
+	mspprotos "github.com/hyperledger/fabric-protos-go/msp"
+	ab "github.com/hyperledger/fabric-protos-go/orderer"
+	"github.com/hyperledger/fabric-protos-go/orderer/etcdraft"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/bccsp"
-	cb "github.com/hyperledger/fabric/protos/common"
-	mspprotos "github.com/hyperledger/fabric/protos/msp"
-	ab "github.com/hyperledger/fabric/protos/orderer"
-	"github.com/hyperledger/fabric/protos/orderer/etcdraft"
-	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 )
@@ -240,7 +240,7 @@ func ACLValues(acls map[string]string) *StandardConfigValue {
 }
 
 // ValidateCapabilities validates whether the peer can meet the capabilities requirement in the given config block
-func ValidateCapabilities(block *cb.Block) error {
+func ValidateCapabilities(block *cb.Block, bccsp bccsp.BCCSP) error {
 	envelopeConfig, err := protoutil.ExtractEnvelope(block, 0)
 	if err != nil {
 		return errors.Errorf("failed to %s", err)
@@ -270,7 +270,7 @@ func ValidateCapabilities(block *cb.Block) error {
 			"configuration group", ApplicationGroupKey)
 	}
 
-	cc, err := NewChannelConfig(configEnv.Config.ChannelGroup)
+	cc, err := NewChannelConfig(configEnv.Config.ChannelGroup, bccsp)
 	if err != nil {
 		return errors.Errorf("no valid channel configuration found due to %s", err)
 	}

@@ -17,7 +17,6 @@ import (
 	"github.com/hyperledger/fabric/common/chaincode"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/util"
-	persistence "github.com/hyperledger/fabric/core/chaincode/persistence/intf"
 
 	"github.com/pkg/errors"
 )
@@ -144,11 +143,11 @@ func (s *Store) Initialize() {
 
 // Save persists chaincode install package bytes. It returns
 // the hash of the chaincode install package
-func (s *Store) Save(label string, ccInstallPkg []byte) (persistence.PackageID, error) {
+func (s *Store) Save(label string, ccInstallPkg []byte) (string, error) {
 	hash := util.ComputeSHA256(ccInstallPkg)
 	packageID := packageID(label, hash)
 
-	ccInstallPkgFileName := packageID.String() + ".bin"
+	ccInstallPkgFileName := CCFileName(packageID)
 	ccInstallPkgFilePath := filepath.Join(s.Path, ccInstallPkgFileName)
 
 	if exists, _ := s.ReadWriter.Exists(ccInstallPkgFilePath); exists {
@@ -165,11 +164,10 @@ func (s *Store) Save(label string, ccInstallPkg []byte) (persistence.PackageID, 
 	return packageID, nil
 }
 
-// Load loads a persisted chaincode install package bytes with the given hash
-// and also returns the chaincode metadata (names and versions) of any chaincode
-// installed with a matching hash
-func (s *Store) Load(packageID persistence.PackageID) ([]byte, error) {
-	ccInstallPkgPath := filepath.Join(s.Path, packageID.String()+".bin")
+// Load loads a persisted chaincode install package bytes with
+// the given packageID.
+func (s *Store) Load(packageID string) ([]byte, error) {
+	ccInstallPkgPath := filepath.Join(s.Path, CCFileName(packageID))
 
 	exists, err := s.ReadWriter.Exists(ccInstallPkgPath)
 	if err != nil {
@@ -190,10 +188,18 @@ func (s *Store) Load(packageID persistence.PackageID) ([]byte, error) {
 	return ccInstallPkg, nil
 }
 
+// Delete deletes a persisted chaincode.  Note, there is no locking,
+// so this should only be performed if the chaincode has already
+// been marked built.
+func (s *Store) Delete(packageID string) error {
+	ccInstallPkgPath := filepath.Join(s.Path, CCFileName(packageID))
+	return s.ReadWriter.Remove(ccInstallPkgPath)
+}
+
 // CodePackageNotFoundErr is the error returned when a code package cannot
 // be found in the persistence store
 type CodePackageNotFoundErr struct {
-	PackageID persistence.PackageID
+	PackageID string
 }
 
 func (e CodePackageNotFoundErr) Error() string {
@@ -223,11 +229,15 @@ func (s *Store) GetChaincodeInstallPath() string {
 	return s.Path
 }
 
-func packageID(label string, hash []byte) persistence.PackageID {
-	return persistence.PackageID(fmt.Sprintf("%s:%x", label, hash))
+func packageID(label string, hash []byte) string {
+	return fmt.Sprintf("%s:%x", label, hash)
 }
 
-var packageFileMatcher = regexp.MustCompile("^(.+):([0-9abcdef]+)[.]bin$")
+func CCFileName(packageID string) string {
+	return packageID + ".tar.gz"
+}
+
+var packageFileMatcher = regexp.MustCompile("^(.+):([0-9abcdef]+)[.]tar[.]gz$")
 
 func installedChaincodeFromFilename(fileName string) (chaincode.InstalledChaincode, bool) {
 	matches := packageFileMatcher.FindStringSubmatch(fileName)

@@ -23,7 +23,7 @@ type Comm interface {
 	// GetPKIid returns this instance's PKI id
 	GetPKIid() common.PKIidType
 
-	// Send sends a message to remote peers
+	// Send sends a message to remote peers asynchronously
 	Send(msg *protoext.SignedGossipMessage, peers ...*RemotePeer)
 
 	// SendWithAck sends a message to remote peers, waiting for acknowledgement from minAck of them, or until a certain timeout expires
@@ -43,6 +43,9 @@ type Comm interface {
 
 	// PresumedDead returns a read-only channel for node endpoints that are suspected to be offline
 	PresumedDead() <-chan common.PKIidType
+
+	// IdentitySwitch returns a read-only channel about identity change events
+	IdentitySwitch() <-chan common.PKIidType
 
 	// CloseConn closes a connection to a certain endpoint
 	CloseConn(peer *RemotePeer)
