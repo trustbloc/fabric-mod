@@ -9,8 +9,8 @@ package configtx
 import (
 	"strings"
 
+	cb "github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/common/policies"
-	cb "github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 )
@@ -94,7 +94,7 @@ func (vi *ValidatorImpl) verifyDeltaSet(deltaSet map[string]comparable, signedDa
 		}
 
 		// Ensure the policy is satisfied
-		if err := policy.Evaluate(signedData); err != nil {
+		if err := policy.EvaluateSignedData(signedData); err != nil {
 			return errors.Wrapf(err, "policy for %s not satisfied", key)
 		}
 	}

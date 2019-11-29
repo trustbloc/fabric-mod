@@ -10,11 +10,12 @@ import (
 	"os"
 	"sync"
 
+	cb "github.com/hyperledger/fabric-protos-go/common"
+	ab "github.com/hyperledger/fabric-protos-go/orderer"
+	"github.com/hyperledger/fabric/bccsp/factory"
 	"github.com/hyperledger/fabric/internal/pkg/identity"
 	mspmgmt "github.com/hyperledger/fabric/msp/mgmt"
 	"github.com/hyperledger/fabric/orderer/common/localconfig"
-	cb "github.com/hyperledger/fabric/protos/common"
-	ab "github.com/hyperledger/fabric/protos/orderer"
 	"github.com/hyperledger/fabric/protoutil"
 	"google.golang.org/grpc"
 	pb "gopkg.in/cheggaaa/pb.v1"
@@ -45,7 +46,7 @@ func (s *broadcastClient) getAck() error {
 		return err
 	}
 	if msg.Status != cb.Status_SUCCESS {
-		return fmt.Errorf("Got unexpected status: %v - %s", msg.Status, msg.Info)
+		return fmt.Errorf("got unexpected status: %v - %s", msg.Status, msg.Info)
 	}
 	return nil
 }
@@ -64,7 +65,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	signer, err := mspmgmt.GetLocalMSP().GetDefaultSigningIdentity()
+	signer, err := mspmgmt.GetLocalMSP(factory.GetDefault()).GetDefaultSigningIdentity()
 	if err != nil {
 		fmt.Println("Failed to load local signing identity:", err)
 		os.Exit(0)
@@ -78,7 +79,7 @@ func main() {
 	var bar *pb.ProgressBar
 
 	flag.StringVar(&serverAddr, "server", fmt.Sprintf("%s:%d", conf.General.ListenAddress, conf.General.ListenPort), "The RPC server to connect to.")
-	flag.StringVar(&channelID, "channelID", localconfig.Defaults.General.SystemChannel, "The channel ID to broadcast to.")
+	flag.StringVar(&channelID, "channelID", "mychannel", "The channel ID to broadcast to.")
 	flag.Uint64Var(&messages, "messages", 1, "The number of messages to broadcast.")
 	flag.Uint64Var(&goroutines, "goroutines", 1, "The number of concurrent go routines to broadcast the messages on")
 	flag.Uint64Var(&msgSize, "size", 1024, "The size in bytes of the data section for the payload")

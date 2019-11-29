@@ -4,10 +4,10 @@ package mock
 import (
 	"sync"
 
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/peer"
 	ledgera "github.com/hyperledger/fabric/common/ledger"
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/peer"
 )
 
 type PeerLedger struct {
@@ -15,10 +15,22 @@ type PeerLedger struct {
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct {
 	}
-	CommitPvtDataOfOldBlocksStub        func([]*ledger.BlockPvtData) ([]*ledger.PvtdataHashMismatch, error)
+	CommitLegacyStub        func(*ledger.BlockAndPvtData, *ledger.CommitOptions) error
+	commitLegacyMutex       sync.RWMutex
+	commitLegacyArgsForCall []struct {
+		arg1 *ledger.BlockAndPvtData
+		arg2 *ledger.CommitOptions
+	}
+	commitLegacyReturns struct {
+		result1 error
+	}
+	commitLegacyReturnsOnCall map[int]struct {
+		result1 error
+	}
+	CommitPvtDataOfOldBlocksStub        func([]*ledger.ReconciledPvtdata) ([]*ledger.PvtdataHashMismatch, error)
 	commitPvtDataOfOldBlocksMutex       sync.RWMutex
 	commitPvtDataOfOldBlocksArgsForCall []struct {
-		arg1 []*ledger.BlockPvtData
+		arg1 []*ledger.ReconciledPvtdata
 	}
 	commitPvtDataOfOldBlocksReturns struct {
 		result1 []*ledger.PvtdataHashMismatch
@@ -28,16 +40,18 @@ type PeerLedger struct {
 		result1 []*ledger.PvtdataHashMismatch
 		result2 error
 	}
-	CommitWithPvtDataStub        func(*ledger.BlockAndPvtData) error
-	commitWithPvtDataMutex       sync.RWMutex
-	commitWithPvtDataArgsForCall []struct {
-		arg1 *ledger.BlockAndPvtData
+	DoesPvtDataInfoExistStub        func(uint64) (bool, error)
+	doesPvtDataInfoExistMutex       sync.RWMutex
+	doesPvtDataInfoExistArgsForCall []struct {
+		arg1 uint64
 	}
-	commitWithPvtDataReturns struct {
-		result1 error
+	doesPvtDataInfoExistReturns struct {
+		result1 bool
+		result2 error
 	}
-	commitWithPvtDataReturnsOnCall map[int]struct {
-		result1 error
+	doesPvtDataInfoExistReturnsOnCall map[int]struct {
+		result1 bool
+		result2 error
 	}
 	GetBlockByHashStub        func([]byte) (*common.Block, error)
 	getBlockByHashMutex       sync.RWMutex
@@ -245,16 +259,77 @@ func (fake *PeerLedger) CloseCalls(stub func()) {
 	fake.CloseStub = stub
 }
 
-func (fake *PeerLedger) CommitPvtDataOfOldBlocks(arg1 []*ledger.BlockPvtData) ([]*ledger.PvtdataHashMismatch, error) {
-	var arg1Copy []*ledger.BlockPvtData
+func (fake *PeerLedger) CommitLegacy(arg1 *ledger.BlockAndPvtData, arg2 *ledger.CommitOptions) error {
+	fake.commitLegacyMutex.Lock()
+	ret, specificReturn := fake.commitLegacyReturnsOnCall[len(fake.commitLegacyArgsForCall)]
+	fake.commitLegacyArgsForCall = append(fake.commitLegacyArgsForCall, struct {
+		arg1 *ledger.BlockAndPvtData
+		arg2 *ledger.CommitOptions
+	}{arg1, arg2})
+	fake.recordInvocation("CommitLegacy", []interface{}{arg1, arg2})
+	fake.commitLegacyMutex.Unlock()
+	if fake.CommitLegacyStub != nil {
+		return fake.CommitLegacyStub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	fakeReturns := fake.commitLegacyReturns
+	return fakeReturns.result1
+}
+
+func (fake *PeerLedger) CommitLegacyCallCount() int {
+	fake.commitLegacyMutex.RLock()
+	defer fake.commitLegacyMutex.RUnlock()
+	return len(fake.commitLegacyArgsForCall)
+}
+
+func (fake *PeerLedger) CommitLegacyCalls(stub func(*ledger.BlockAndPvtData, *ledger.CommitOptions) error) {
+	fake.commitLegacyMutex.Lock()
+	defer fake.commitLegacyMutex.Unlock()
+	fake.CommitLegacyStub = stub
+}
+
+func (fake *PeerLedger) CommitLegacyArgsForCall(i int) (*ledger.BlockAndPvtData, *ledger.CommitOptions) {
+	fake.commitLegacyMutex.RLock()
+	defer fake.commitLegacyMutex.RUnlock()
+	argsForCall := fake.commitLegacyArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *PeerLedger) CommitLegacyReturns(result1 error) {
+	fake.commitLegacyMutex.Lock()
+	defer fake.commitLegacyMutex.Unlock()
+	fake.CommitLegacyStub = nil
+	fake.commitLegacyReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *PeerLedger) CommitLegacyReturnsOnCall(i int, result1 error) {
+	fake.commitLegacyMutex.Lock()
+	defer fake.commitLegacyMutex.Unlock()
+	fake.CommitLegacyStub = nil
+	if fake.commitLegacyReturnsOnCall == nil {
+		fake.commitLegacyReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.commitLegacyReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *PeerLedger) CommitPvtDataOfOldBlocks(arg1 []*ledger.ReconciledPvtdata) ([]*ledger.PvtdataHashMismatch, error) {
+	var arg1Copy []*ledger.ReconciledPvtdata
 	if arg1 != nil {
-		arg1Copy = make([]*ledger.BlockPvtData, len(arg1))
+		arg1Copy = make([]*ledger.ReconciledPvtdata, len(arg1))
 		copy(arg1Copy, arg1)
 	}
 	fake.commitPvtDataOfOldBlocksMutex.Lock()
 	ret, specificReturn := fake.commitPvtDataOfOldBlocksReturnsOnCall[len(fake.commitPvtDataOfOldBlocksArgsForCall)]
 	fake.commitPvtDataOfOldBlocksArgsForCall = append(fake.commitPvtDataOfOldBlocksArgsForCall, struct {
-		arg1 []*ledger.BlockPvtData
+		arg1 []*ledger.ReconciledPvtdata
 	}{arg1Copy})
 	fake.recordInvocation("CommitPvtDataOfOldBlocks", []interface{}{arg1Copy})
 	fake.commitPvtDataOfOldBlocksMutex.Unlock()
@@ -274,13 +349,13 @@ func (fake *PeerLedger) CommitPvtDataOfOldBlocksCallCount() int {
 	return len(fake.commitPvtDataOfOldBlocksArgsForCall)
 }
 
-func (fake *PeerLedger) CommitPvtDataOfOldBlocksCalls(stub func([]*ledger.BlockPvtData) ([]*ledger.PvtdataHashMismatch, error)) {
+func (fake *PeerLedger) CommitPvtDataOfOldBlocksCalls(stub func([]*ledger.ReconciledPvtdata) ([]*ledger.PvtdataHashMismatch, error)) {
 	fake.commitPvtDataOfOldBlocksMutex.Lock()
 	defer fake.commitPvtDataOfOldBlocksMutex.Unlock()
 	fake.CommitPvtDataOfOldBlocksStub = stub
 }
 
-func (fake *PeerLedger) CommitPvtDataOfOldBlocksArgsForCall(i int) []*ledger.BlockPvtData {
+func (fake *PeerLedger) CommitPvtDataOfOldBlocksArgsForCall(i int) []*ledger.ReconciledPvtdata {
 	fake.commitPvtDataOfOldBlocksMutex.RLock()
 	defer fake.commitPvtDataOfOldBlocksMutex.RUnlock()
 	argsForCall := fake.commitPvtDataOfOldBlocksArgsForCall[i]
@@ -313,64 +388,67 @@ func (fake *PeerLedger) CommitPvtDataOfOldBlocksReturnsOnCall(i int, result1 []*
 	}{result1, result2}
 }
 
-func (fake *PeerLedger) CommitWithPvtData(arg1 *ledger.BlockAndPvtData) error {
-	fake.commitWithPvtDataMutex.Lock()
-	ret, specificReturn := fake.commitWithPvtDataReturnsOnCall[len(fake.commitWithPvtDataArgsForCall)]
-	fake.commitWithPvtDataArgsForCall = append(fake.commitWithPvtDataArgsForCall, struct {
-		arg1 *ledger.BlockAndPvtData
+func (fake *PeerLedger) DoesPvtDataInfoExist(arg1 uint64) (bool, error) {
+	fake.doesPvtDataInfoExistMutex.Lock()
+	ret, specificReturn := fake.doesPvtDataInfoExistReturnsOnCall[len(fake.doesPvtDataInfoExistArgsForCall)]
+	fake.doesPvtDataInfoExistArgsForCall = append(fake.doesPvtDataInfoExistArgsForCall, struct {
+		arg1 uint64
 	}{arg1})
-	fake.recordInvocation("CommitWithPvtData", []interface{}{arg1})
-	fake.commitWithPvtDataMutex.Unlock()
-	if fake.CommitWithPvtDataStub != nil {
-		return fake.CommitWithPvtDataStub(arg1)
+	fake.recordInvocation("DoesPvtDataInfoExist", []interface{}{arg1})
+	fake.doesPvtDataInfoExistMutex.Unlock()
+	if fake.DoesPvtDataInfoExistStub != nil {
+		return fake.DoesPvtDataInfoExistStub(arg1)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	fakeReturns := fake.commitWithPvtDataReturns
-	return fakeReturns.result1
+	fakeReturns := fake.doesPvtDataInfoExistReturns
+	return fakeReturns.result1, fakeReturns.result2
 }
 
-func (fake *PeerLedger) CommitWithPvtDataCallCount() int {
-	fake.commitWithPvtDataMutex.RLock()
-	defer fake.commitWithPvtDataMutex.RUnlock()
-	return len(fake.commitWithPvtDataArgsForCall)
+func (fake *PeerLedger) DoesPvtDataInfoExistCallCount() int {
+	fake.doesPvtDataInfoExistMutex.RLock()
+	defer fake.doesPvtDataInfoExistMutex.RUnlock()
+	return len(fake.doesPvtDataInfoExistArgsForCall)
 }
 
-func (fake *PeerLedger) CommitWithPvtDataCalls(stub func(*ledger.BlockAndPvtData) error) {
-	fake.commitWithPvtDataMutex.Lock()
-	defer fake.commitWithPvtDataMutex.Unlock()
-	fake.CommitWithPvtDataStub = stub
+func (fake *PeerLedger) DoesPvtDataInfoExistCalls(stub func(uint64) (bool, error)) {
+	fake.doesPvtDataInfoExistMutex.Lock()
+	defer fake.doesPvtDataInfoExistMutex.Unlock()
+	fake.DoesPvtDataInfoExistStub = stub
 }
 
-func (fake *PeerLedger) CommitWithPvtDataArgsForCall(i int) *ledger.BlockAndPvtData {
-	fake.commitWithPvtDataMutex.RLock()
-	defer fake.commitWithPvtDataMutex.RUnlock()
-	argsForCall := fake.commitWithPvtDataArgsForCall[i]
+func (fake *PeerLedger) DoesPvtDataInfoExistArgsForCall(i int) uint64 {
+	fake.doesPvtDataInfoExistMutex.RLock()
+	defer fake.doesPvtDataInfoExistMutex.RUnlock()
+	argsForCall := fake.doesPvtDataInfoExistArgsForCall[i]
 	return argsForCall.arg1
 }
 
-func (fake *PeerLedger) CommitWithPvtDataReturns(result1 error) {
-	fake.commitWithPvtDataMutex.Lock()
-	defer fake.commitWithPvtDataMutex.Unlock()
-	fake.CommitWithPvtDataStub = nil
-	fake.commitWithPvtDataReturns = struct {
-		result1 error
-	}{result1}
+func (fake *PeerLedger) DoesPvtDataInfoExistReturns(result1 bool, result2 error) {
+	fake.doesPvtDataInfoExistMutex.Lock()
+	defer fake.doesPvtDataInfoExistMutex.Unlock()
+	fake.DoesPvtDataInfoExistStub = nil
+	fake.doesPvtDataInfoExistReturns = struct {
+		result1 bool
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *PeerLedger) CommitWithPvtDataReturnsOnCall(i int, result1 error) {
-	fake.commitWithPvtDataMutex.Lock()
-	defer fake.commitWithPvtDataMutex.Unlock()
-	fake.CommitWithPvtDataStub = nil
-	if fake.commitWithPvtDataReturnsOnCall == nil {
-		fake.commitWithPvtDataReturnsOnCall = make(map[int]struct {
-			result1 error
+func (fake *PeerLedger) DoesPvtDataInfoExistReturnsOnCall(i int, result1 bool, result2 error) {
+	fake.doesPvtDataInfoExistMutex.Lock()
+	defer fake.doesPvtDataInfoExistMutex.Unlock()
+	fake.DoesPvtDataInfoExistStub = nil
+	if fake.doesPvtDataInfoExistReturnsOnCall == nil {
+		fake.doesPvtDataInfoExistReturnsOnCall = make(map[int]struct {
+			result1 bool
+			result2 error
 		})
 	}
-	fake.commitWithPvtDataReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
+	fake.doesPvtDataInfoExistReturnsOnCall[i] = struct {
+		result1 bool
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *PeerLedger) GetBlockByHash(arg1 []byte) (*common.Block, error) {
@@ -1227,10 +1305,12 @@ func (fake *PeerLedger) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
+	fake.commitLegacyMutex.RLock()
+	defer fake.commitLegacyMutex.RUnlock()
 	fake.commitPvtDataOfOldBlocksMutex.RLock()
 	defer fake.commitPvtDataOfOldBlocksMutex.RUnlock()
-	fake.commitWithPvtDataMutex.RLock()
-	defer fake.commitWithPvtDataMutex.RUnlock()
+	fake.doesPvtDataInfoExistMutex.RLock()
+	defer fake.doesPvtDataInfoExistMutex.RUnlock()
 	fake.getBlockByHashMutex.RLock()
 	defer fake.getBlockByHashMutex.RUnlock()
 	fake.getBlockByNumberMutex.RLock()

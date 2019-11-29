@@ -10,18 +10,33 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hyperledger/fabric-chaincode-go/shim"
 	"github.com/hyperledger/fabric/common/channelconfig"
 	commonledger "github.com/hyperledger/fabric/common/ledger"
 	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/aclmgmt"
 	"github.com/hyperledger/fabric/core/chaincode/lifecycle"
-	"github.com/hyperledger/fabric/core/chaincode/shim"
 	validation "github.com/hyperledger/fabric/core/handlers/validation/api/state"
 	"github.com/hyperledger/fabric/core/ledger"
+	"github.com/hyperledger/fabric/msp"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
+
+//go:generate counterfeiter -o mock/channel_policy_reference_provider.go --fake-name ChannelPolicyReferenceProvider . ChannelPolicyReferenceProvider
+
+//go:generate counterfeiter -o mock/convertible_policy.go --fake-name ConvertiblePolicy . convertiblePolicy
+type convertiblePolicy interface {
+	policies.Policy
+	policies.Converter
+}
+
+//go:generate counterfeiter -o mock/inconvertible_policy.go --fake-name InconvertiblePolicy . inconvertiblePolicy
+type inconvertiblePolicy interface {
+	policies.Policy
+}
 
 //go:generate counterfeiter -o mock/aclprovider.go --fake-name ACLProvider . aclProvider
 type aclProvider interface {
@@ -118,6 +133,16 @@ type legacyMetadataProvider interface {
 //go:generate counterfeiter -o mock/metadata_handler.go --fake-name MetadataHandler . metadataHandler
 type metadataHandler interface {
 	lifecycle.MetadataHandler
+}
+
+//go:generate counterfeiter -o mock/msp_manager.go --fake-name MSPManager . mspManager
+type mspManager interface {
+	msp.MSPManager
+}
+
+//go:generate counterfeiter -o mock/msp.go --fake-name MSP . msp1
+type msp1 interface {
+	msp.MSP
 }
 
 func TestLifecycle(t *testing.T) {

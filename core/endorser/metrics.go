@@ -11,7 +11,7 @@ import "github.com/hyperledger/fabric/common/metrics"
 var (
 	proposalDurationHistogramOpts = metrics.HistogramOpts{
 		Namespace:    "endorser",
-		Name:         "propsal_duration",
+		Name:         "proposal_duration",
 		Help:         "The time to complete a proposal.",
 		LabelNames:   []string{"channel", "chaincode", "success"},
 		StatsdFormat: "%{#fqname}.%{channel}.%{chaincode}.%{success}",
@@ -68,7 +68,7 @@ var (
 	}
 )
 
-type EndorserMetrics struct {
+type Metrics struct {
 	ProposalDuration         metrics.Histogram
 	ProposalsReceived        metrics.Counter
 	SuccessfulProposals      metrics.Counter
@@ -79,8 +79,8 @@ type EndorserMetrics struct {
 	DuplicateTxsFailure      metrics.Counter
 }
 
-func NewEndorserMetrics(p metrics.Provider) *EndorserMetrics {
-	return &EndorserMetrics{
+func NewMetrics(p metrics.Provider) *Metrics {
+	return &Metrics{
 		ProposalDuration:         p.NewHistogram(proposalDurationHistogramOpts),
 		ProposalsReceived:        p.NewCounter(receivedProposalsCounterOpts),
 		SuccessfulProposals:      p.NewCounter(successfulProposalsCounterOpts),

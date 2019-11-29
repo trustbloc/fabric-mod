@@ -12,6 +12,6 @@ import (
 )
 
 // NewProvider instantiates a StoreProvider
-func NewProvider(conf *ledger.PrivateData, ledgerconfig *ledger.Config) pvtdatastorage.Provider {
+func NewProvider(conf *pvtdatastorage.PrivateDataConfig, ledgerconfig *ledger.Config) (pvtdatastorage.Provider, error) {
 	return pvtdatastorage.NewProvider(conf)
 }

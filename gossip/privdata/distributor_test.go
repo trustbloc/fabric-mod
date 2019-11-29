@@ -11,6 +11,9 @@ import (
 	"fmt"
 	"testing"
 
+	proto "github.com/hyperledger/fabric-protos-go/gossip"
+	"github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric-protos-go/transientstore"
 	"github.com/hyperledger/fabric/core/common/privdata"
 	"github.com/hyperledger/fabric/gossip/api"
 	gcommon "github.com/hyperledger/fabric/gossip/common"
@@ -20,9 +23,6 @@ import (
 	"github.com/hyperledger/fabric/gossip/metrics"
 	"github.com/hyperledger/fabric/gossip/metrics/mocks"
 	"github.com/hyperledger/fabric/gossip/protoext"
-	"github.com/hyperledger/fabric/protos/common"
-	proto "github.com/hyperledger/fabric/protos/gossip"
-	"github.com/hyperledger/fabric/protos/transientstore"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -32,7 +32,7 @@ type collectionAccessFactoryMock struct {
 	mock.Mock
 }
 
-func (mock *collectionAccessFactoryMock) AccessPolicy(config *common.CollectionConfig, chainID string) (privdata.CollectionAccessPolicy, error) {
+func (mock *collectionAccessFactoryMock) AccessPolicy(config *peer.CollectionConfig, chainID string) (privdata.CollectionAccessPolicy, error) {
 	res := mock.Called(config, chainID)
 	return res.Get(0).(privdata.CollectionAccessPolicy), res.Error(1)
 }
@@ -90,8 +90,8 @@ func (g *gossipMock) IdentityInfo() api.PeerIdentitySet {
 	return g.Called().Get(0).(api.PeerIdentitySet)
 }
 
-func (g *gossipMock) PeersOfChannel(chainID gcommon.ChainID) []discovery.NetworkMember {
-	return g.Called(chainID).Get(0).([]discovery.NetworkMember)
+func (g *gossipMock) PeersOfChannel(channelID gcommon.ChannelID) []discovery.NetworkMember {
+	return g.Called(channelID).Get(0).([]discovery.NetworkMember)
 }
 
 func (g *gossipMock) SendByCriteria(message *protoext.SignedGossipMessage, criteria gossip2.SendCriteria) error {
@@ -102,7 +102,7 @@ func (g *gossipMock) SendByCriteria(message *protoext.SignedGossipMessage, crite
 	return nil
 }
 
-func (g *gossipMock) PeerFilter(channel gcommon.ChainID, messagePredicate api.SubChannelSelectionCriteria) (filter.RoutingFilter, error) {
+func (g *gossipMock) PeerFilter(channel gcommon.ChannelID, messagePredicate api.SubChannelSelectionCriteria) (filter.RoutingFilter, error) {
 	if g.err != nil {
 		return nil, g.err
 	}
@@ -131,7 +131,7 @@ func TestDistributor(t *testing.T) {
 		gossip2.SendCriteria
 	}, 8)
 
-	g.On("PeersOfChannel", gcommon.ChainID(channelID)).Return([]discovery.NetworkMember{
+	g.On("PeersOfChannel", gcommon.ChannelID(channelID)).Return([]discovery.NetworkMember{
 		{PKIid: gcommon.PKIidType{1}},
 		{PKIid: gcommon.PKIidType{2}},
 	})
@@ -159,9 +159,9 @@ func TestDistributor(t *testing.T) {
 		}
 	}).Return(nil)
 	accessFactoryMock := &collectionAccessFactoryMock{}
-	c1ColConfig := &common.CollectionConfig{
-		Payload: &common.CollectionConfig_StaticCollectionConfig{
-			StaticCollectionConfig: &common.StaticCollectionConfig{
+	c1ColConfig := &peer.CollectionConfig{
+		Payload: &peer.CollectionConfig_StaticCollectionConfig{
+			StaticCollectionConfig: &peer.StaticCollectionConfig{
 				Name:              "c1",
 				RequiredPeerCount: 1,
 				MaximumPeerCount:  1,
@@ -169,9 +169,9 @@ func TestDistributor(t *testing.T) {
 		},
 	}
 
-	c2ColConfig := &common.CollectionConfig{
-		Payload: &common.CollectionConfig_StaticCollectionConfig{
-			StaticCollectionConfig: &common.StaticCollectionConfig{
+	c2ColConfig := &peer.CollectionConfig{
+		Payload: &peer.CollectionConfig_StaticCollectionConfig{
+			StaticCollectionConfig: &peer.StaticCollectionConfig{
 				Name:              "c2",
 				RequiredPeerCount: 1,
 				MaximumPeerCount:  1,
@@ -195,18 +195,18 @@ func TestDistributor(t *testing.T) {
 	pvtData := pdFactory.addRWSet().addNSRWSet("ns1", "c1", "c2").addRWSet().addNSRWSet("ns2", "c1", "c2").create()
 	err := d.Distribute("tx1", &transientstore.TxPvtReadWriteSetWithConfigInfo{
 		PvtRwset: pvtData[0].WriteSet,
-		CollectionConfigs: map[string]*common.CollectionConfigPackage{
+		CollectionConfigs: map[string]*peer.CollectionConfigPackage{
 			"ns1": {
-				Config: []*common.CollectionConfig{c1ColConfig, c2ColConfig},
+				Config: []*peer.CollectionConfig{c1ColConfig, c2ColConfig},
 			},
 		},
 	}, 0)
 	assert.NoError(t, err)
 	err = d.Distribute("tx2", &transientstore.TxPvtReadWriteSetWithConfigInfo{
 		PvtRwset: pvtData[1].WriteSet,
-		CollectionConfigs: map[string]*common.CollectionConfigPackage{
+		CollectionConfigs: map[string]*peer.CollectionConfigPackage{
 			"ns2": {
-				Config: []*common.CollectionConfig{c1ColConfig, c2ColConfig},
+				Config: []*peer.CollectionConfig{c1ColConfig, c2ColConfig},
 			},
 		},
 	}, 0)
@@ -242,9 +242,9 @@ func TestDistributor(t *testing.T) {
 	g.err = errors.New("failed obtaining filter")
 	err = d.Distribute("tx1", &transientstore.TxPvtReadWriteSetWithConfigInfo{
 		PvtRwset: pvtData[0].WriteSet,
-		CollectionConfigs: map[string]*common.CollectionConfigPackage{
+		CollectionConfigs: map[string]*peer.CollectionConfigPackage{
 			"ns1": {
-				Config: []*common.CollectionConfig{c1ColConfig, c2ColConfig},
+				Config: []*peer.CollectionConfig{c1ColConfig, c2ColConfig},
 			},
 		},
 	}, 0)
@@ -253,7 +253,7 @@ func TestDistributor(t *testing.T) {
 
 	g.Mock = mock.Mock{}
 	g.On("SendByCriteria", mock.Anything, mock.Anything).Return(errors.New("failed sending"))
-	g.On("PeersOfChannel", gcommon.ChainID(channelID)).Return([]discovery.NetworkMember{
+	g.On("PeersOfChannel", gcommon.ChannelID(channelID)).Return([]discovery.NetworkMember{
 		{PKIid: gcommon.PKIidType{1}},
 	})
 
@@ -267,14 +267,14 @@ func TestDistributor(t *testing.T) {
 	g.err = nil
 	err = d.Distribute("tx1", &transientstore.TxPvtReadWriteSetWithConfigInfo{
 		PvtRwset: pvtData[0].WriteSet,
-		CollectionConfigs: map[string]*common.CollectionConfigPackage{
+		CollectionConfigs: map[string]*peer.CollectionConfigPackage{
 			"ns1": {
-				Config: []*common.CollectionConfig{c1ColConfig, c2ColConfig},
+				Config: []*peer.CollectionConfig{c1ColConfig, c2ColConfig},
 			},
 		},
 	}, 0)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Failed disseminating 4 out of 4 private dissemination plans")
+	assert.Contains(t, err.Error(), "Failed disseminating 2 out of 2 private dissemination plans")
 
 	assert.Equal(t,
 		[]string{"channel", channelID},

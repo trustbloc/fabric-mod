@@ -19,7 +19,7 @@ they are the properties which determine their permissions.
 
 For an identity to be **verifiable**, it must come from a **trusted** authority.
 A [membership service provider](../membership/membership.html)
-(MSP) is how this is achieved in Fabric. More specifically, an MSP is a component
+(MSP) is that trusted authority in Fabric. More specifically, an MSP is a component
 that defines the rules that govern the valid identities for this organization.
 The default MSP implementation in Fabric uses X.509 certificates as identities,
 adopting a traditional Public Key Infrastructure (PKI) hierarchical model (more
@@ -61,7 +61,7 @@ sure it comes from a verified source.
 *The elements of Public Key Infrastructure (PKI). A PKI is comprised of Certificate
 Authorities who issue digital certificates to parties (e.g., users of a service, service
 provider), who then use them to authenticate themselves in the messages they exchange
-with their environment. A CA's Certificate Revocation List (CRL) constitutes a reference
+in their environment. A CA's Certificate Revocation List (CRL) constitutes a reference
 for the certificates that are no longer valid. Revocation of a certificate can happen for
 a number of reasons. For example, a certificate may be revoked because the cryptographic
 private material associated to the certificate has been exposed.*

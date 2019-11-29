@@ -7,14 +7,14 @@ SPDX-License-Identifier: Apache-2.0
 package privdata
 
 import (
+	"github.com/hyperledger/fabric-protos-go/ledger/rwset"
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/core/common/privdata"
 	extdissemination "github.com/hyperledger/fabric/extensions/collections/dissemination"
 	"github.com/hyperledger/fabric/gossip/protoext"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/ledger/rwset"
 )
 
-func (d *distributorImpl) disseminationPlanForExt(ns string, rwSet *rwset.CollectionPvtReadWriteSet, colCP *common.CollectionConfig, colAP privdata.CollectionAccessPolicy, pvtDataMsg *protoext.SignedGossipMessage) ([]*dissemination, error) {
+func (d *distributorImpl) disseminationPlanForExt(ns string, rwSet *rwset.CollectionPvtReadWriteSet, colCP *peer.CollectionConfig, colAP privdata.CollectionAccessPolicy, pvtDataMsg *protoext.SignedGossipMessage) ([]*dissemination, error) {
 	dissPlan, handled, err := extdissemination.ComputeDisseminationPlan(d.chainID, ns, rwSet, colCP, colAP, pvtDataMsg, d.gossipAdapter)
 	if err != nil {
 		return nil, err

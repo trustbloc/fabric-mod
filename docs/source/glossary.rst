@@ -77,7 +77,7 @@ Block
 A block contains an ordered set of transactions. It is cryptographically linked
 to the preceding block, and in turn it is linked to be subsequent blocks. The
 first block in such a chain of blocks is called the **genesis block**. Blocks
-are created by the ordering system, and validated by peers.
+are created by the ordering service, and then validated and committed by peers.
 
 
 .. _Chain:
@@ -126,7 +126,7 @@ Channel
 
 A channel is a private blockchain overlay which allows for data
 isolation and confidentiality. A channel-specific ledger is shared across the
-peers in the channel, and transacting parties must be properly authenticated to
+peers in the channel, and transacting parties must be authenticated to
 a channel in order to interact with it.  Channels are defined by a
 Configuration-Block_.
 
@@ -146,11 +146,11 @@ as valid or invalid.
 Concurrency Control Version Check
 ---------------------------------
 
-Concurrency Control Version Check is a method of keeping state in sync across
-peers on a channel. Peers execute transactions in parallel, and before commitment
-to the ledger, peers check that the data read at execution time has not changed.
-If the data read for the transaction has changed between execution time and
-commitment time, then a Concurrency Control Version Check violation has
+Concurrency Control Version Check is a method of keeping ledger state in sync across
+peers on a channel. Peers execute transactions in parallel, and before committing
+to the ledger, peers check whether the state read at the time the transaction was executed
+has been modified. If the data read for the transaction has changed between execution time and
+commit time, then a Concurrency Control Version Check violation has
 occurred, and the transaction is marked as invalid on the ledger and values
 are not updated in the state database.
 
@@ -211,13 +211,6 @@ definition can be committed to the channel. After the definition is committed,
 the first invoke of the chaincode (or, if requested, the execution of the Init
 function) will start the chaincode on the channel.
 
-.. _Current-State:
-
-Current State
--------------
-
-See World-State_.
-
 .. _Dynamic-Membership:
 
 Dynamic Membership
@@ -253,26 +246,6 @@ peers that are assigned to a specific chaincode application. Policies can be
 curated based on the application and the desired level of resilience against
 misbehavior (deliberate or not) by the endorsing peers. A transaction that is submitted
 must satisfy the endorsement policy before being marked as valid by committing peers.
-
-.. _FabToken:
-
-FabToken
---------
-
-FabToken is an Unspent Transaction Output (UTXO) based token management system
-that allows users to issue, transfer, and redeem tokens on channels. FabToken
-uses the membership services of Fabric to authenticate the identity of token
-owners and manage their public and private keys.
-
-.. _FabToken:
-
-FabToken
---------
-
-FabToken is an Unspent Transaction Output (UTXO) based token management system
-that allows users to issue, transfer, and redeem tokens on channels. FabToken
-uses the membership services of Fabric to authenticate the identity of token
-owners and manage their public and private keys.
 
 .. _Follower:
 
@@ -334,10 +307,12 @@ Instantiate
 
 The process of starting and initializing a chaincode application on a specific
 channel. After instantiation, peers that have the chaincode installed can accept
-chaincode invocations. This method was used in the previous version of the chaincode
+chaincode invocations. 
+
+**NOTE**: *This method i.e. Instantiate was used in the 1.4.x and older versions of the chaincode 
 lifecycle. For the current procedure used to start a chaincode on a channel with
 the new Fabric chaincode lifecycle introduced as part of the Fabric v2.0 Alpha,
-see Chaincode-definition_.
+see Chaincode-definition_.*
 
 .. _Invoke:
 
@@ -464,12 +439,12 @@ PKI-based implementation of the Membership Services Provider (MSP) abstraction.
 Ordering Service
 ----------------
 
-Also known as **orderer**. A defined collective of nodes that orders transactions into a block.
-The ordering service exists independent of the peer processes and orders transactions on a
-first-come-first-serve basis for all channel's on the network.  The ordering service is
-designed to support pluggable implementations beyond the out-of-the-box SOLO and Kafka varieties.
-The ordering service is a common binding for the overall network; it contains the cryptographic
-identity material tied to each Member_.
+Also known as **orderer**. A defined collective of nodes that orders transactions into a block
+and then distributes blocks to connected peers for validation and commit. The ordering service
+exists independent of the peer processes and orders transactions on a first-come-first-serve basis
+for all channels on the network.  It is designed to support pluggable implementations beyond the
+out-of-the-box Kafka and Raft varieties. It is a common binding for the overall network; it
+contains the cryptographic identity material tied to each Member_.
 
 .. _Organization:
 
@@ -489,7 +464,7 @@ Organization
 
 
 Also known as "members", organizations are invited to join the blockchain network
-by a blockchain service provider. An organization is joined to a network by adding its
+by a blockchain network provider. An organization is joined to a network by adding its
 Membership Service Provider (MSP_) to the network. The MSP defines how other members of the
 network may verify that signatures (such as those over transactions) were generated by a valid
 identity, issued by that organization. The particular access rights of identities within an MSP
@@ -560,22 +535,8 @@ Proposal
 --------
 
 A request for endorsement that is aimed at specific peers on a channel. Each
-proposal is either an Init or an invoke (read/write) request.
+proposal is either an Init or an Invoke (read/write) request.
 
-.. _Prover-peer:
-
-Prover peer
------------
-
-A trusted peer used by the FabToken client to assemble a token transaction and
-list the unspent tokens owned by a given authorized party.
-
-.. _Prover-peer:
-
-Prover peer
------------
-
-A trusted peer used by the FabToken client to assemble a token transaction.
 
 .. _Query:
 
@@ -629,8 +590,8 @@ cryptographic algorithms for signatures, logging frameworks and state stores,
 are easily swapped in and out of the SDK. The SDK provides APIs for transaction
 processing, membership services, node traversal and event handling.
 
-Currently, the two officially supported SDKs are for Node.js and Java, while three
-more -- Python, Go and REST -- are not yet official but can still be downloaded
+Currently, the two officially supported SDKs are for Node.js and Java, while two
+more -- Python and Go -- are not yet official but can still be downloaded
 and tested.
 
 .. _Smart-Contract:
@@ -640,16 +601,16 @@ Smart Contract
 
 A smart contract is code -- invoked by a client application external to the
 blockchain network -- that manages access and modifications to a set of
-key-value pairs in the :ref:`World-State`. In Hyperledger Fabric, smart
-contracts are referred to as chaincode. Smart contract chaincode is installed
-onto peer nodes and then defined and used on one or more channels.
+key-value pairs in the :ref:`World-State` via :ref:`Transaction`. In Hyperledger Fabric,
+smart contracts are packaged as chaincode. Chaincode is installed on peers
+and then defined and used on one or more channels.
 
 .. _State-DB:
 
 State Database
 --------------
 
-Current state data is stored in a state database for efficient reads and queries
+World state data is stored in a state database for efficient reads and queries
 from chaincode. Supported databases include levelDB and couchDB.
 
 .. _System-Chain:
@@ -682,13 +643,13 @@ Transaction
 
    A transaction, 'T'
 
-Transactions are created when a chaincode or FabToken client is used to read or
-write to data from the ledger. If you are invoking a chaincode, application
-clients gather the responses from endorsing peers and then package the results
-and endorsements into a transaction that is submitted for ordering, validation,
-and commit. If using FabToken to create a token transaction, the FabToken client
-uses a prover peer to create a transaction that is submitted to the ordering
-service and then validated by committing peers.
+Transactions are created when a chaincode is invoked from a client application
+to read or write data from the ledger. Fabric application clients submit transaction proposals to
+endorsing peers for execution and endorsement, gather the signed (endorsed) responses from those
+endorsing peers, and then package the results and endorsements into a transaction that is
+submitted to the ordering service. The ordering service orders and places transactions
+in a block that is broadcast to the peers which validate and commit the transactions to the ledger
+and update world state.
 
 .. _World-State:
 

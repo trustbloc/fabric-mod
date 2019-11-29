@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package service
 
 import (
-	"github.com/hyperledger/fabric/protos/gossip"
+	"github.com/hyperledger/fabric-protos-go/gossip"
 )
 
 //HandleGossip can be used to extend ossipServiceAdapter.Gossip feature

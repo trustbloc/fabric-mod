@@ -7,17 +7,23 @@ SPDX-License-Identifier: Apache-2.0
 package txvalidator
 
 import (
+	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric/bccsp/sw"
 	"github.com/hyperledger/fabric/common/configtx/test"
 	"github.com/hyperledger/fabric/common/ledger/testutil"
-	"github.com/hyperledger/fabric/common/mocks/config"
 	"github.com/hyperledger/fabric/common/semaphore"
 	util2 "github.com/hyperledger/fabric/common/util"
+	"github.com/hyperledger/fabric/core/committer/txvalidator/mocks"
 	"github.com/hyperledger/fabric/core/common/sysccprovider"
 	ledger2 "github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
+	"github.com/hyperledger/fabric/core/ledger/ledgermgmt/ledgermgmttest"
 	"github.com/hyperledger/fabric/core/ledger/util"
 	ledgerUtil "github.com/hyperledger/fabric/core/ledger/util"
 	mocktxvalidator "github.com/hyperledger/fabric/core/mocks/txvalidator"
@@ -26,10 +32,9 @@ import (
 	"github.com/hyperledger/fabric/msp"
 	mspmgmt "github.com/hyperledger/fabric/msp/mgmt"
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func testValidationWithNTXes(t *testing.T, ledger ledger2.PeerLedger, gbHash []byte, nBlocks int) {
@@ -47,12 +52,17 @@ func testValidationWithNTXes(t *testing.T, ledger ledger2.PeerLedger, gbHash []b
 		t.Fatalf("Could not construct ProposalResponsePayload bytes, err: %s", err)
 	}
 
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
 	mockVsccValidator := &validator.MockVsccValidator{}
+	mockCapabilities := &mocks.ApplicationCapabilities{}
+	mockCapabilities.On("ForbidDuplicateTXIdInBlock").Return(false)
 	tValidator := &TxValidator{
-		ChainID:          "",
+		ChannelID:        "",
 		Semaphore:        semaphore.New(10),
-		ChannelResources: &mocktxvalidator.Support{LedgerVal: ledger, ACVal: &config.MockApplicationCapabilities{}},
+		ChannelResources: &mocktxvalidator.Support{LedgerVal: ledger, ACVal: mockCapabilities},
 		Vscc:             mockVsccValidator,
+		CryptoProvider:   cryptoProvider,
 	}
 
 	bcInfo, _ := ledger.GetBlockchainInfo()
@@ -100,12 +110,12 @@ func TestDetectTXIdDuplicates(t *testing.T) {
 }
 
 func TestBlockValidationDuplicateTXId(t *testing.T) {
-	cleanup := ledgermgmt.InitializeTestEnv(t)
+	ledgerMgr, cleanup := constructLedgerMgrWithTestDefaults(t, "txvalidator")
 	defer cleanup()
 
 	gb, _ := test.MakeGenesisBlock("TestLedger")
 	gbHash := protoutil.BlockHeaderHash(gb.Header)
-	ledger, _ := ledgermgmt.CreateLedger(gb)
+	ledger, _ := ledgerMgr.CreateLedger("TestLedger", gb)
 	defer ledger.Close()
 
 	txid := util2.GenerateUUID()
@@ -122,13 +132,16 @@ func TestBlockValidationDuplicateTXId(t *testing.T) {
 		t.Fatalf("Could not construct ProposalResponsePayload bytes, err: %s", err)
 	}
 
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
 	mockVsccValidator := &validator.MockVsccValidator{}
-	acv := &config.MockApplicationCapabilities{}
+	acv := &mocks.ApplicationCapabilities{}
 	tValidator := &TxValidator{
-		ChainID:          "",
+		ChannelID:        "",
 		Semaphore:        semaphore.New(10),
 		ChannelResources: &mocktxvalidator.Support{LedgerVal: ledger, ACVal: acv},
 		Vscc:             mockVsccValidator,
+		CryptoProvider:   cryptoProvider,
 	}
 
 	bcInfo, _ := ledger.GetBlockchainInfo()
@@ -142,6 +155,7 @@ func TestBlockValidationDuplicateTXId(t *testing.T) {
 	envs = append(envs, env)
 	block := testutil.NewBlock(envs, 1, gbHash)
 
+	acv.On("ForbidDuplicateTXIdInBlock").Return(false).Once()
 	tValidator.Validate(block)
 
 	txsfltr := util.TxValidationFlags(block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER])
@@ -149,8 +163,7 @@ func TestBlockValidationDuplicateTXId(t *testing.T) {
 	assert.True(t, txsfltr.IsSetTo(0, peer.TxValidationCode_VALID))
 	assert.True(t, txsfltr.IsSetTo(1, peer.TxValidationCode_VALID))
 
-	acv.ForbidDuplicateTXIdInBlockRv = true
-
+	acv.On("ForbidDuplicateTXIdInBlock").Return(true)
 	tValidator.Validate(block)
 
 	txsfltr = util.TxValidationFlags(block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER])
@@ -160,15 +173,13 @@ func TestBlockValidationDuplicateTXId(t *testing.T) {
 }
 
 func TestBlockValidation(t *testing.T) {
-	_, _, destroy := xtestutil.SetupExtTestEnv()
-	defer destroy()
-
-	cleanup := ledgermgmt.InitializeTestEnv(t)
+	ledgerMgr, cleanup := constructLedgerMgrWithTestDefaults(t, "txvalidator")
 	defer cleanup()
 
 	gb, _ := test.MakeGenesisBlock("TestLedger")
 	gbHash := protoutil.BlockHeaderHash(gb.Header)
-	ledger, _ := ledgermgmt.CreateLedger(gb)
+	ledger, err := ledgerMgr.CreateLedger("TestLedger", gb)
+	require.NoError(t, err)
 	defer ledger.Close()
 
 	// here we test validation of a block with a single tx
@@ -176,15 +187,12 @@ func TestBlockValidation(t *testing.T) {
 }
 
 func TestParallelBlockValidation(t *testing.T) {
-	_, _, destroy := xtestutil.SetupExtTestEnv()
-	defer destroy()
-
-	cleanup := ledgermgmt.InitializeTestEnv(t)
+	ledgerMgr, cleanup := constructLedgerMgrWithTestDefaults(t, "txvalidator")
 	defer cleanup()
 
 	gb, _ := test.MakeGenesisBlock("TestLedger")
 	gbHash := protoutil.BlockHeaderHash(gb.Header)
-	ledger, _ := ledgermgmt.CreateLedger(gb)
+	ledger, _ := ledgerMgr.CreateLedger("TestLedger", gb)
 	defer ledger.Close()
 
 	// here we test validation of a block with 128 txes
@@ -192,15 +200,12 @@ func TestParallelBlockValidation(t *testing.T) {
 }
 
 func TestVeryLargeParallelBlockValidation(t *testing.T) {
-	_, _, destroy := xtestutil.SetupExtTestEnv()
-	defer destroy()
-
-	cleanup := ledgermgmt.InitializeTestEnv(t)
+	ledgerMgr, cleanup := constructLedgerMgrWithTestDefaults(t, "txvalidator")
 	defer cleanup()
 
 	gb, _ := test.MakeGenesisBlock("TestLedger")
 	gbHash := protoutil.BlockHeaderHash(gb.Header)
-	ledger, _ := ledgermgmt.CreateLedger(gb)
+	ledger, _ := ledgerMgr.CreateLedger("TestLedger", gb)
 	defer ledger.Close()
 
 	// here we test validation of a block with 4096 txes,
@@ -210,25 +215,27 @@ func TestVeryLargeParallelBlockValidation(t *testing.T) {
 }
 
 func TestTxValidationFailure_InvalidTxid(t *testing.T) {
-	_, _, destroy := xtestutil.SetupExtTestEnv()
-	defer destroy()
-
-	cleanup := ledgermgmt.InitializeTestEnv(t)
+	ledgerMgr, cleanup := constructLedgerMgrWithTestDefaults(t, "txvalidator")
 	defer cleanup()
 
 	gb, _ := test.MakeGenesisBlock("TestLedger")
-	ledger, _ := ledgermgmt.CreateLedger(gb)
+	ledger, _ := ledgerMgr.CreateLedger("TestLedger", gb)
 
 	defer ledger.Close()
 
+	mockCapabilities := &mocks.ApplicationCapabilities{}
+	mockCapabilities.On("ForbidDuplicateTXIdInBlock").Return(false)
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
 	tValidator := &TxValidator{
-		ChainID:          "",
+		ChannelID:        "",
 		Semaphore:        semaphore.New(10),
-		ChannelResources: &mocktxvalidator.Support{LedgerVal: ledger, ACVal: &config.MockApplicationCapabilities{}},
+		ChannelResources: &mocktxvalidator.Support{LedgerVal: ledger, ACVal: mockCapabilities},
 		Vscc:             &validator.MockVsccValidator{},
+		CryptoProvider:   cryptoProvider,
 	}
 
-	mockSigner, err := mspmgmt.GetLocalMSP().GetDefaultSigningIdentity()
+	mockSigner, err := mspmgmt.GetLocalMSP(cryptoProvider).GetDefaultSigningIdentity()
 	assert.NoError(t, err)
 	mockSignerSerialized, err := mockSigner.Serialize()
 	assert.NoError(t, err)
@@ -239,7 +246,7 @@ func TestTxValidationFailure_InvalidTxid(t *testing.T) {
 			ChannelHeader: protoutil.MarshalOrPanic(&common.ChannelHeader{
 				TxId:      "INVALID TXID!!!",
 				Type:      int32(common.HeaderType_ENDORSER_TRANSACTION),
-				ChannelId: util2.GetTestChainID(),
+				ChannelId: "testchannelid",
 			}),
 			SignatureHeader: protoutil.MarshalOrPanic(&common.SignatureHeader{
 				Nonce:   []byte("nonce"),
@@ -286,9 +293,7 @@ func TestTxValidationFailure_InvalidTxid(t *testing.T) {
 	block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER] = txsFilter
 
 	// Commit block to the ledger
-	ledger.CommitWithPvtData(&ledger2.BlockAndPvtData{
-		Block: block,
-	})
+	ledger.CommitLegacy(&ledger2.BlockAndPvtData{Block: block}, &ledger2.CommitOptions{})
 
 	// Validation should invalidate transaction,
 	// because it's already committed
@@ -301,7 +306,7 @@ func TestTxValidationFailure_InvalidTxid(t *testing.T) {
 	assert.True(t, txsfltr.Flag(0) == peer.TxValidationCode_BAD_PROPOSAL_TXID)
 }
 
-func createCCUpgradeEnvelope(chainID, chaincodeName, chaincodeVersion string, signer msp.SigningIdentity) (*common.Envelope, error) {
+func createCCUpgradeEnvelope(channelID, chaincodeName, chaincodeVersion string, signer msp.SigningIdentity) (*common.Envelope, error) {
 	creator, err := signer.Serialize()
 	if err != nil {
 		return nil, err
@@ -317,7 +322,7 @@ func createCCUpgradeEnvelope(chainID, chaincodeName, chaincodeVersion string, si
 	}
 
 	cds := &peer.ChaincodeDeploymentSpec{ChaincodeSpec: spec, CodePackage: []byte{}}
-	prop, _, err := protoutil.CreateUpgradeProposalFromCDS(chainID, cds, creator, []byte{}, []byte{}, []byte{}, nil)
+	prop, _, err := protoutil.CreateUpgradeProposalFromCDS(channelID, cds, creator, []byte{}, []byte{}, []byte{}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -335,37 +340,37 @@ func createCCUpgradeEnvelope(chainID, chaincodeName, chaincodeVersion string, si
 func TestGetTxCCInstance(t *testing.T) {
 	// setup the MSP manager so that we can sign/verify
 	err := msptesttools.LoadMSPSetupForTesting()
-	if err != nil {
-		t.Fatalf("Could not initialize msp, err: %s", err)
-	}
-	signer, err := mspmgmt.GetLocalMSP().GetDefaultSigningIdentity()
-	if err != nil {
-		t.Fatalf("Could not initialize signer, err: %s", err)
-	}
+	assert.NoError(t, err)
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
+	signer, err := mspmgmt.GetLocalMSP(cryptoProvider).GetDefaultSigningIdentity()
+	assert.NoError(t, err)
 
-	chainID := util2.GetTestChainID()
+	channelID := "testchannelid"
 	upgradeCCName := "mycc"
 	upgradeCCVersion := "v1"
 
-	env, err := createCCUpgradeEnvelope(chainID, upgradeCCName, upgradeCCVersion, signer)
+	env, err := createCCUpgradeEnvelope(channelID, upgradeCCName, upgradeCCVersion, signer)
 	assert.NoError(t, err)
 
 	// get the payload from the envelope
-	payload, err := protoutil.GetPayload(env)
+	payload, err := protoutil.UnmarshalPayload(env.Payload)
 	assert.NoError(t, err)
 
 	expectInvokeCCIns := &sysccprovider.ChaincodeInstance{
-		ChainID:          chainID,
+		ChannelID:        channelID,
 		ChaincodeName:    "lscc",
 		ChaincodeVersion: "",
 	}
 	expectUpgradeCCIns := &sysccprovider.ChaincodeInstance{
-		ChainID:          chainID,
+		ChannelID:        channelID,
 		ChaincodeName:    upgradeCCName,
 		ChaincodeVersion: upgradeCCVersion,
 	}
 
-	tValidator := &TxValidator{}
+	tValidator := &TxValidator{
+		CryptoProvider: cryptoProvider,
+	}
 	invokeCCIns, upgradeCCIns, err := tValidator.getTxCCInstance(payload)
 	if err != nil {
 		t.Fatalf("Get chaincode from tx error: %s", err)
@@ -376,19 +381,19 @@ func TestGetTxCCInstance(t *testing.T) {
 
 func TestInvalidTXsForUpgradeCC(t *testing.T) {
 	txsChaincodeNames := map[int]*sysccprovider.ChaincodeInstance{
-		0: {ChainID: "chain0", ChaincodeName: "cc0", ChaincodeVersion: "v0"}, // invoke cc0/chain0:v0, should not be affected by upgrade tx in other chain
-		1: {ChainID: "chain1", ChaincodeName: "cc0", ChaincodeVersion: "v0"}, // invoke cc0/chain1:v0, should be invalided by cc1/chain1 upgrade tx
-		2: {ChainID: "chain1", ChaincodeName: "lscc", ChaincodeVersion: ""},  // upgrade cc0/chain1 to v1, should be invalided by latter cc0/chain1 upgtade tx
-		3: {ChainID: "chain1", ChaincodeName: "cc0", ChaincodeVersion: "v0"}, // invoke cc0/chain1:v0, should be invalided by cc1/chain1 upgrade tx
-		4: {ChainID: "chain1", ChaincodeName: "cc0", ChaincodeVersion: "v1"}, // invoke cc0/chain1:v1, should be invalided by cc1/chain1 upgrade tx
-		5: {ChainID: "chain1", ChaincodeName: "cc1", ChaincodeVersion: "v0"}, // invoke cc1/chain1:v0, should not be affected by other chaincode upgrade tx
-		6: {ChainID: "chain1", ChaincodeName: "lscc", ChaincodeVersion: ""},  // upgrade cc0/chain1 to v2, should be invalided by latter cc0/chain1 upgtade tx
-		7: {ChainID: "chain1", ChaincodeName: "lscc", ChaincodeVersion: ""},  // upgrade cc0/chain1 to v3
+		0: {ChannelID: "chain0", ChaincodeName: "cc0", ChaincodeVersion: "v0"}, // invoke cc0/chain0:v0, should not be affected by upgrade tx in other chain
+		1: {ChannelID: "chain1", ChaincodeName: "cc0", ChaincodeVersion: "v0"}, // invoke cc0/chain1:v0, should be invalided by cc1/chain1 upgrade tx
+		2: {ChannelID: "chain1", ChaincodeName: "lscc", ChaincodeVersion: ""},  // upgrade cc0/chain1 to v1, should be invalided by latter cc0/chain1 upgtade tx
+		3: {ChannelID: "chain1", ChaincodeName: "cc0", ChaincodeVersion: "v0"}, // invoke cc0/chain1:v0, should be invalided by cc1/chain1 upgrade tx
+		4: {ChannelID: "chain1", ChaincodeName: "cc0", ChaincodeVersion: "v1"}, // invoke cc0/chain1:v1, should be invalided by cc1/chain1 upgrade tx
+		5: {ChannelID: "chain1", ChaincodeName: "cc1", ChaincodeVersion: "v0"}, // invoke cc1/chain1:v0, should not be affected by other chaincode upgrade tx
+		6: {ChannelID: "chain1", ChaincodeName: "lscc", ChaincodeVersion: ""},  // upgrade cc0/chain1 to v2, should be invalided by latter cc0/chain1 upgtade tx
+		7: {ChannelID: "chain1", ChaincodeName: "lscc", ChaincodeVersion: ""},  // upgrade cc0/chain1 to v3
 	}
 	upgradedChaincodes := map[int]*sysccprovider.ChaincodeInstance{
-		2: {ChainID: "chain1", ChaincodeName: "cc0", ChaincodeVersion: "v1"},
-		6: {ChainID: "chain1", ChaincodeName: "cc0", ChaincodeVersion: "v2"},
-		7: {ChainID: "chain1", ChaincodeName: "cc0", ChaincodeVersion: "v3"},
+		2: {ChannelID: "chain1", ChaincodeName: "cc0", ChaincodeVersion: "v1"},
+		6: {ChannelID: "chain1", ChaincodeName: "cc0", ChaincodeVersion: "v2"},
+		7: {ChannelID: "chain1", ChaincodeName: "cc0", ChaincodeVersion: "v3"},
 	}
 
 	txsfltr := ledgerUtil.NewTxValidationFlags(8)
@@ -411,8 +416,30 @@ func TestInvalidTXsForUpgradeCC(t *testing.T) {
 	expectTxsFltr.SetFlag(6, peer.TxValidationCode_CHAINCODE_VERSION_CONFLICT)
 	expectTxsFltr.SetFlag(7, peer.TxValidationCode_VALID)
 
-	tValidator := &TxValidator{}
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
+	tValidator := &TxValidator{
+		CryptoProvider: cryptoProvider,
+	}
 	tValidator.invalidTXsForUpgradeCC(txsChaincodeNames, upgradedChaincodes, txsfltr)
 
 	assert.EqualValues(t, expectTxsFltr, txsfltr)
+}
+
+func constructLedgerMgrWithTestDefaults(t *testing.T, testDir string) (*ledgermgmt.LedgerMgr, func()) {
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+
+	testDir, err := ioutil.TempDir("", testDir)
+	if err != nil {
+		t.Fatalf("Failed to create ledger directory: %s", err)
+	}
+	initializer := ledgermgmttest.NewInitializer(testDir)
+	ledgerMgr := ledgermgmt.NewLedgerMgr(initializer)
+
+	cleanup := func() {
+		ledgerMgr.Close()
+		os.RemoveAll(testDir)
+		destroy()
+	}
+	return ledgerMgr, cleanup
 }

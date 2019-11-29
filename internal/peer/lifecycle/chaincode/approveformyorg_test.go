@@ -11,9 +11,10 @@ import (
 	"crypto/tls"
 	"time"
 
+	pb "github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric/bccsp/sw"
 	"github.com/hyperledger/fabric/internal/peer/lifecycle/chaincode"
 	"github.com/hyperledger/fabric/internal/peer/lifecycle/chaincode/mock"
-	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
@@ -84,8 +85,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("The required parameter 'channelID' is empty. Rerun the command with -C flag"))
+				Expect(err).To(MatchError("The required parameter 'channelID' is empty. Rerun the command with -C flag"))
 			})
 		})
 
@@ -96,8 +96,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("The required parameter 'name' is empty. Rerun the command with -n flag"))
+				Expect(err).To(MatchError("The required parameter 'name' is empty. Rerun the command with -n flag"))
 			})
 		})
 
@@ -108,8 +107,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("The required parameter 'version' is empty. Rerun the command with -v flag"))
+				Expect(err).To(MatchError("The required parameter 'version' is empty. Rerun the command with -v flag"))
 			})
 		})
 
@@ -120,8 +118,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("The required parameter 'sequence' is empty. Rerun the command with --sequence flag"))
+				Expect(err).To(MatchError("The required parameter 'sequence' is empty. Rerun the command with --sequence flag"))
 			})
 		})
 
@@ -132,8 +129,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("failed to create proposal: failed to serialize identity: cafe"))
+				Expect(err).To(MatchError("failed to create proposal: failed to serialize identity: cafe"))
 			})
 		})
 
@@ -144,8 +140,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("failed to create signed proposal: tea"))
+				Expect(err).To(MatchError("failed to create signed proposal: tea"))
 			})
 		})
 
@@ -156,8 +151,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("failed to endorse proposal: latte"))
+				Expect(err).To(MatchError("failed to endorse proposal: latte"))
 			})
 		})
 
@@ -168,8 +162,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("doesn't receive any responses and returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("no proposal responses received"))
+				Expect(err).To(MatchError("no proposal responses received"))
 			})
 		})
 
@@ -181,8 +174,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("received nil proposal response"))
+				Expect(err).To(MatchError("received nil proposal response"))
 			})
 		})
 
@@ -194,8 +186,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("received proposal response with nil response"))
+				Expect(err).To(MatchError("received proposal response with nil response"))
 			})
 		})
 
@@ -210,8 +201,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("proposal failed with status: 500 - capuccino"))
+				Expect(err).To(MatchError("proposal failed with status: 500 - capuccino"))
 			})
 		})
 
@@ -222,8 +212,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("failed to create signed transaction: peaberry"))
+				Expect(err).To(MatchError("failed to create signed transaction: peaberry"))
 				Expect(mockSigner.SignCallCount()).To(Equal(2))
 			})
 		})
@@ -235,8 +224,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("failed to send transaction: arabica"))
+				Expect(err).To(MatchError("failed to send transaction: arabica"))
 			})
 		})
 
@@ -267,7 +255,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 		Context("when the wait for event flag is enabled and the client can't connect", func() {
 			BeforeEach(func() {
 				input.WaitForEvent = true
-				input.WaitForEventTimeout = 10 * time.Millisecond
+				input.WaitForEventTimeout = 3 * time.Second
 				input.TxID = "testtx"
 				input.PeerAddresses = []string{"approvepeer0"}
 				mockDeliverClient.DeliverFilteredReturns(nil, errors.New("robusta"))
@@ -275,8 +263,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("failed to connect to deliver on all peers: error connecting to deliver filtered at approvepeer0: robusta"))
+				Expect(err).To(MatchError("failed to connect to deliver on all peers: error connecting to deliver filtered at approvepeer0: robusta"))
 			})
 		})
 
@@ -304,8 +291,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approver.Approve()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("timed out waiting for txid on all peers"))
+				Expect(err).To(MatchError("timed out waiting for txid on all peers"))
 			})
 		})
 	})
@@ -316,7 +302,9 @@ var _ = Describe("ApproverForMyOrg", func() {
 		)
 
 		BeforeEach(func() {
-			approveForMyOrgCmd = chaincode.ApproveForMyOrgCmd(nil)
+			cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+			Expect(err).To(BeNil())
+			approveForMyOrgCmd = chaincode.ApproveForMyOrgCmd(nil, cryptoProvider)
 			approveForMyOrgCmd.SetArgs([]string{
 				"--channelID=testchannel",
 				"--name=testcc",
@@ -335,13 +323,14 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 		It("sets up the approver for my org and attempts to approve the chaincode definition", func() {
 			err := approveForMyOrgCmd.Execute()
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("failed to retrieve endorser client"))
+			Expect(err).To(MatchError(ContainSubstring("failed to retrieve endorser client")))
 		})
 
 		Context("when the channel config policy is specified", func() {
 			BeforeEach(func() {
-				approveForMyOrgCmd = chaincode.ApproveForMyOrgCmd(nil)
+				cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+				Expect(err).To(BeNil())
+				approveForMyOrgCmd = chaincode.ApproveForMyOrgCmd(nil, cryptoProvider)
 				approveForMyOrgCmd.SetArgs([]string{
 					"--channel-config-policy=/Channel/Application/Readers",
 					"--channelID=testchannel",
@@ -356,8 +345,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("sets up the approver for my org and attempts to approve the chaincode definition", func() {
 				err := approveForMyOrgCmd.Execute()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("failed to retrieve endorser client"))
+				Expect(err).To(MatchError(ContainSubstring("failed to retrieve endorser client")))
 			})
 		})
 
@@ -378,8 +366,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approveForMyOrgCmd.Execute()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("cannot specify both \"--signature-policy\" and \"--channel-config-policy\""))
+				Expect(err).To(MatchError("cannot specify both \"--signature-policy\" and \"--channel-config-policy\""))
 			})
 		})
 
@@ -399,8 +386,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approveForMyOrgCmd.Execute()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("invalid signature policy: notapolicy"))
+				Expect(err).To(MatchError("invalid signature policy: notapolicy"))
 			})
 		})
 
@@ -420,8 +406,7 @@ var _ = Describe("ApproverForMyOrg", func() {
 
 			It("returns an error", func() {
 				err := approveForMyOrgCmd.Execute()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("invalid collection configuration in file idontexist.json: could not read file 'idontexist.json': open idontexist.json: no such file or directory"))
+				Expect(err).To(MatchError("invalid collection configuration in file idontexist.json: could not read file 'idontexist.json': open idontexist.json: no such file or directory"))
 			})
 		})
 	})

@@ -13,13 +13,14 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric-lib-go/healthz"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/ledger/rwset"
+	"github.com/hyperledger/fabric-protos-go/ledger/rwset/kvrwset"
+	"github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric/bccsp"
 	commonledger "github.com/hyperledger/fabric/common/ledger"
 	"github.com/hyperledger/fabric/common/metrics"
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/ledger/rwset"
-	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
-	"github.com/hyperledger/fabric/protos/peer"
 )
 
 // Initializer encapsulates dependencies for PeerLedgerProvider
@@ -31,6 +32,8 @@ type Initializer struct {
 	MetricsProvider                 metrics.Provider
 	HealthCheckRegistry             HealthCheckRegistry
 	Config                          *Config
+	CustomTxProcessors              map[common.HeaderType]CustomTxProcessor
+	Hasher                          Hasher
 	CollDataProvider                storeapi.Provider
 }
 
@@ -38,31 +41,26 @@ type Initializer struct {
 type Config struct {
 	// RootFSPath is the top-level directory where ledger files are stored.
 	RootFSPath string
-	// StateDB holds the configuration parameters for the state database.
-	StateDB *StateDB
-	// PrivateData holds the configuration parameters for the private data store.
-	PrivateData *PrivateData
-	// HistoryDB holds the configuration parameters for the transaction history database.
-	HistoryDB *HistoryDB
+	// StateDBConfig holds the configuration parameters for the state database.
+	StateDBConfig *StateDBConfig
+	// PrivateDataConfig holds the configuration parameters for the private data store.
+	PrivateDataConfig *PrivateDataConfig
+	// HistoryDBConfig holds the configuration parameters for the transaction history database.
+	HistoryDBConfig *HistoryDBConfig
 }
 
-// State is a structure used to configure the state parameters for the ledger.
-type StateDB struct {
-	// StateDatabase is the of database to use for storing last known state.  The
+// StateDBConfig is a structure used to configure the state parameters for the ledger.
+type StateDBConfig struct {
+	// StateDatabase is the database to use for storing last known state.  The
 	// two supported options are "goleveldb" and "CouchDB".
 	StateDatabase string
-	// LevelDBPath is filesystem path that is used when StateDatabase is set
-	// to "goleveldb".
-	LevelDBPath string
 	// CouchDB is the configuration for CouchDB.  It is used when StateDatabase
 	// is set to "CouchDB".
 	CouchDB *couchdb.Config
 }
 
-// PrivateData is a structure used to configure a private data storage provider.
-type PrivateData struct {
-	// StorePath is the filesystem path used by the private data store.
-	StorePath string
+// PrivateDataConfig is a structure used to configure a private data storage provider.
+type PrivateDataConfig struct {
 	// BatchesInterval is the minimum duration (milliseconds) between batches
 	// for converting ineligible missing data entries into eligible entries.
 	BatchesInterval int
@@ -74,8 +72,8 @@ type PrivateData struct {
 	PurgeInterval int
 }
 
-// HistoryDB is a structure used to configure the transaction history database.
-type HistoryDB struct {
+// HistoryDBConfig is a structure used to configure the transaction history database.
+type HistoryDBConfig struct {
 	Enabled bool
 }
 
@@ -128,17 +126,24 @@ type PeerLedger interface {
 	// The pvt data is filtered by the list of 'ns/collections' supplied in the filter
 	// A nil filter does not filter any results and causes retrieving all the pvt data for the given blockNum
 	GetPvtDataByNum(blockNum uint64, filter PvtNsCollFilter) ([]*TxPvtData, error)
-	// CommitWithPvtData commits the block and the corresponding pvt data in an atomic operation
-	CommitWithPvtData(blockAndPvtdata *BlockAndPvtData) error
+	// CommitLegacy commits the block and the corresponding pvt data in an atomic operation following the v14 validation/commit path
+	// TODO: add a new Commit() path that replaces CommitLegacy() for the validation refactor described in FAB-12221
+	CommitLegacy(blockAndPvtdata *BlockAndPvtData, commitOpts *CommitOptions) error
 	// GetConfigHistoryRetriever returns the ConfigHistoryRetriever
 	GetConfigHistoryRetriever() (ConfigHistoryRetriever, error)
 	// CommitPvtDataOfOldBlocks commits the private data corresponding to already committed block
 	// If hashes for some of the private data supplied in this function does not match
 	// the corresponding hash present in the block, the unmatched private data is not
 	// committed and instead the mismatch inforation is returned back
-	CommitPvtDataOfOldBlocks(blockPvtData []*BlockPvtData) ([]*PvtdataHashMismatch, error)
+	CommitPvtDataOfOldBlocks(reconciledPvtdata []*ReconciledPvtdata) ([]*PvtdataHashMismatch, error)
 	// GetMissingPvtDataTracker return the MissingPvtDataTracker
 	GetMissingPvtDataTracker() (MissingPvtDataTracker, error)
+	// DoesPvtDataInfoExist returns true when
+	// (1) the ledger has pvtdata associated with the given block number (or)
+	// (2) a few or all pvtdata associated with the given block number is missing but the
+	//     missing info is recorded in the ledger (or)
+	// (3) the block is committed and does not contain any pvtData.
+	DoesPvtDataInfoExist(blockNum uint64) (bool, error)
 }
 
 // SimpleQueryExecutor encapsulates basic functions
@@ -149,7 +154,7 @@ type SimpleQueryExecutor interface {
 	// startKey is included in the results and endKey is excluded. An empty startKey refers to the first available key
 	// and an empty endKey refers to the last available key. For scanning all the keys, both the startKey and the endKey
 	// can be supplied as empty strings. However, a full scan should be used judiciously for performance reasons.
-	// The returned ResultsIterator contains results of type *KV which is defined in protos/ledger/queryresult.
+	// The returned ResultsIterator contains results of type *KV which is defined in fabric-protos/ledger/queryresult.
 	GetStateRangeScanIterator(namespace string, startKey string, endKey string) (commonledger.ResultsIterator, error)
 	// GetPrivateDataHash gets the hash of the value of a private data item identified by a tuple <namespace, collection, key>
 	// Function `GetPrivateData` is only meaningful when it is invoked on a peer that is authorized to have the private data
@@ -174,18 +179,18 @@ type QueryExecutor interface {
 	// and an empty endKey refers to the last available key. For scanning all the keys, both the startKey and the endKey
 	// can be supplied as empty strings. However, a full scan should be used judiciously for performance reasons.
 	// metadata is a map of additional query parameters
-	// The returned ResultsIterator contains results of type *KV which is defined in protos/ledger/queryresult.
+	// The returned ResultsIterator contains results of type *KV which is defined in fabric-protos/ledger/queryresult.
 	GetStateRangeScanIteratorWithMetadata(namespace string, startKey, endKey string, metadata map[string]interface{}) (QueryResultsIterator, error)
 	// ExecuteQuery executes the given query and returns an iterator that contains results of type specific to the underlying data store.
 	// Only used for state databases that support query
 	// For a chaincode, the namespace corresponds to the chaincodeId
-	// The returned ResultsIterator contains results of type *KV which is defined in protos/ledger/queryresult.
+	// The returned ResultsIterator contains results of type *KV which is defined in fabric-protos/ledger/queryresult.
 	ExecuteQuery(namespace, query string) (commonledger.ResultsIterator, error)
 	// ExecuteQueryWithMetadata executes the given query and returns an iterator that contains results of type specific to the underlying data store.
 	// metadata is a map of additional query parameters
 	// Only used for state databases that support query
 	// For a chaincode, the namespace corresponds to the chaincodeId
-	// The returned ResultsIterator contains results of type *KV which is defined in protos/ledger/queryresult.
+	// The returned ResultsIterator contains results of type *KV which is defined in fabric-protos/ledger/queryresult.
 	ExecuteQueryWithMetadata(namespace, query string, metadata map[string]interface{}) (QueryResultsIterator, error)
 	// GetPrivateData gets the value of a private data item identified by a tuple <namespace, collection, key>
 	GetPrivateData(namespace, collection, key string) ([]byte, error)
@@ -199,12 +204,12 @@ type QueryExecutor interface {
 	// startKey is included in the results and endKey is excluded. An empty startKey refers to the first available key
 	// and an empty endKey refers to the last available key. For scanning all the keys, both the startKey and the endKey
 	// can be supplied as empty strings. However, a full scan shuold be used judiciously for performance reasons.
-	// The returned ResultsIterator contains results of type *KV which is defined in protos/ledger/queryresult.
+	// The returned ResultsIterator contains results of type *KV which is defined in fabric-protos/ledger/queryresult.
 	GetPrivateDataRangeScanIterator(namespace, collection, startKey, endKey string) (commonledger.ResultsIterator, error)
 	// ExecuteQuery executes the given query and returns an iterator that contains results of type specific to the underlying data store.
 	// Only used for state databases that support query
 	// For a chaincode, the namespace corresponds to the chaincodeId
-	// The returned ResultsIterator contains results of type *KV which is defined in protos/ledger/queryresult.
+	// The returned ResultsIterator contains results of type *KV which is defined in fabric-protos/ledger/queryresult.
 	ExecuteQueryOnPrivateData(namespace, collection, query string) (commonledger.ResultsIterator, error)
 	// Done releases resources occupied by the QueryExecutor
 	Done()
@@ -213,7 +218,7 @@ type QueryExecutor interface {
 // HistoryQueryExecutor executes the history queries
 type HistoryQueryExecutor interface {
 	// GetHistoryForKey retrieves the history of values for a key.
-	// The returned ResultsIterator contains results of type *KeyModification which is defined in protos/ledger/queryresult.
+	// The returned ResultsIterator contains results of type *KeyModification which is defined in fabric-protos/ledger/queryresult.
 	GetHistoryForKey(namespace string, key string) (commonledger.ResultsIterator, error)
 }
 
@@ -294,8 +299,8 @@ type BlockAndPvtData struct {
 	MissingPvtData TxMissingPvtDataMap
 }
 
-// BlockPvtData contains the private data for a block
-type BlockPvtData struct {
+// ReconciledPvtdata contains the private data for a block for reconciliation
+type ReconciledPvtdata struct {
 	BlockNum  uint64
 	WriteSets TxPvtDataMap
 }
@@ -303,6 +308,41 @@ type BlockPvtData struct {
 // Add adds a given missing private data in the MissingPrivateDataList
 func (txMissingPvtData TxMissingPvtDataMap) Add(txNum uint64, ns, coll string, isEligible bool) {
 	txMissingPvtData[txNum] = append(txMissingPvtData[txNum], &MissingPvtData{ns, coll, isEligible})
+}
+
+// RetrievedPvtdata is a dependency that is implemented by coordinator/gossip for ledger
+// to be able to purge the transactions from the block after retrieving private data
+type RetrievedPvtdata interface {
+	GetBlockPvtdata() *BlockPvtdata
+	Purge()
+}
+
+// TxPvtdataInfo captures information about the requested private data to be retrieved
+type TxPvtdataInfo struct {
+	TxID                  string
+	Invalid               bool
+	SeqInBlock            uint64
+	CollectionPvtdataInfo []*CollectionPvtdataInfo
+}
+
+// CollectionPvtdataInfo contains information about the private data for a given collection
+type CollectionPvtdataInfo struct {
+	Namespace, Collection string
+	ExpectedHash          []byte
+	CollectionConfig      *peer.StaticCollectionConfig
+	Endorsers             []*peer.Endorsement
+}
+
+// BlockPvtdata contains the retrieved private data as well as missing and ineligible
+// private data for use at commit time
+type BlockPvtdata struct {
+	PvtData        TxPvtDataMap
+	MissingPvtData TxMissingPvtDataMap
+}
+
+// CommitOptions encapsulates options associated with a block commit.
+type CommitOptions struct {
+	FetchPvtDataFromLedger bool
 }
 
 // PvtCollFilter represents the set of the collection names (as keys of the map with value 'true')
@@ -377,13 +417,13 @@ func (txSim *TxSimulationResults) ContainsPvtWrites() bool {
 }
 
 // StateListener allows a custom code for performing additional stuff upon state change
-// for a perticular namespace against which the listener is registered.
+// for a particular namespace against which the listener is registered.
 // This helps to perform custom tasks other than the state updates.
-// A ledger implemetation is expected to invoke Function `HandleStateUpdates` once per block and
+// A ledger implementation is expected to invoke Function `HandleStateUpdates` once per block and
 // the `stateUpdates` parameter passed to the function captures the state changes caused by the block
 // for the namespace. The actual data type of stateUpdates depends on the data model enabled.
 // For instance, for KV data model, the actual type would be proto message
-// `github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset.KVWrite`
+// `github.com/hyperledger/fabric-protos-go/ledger/rwset/kvrwset.KVWrite`
 // Function `HandleStateUpdates` is expected to be invoked before block is committed and if this
 // function returns an error, the ledger implementation is expected to halt block commit operation
 // and result in a panic.
@@ -437,7 +477,7 @@ type MissingCollectionPvtDataInfo struct {
 
 // CollectionConfigInfo encapsulates a collection config for a chaincode and its committing block number
 type CollectionConfigInfo struct {
-	CollectionConfig   *common.CollectionConfigPackage
+	CollectionConfig   *peer.CollectionConfigPackage
 	CommittingBlockNum uint64
 }
 
@@ -508,7 +548,7 @@ type PvtdataHashMismatch struct {
 }
 
 // DeployedChaincodeInfoProvider is a dependency that is used by ledger to build collection config history
-// LSCC module is expected to provide an implementation for this dependencys
+// LSCC module is expected to provide an implementation for this dependencies
 type DeployedChaincodeInfoProvider interface {
 	// Namespaces returns the slice of the namespaces that are used for maintaining chaincode lifecycle data
 	Namespaces() []string
@@ -517,9 +557,11 @@ type DeployedChaincodeInfoProvider interface {
 	// ChaincodeInfo returns the info about a deployed chaincode
 	ChaincodeInfo(channelName, chaincodeName string, qe SimpleQueryExecutor) (*DeployedChaincodeInfo, error)
 	// CollectionInfo returns the proto msg that defines the named collection. This function can be called for both explicit and implicit collections
-	CollectionInfo(channelName, chaincodeName, collectionName string, qe SimpleQueryExecutor) (*common.StaticCollectionConfig, error)
+	CollectionInfo(channelName, chaincodeName, collectionName string, qe SimpleQueryExecutor) (*peer.StaticCollectionConfig, error)
 	// ImplicitCollections returns a slice that contains one proto msg for each of the implicit collections
-	ImplicitCollections(channelName, chaincodeName string, qe SimpleQueryExecutor) ([]*common.StaticCollectionConfig, error)
+	ImplicitCollections(channelName, chaincodeName string, qe SimpleQueryExecutor) ([]*peer.StaticCollectionConfig, error)
+	// AllCollectionsConfigPkg returns a combined collection config pkg that contains both explicit and implicit collections
+	AllCollectionsConfigPkg(channelName, chaincodeName string, qe SimpleQueryExecutor) (*peer.CollectionConfigPackage, error)
 }
 
 // DeployedChaincodeInfo encapsulates chaincode information from the deployed chaincodes
@@ -527,29 +569,8 @@ type DeployedChaincodeInfo struct {
 	Name                        string
 	Hash                        []byte
 	Version                     string
-	ExplicitCollectionConfigPkg *common.CollectionConfigPackage
-	ImplicitCollections         []*common.StaticCollectionConfig
-}
-
-// GetAllCollectionsConfigPkg returns a combined collection config pkg that contains both explicit and implicit collections
-func (dci DeployedChaincodeInfo) AllCollectionsConfigPkg() *common.CollectionConfigPackage {
-	var combinedColls []*common.CollectionConfig
-	if dci.ExplicitCollectionConfigPkg != nil {
-		for _, explicitColl := range dci.ExplicitCollectionConfigPkg.Config {
-			combinedColls = append(combinedColls, explicitColl)
-		}
-	}
-	for _, implicitColl := range dci.ImplicitCollections {
-		c := &common.CollectionConfig{}
-		c.Payload = &common.CollectionConfig_StaticCollectionConfig{StaticCollectionConfig: implicitColl}
-		combinedColls = append(combinedColls, c)
-	}
-	if combinedColls == nil {
-		return nil
-	}
-	return &common.CollectionConfigPackage{
-		Config: combinedColls,
-	}
+	ExplicitCollectionConfigPkg *peer.CollectionConfigPackage
+	IsLegacy                    bool
 }
 
 // ChaincodeLifecycleInfo captures the update info of a chaincode
@@ -572,7 +593,7 @@ type ChaincodeLifecycleDetails struct {
 // a member of a collection. Gossip module is expected to provide the dependency to ledger
 type MembershipInfoProvider interface {
 	// AmMemberOf checks whether the current peer is a member of the given collection
-	AmMemberOf(channelName string, collectionPolicyConfig *common.CollectionPolicyConfig) (bool, error)
+	AmMemberOf(channelName string, collectionPolicyConfig *peer.CollectionPolicyConfig) (bool, error)
 }
 
 type HealthCheckRegistry interface {
@@ -601,7 +622,7 @@ type ChaincodeDefinition struct {
 	Name              string
 	Hash              []byte
 	Version           string
-	CollectionConfigs *common.CollectionConfigPackage
+	CollectionConfigs *peer.CollectionConfigPackage
 }
 
 func (cdef *ChaincodeDefinition) String() string {
@@ -612,6 +633,35 @@ type ChaincodeLifecycleEventProvider interface {
 	RegisterListener(channelID string, listener ChaincodeLifecycleEventListener)
 }
 
+// CustomTxProcessor allows to generate simulation results during commit time for custom transactions.
+// A custom processor may represent the information in a propriety fashion and can use this process to translate
+// the information into the form of `TxSimulationResults`. Because, the original information is signed in a
+// custom representation, an implementation of a `Processor` should be cautious that the custom representation
+// is used for simulation in an deterministic fashion and should take care of compatibility cross fabric versions.
+// 'initializingLedger' true indicates that either the transaction being processed is from the genesis block or the ledger is
+// synching the state (which could happen during peer startup if the statedb is found to be lagging behind the blockchain).
+// In the former case, the transactions processed are expected to be valid and in the latter case, only valid transactions
+// are reprocessed and hence any validation can be skipped.
+type CustomTxProcessor interface {
+	GenerateSimulationResults(txEnvelop *common.Envelope, simulator TxSimulator, initializingLedger bool) error
+}
+
+// InvalidTxError is expected to be thrown by a custom transaction processor
+// if it wants the ledger to record a particular transaction as invalid
+type InvalidTxError struct {
+	Msg string
+}
+
+func (e *InvalidTxError) Error() string {
+	return e.Msg
+}
+
+// Hasher implements the hash function that should be used for all ledger components.
+// Currently works at a stepping stone to decrease surface area of bccsp
+type Hasher interface {
+	Hash(msg []byte, opts bccsp.HashOpts) (hash []byte, err error)
+}
+
 //go:generate counterfeiter -o mock/state_listener.go -fake-name StateListener . StateListener
 //go:generate counterfeiter -o mock/query_executor.go -fake-name QueryExecutor . QueryExecutor
 //go:generate counterfeiter -o mock/tx_simulator.go -fake-name TxSimulator . TxSimulator
@@ -619,3 +669,5 @@ type ChaincodeLifecycleEventProvider interface {
 //go:generate counterfeiter -o mock/membership_info_provider.go -fake-name MembershipInfoProvider . MembershipInfoProvider
 //go:generate counterfeiter -o mock/health_check_registry.go -fake-name HealthCheckRegistry . HealthCheckRegistry
 //go:generate counterfeiter -o mock/cc_event_listener.go -fake-name ChaincodeLifecycleEventListener . ChaincodeLifecycleEventListener
+//go:generate counterfeiter -o mock/custom_tx_processor.go -fake-name CustomTxProcessor . CustomTxProcessor
+//go:generate counterfeiter -o mock/cc_event_provider.go -fake-name ChaincodeLifecycleEventProvider . ChaincodeLifecycleEventProvider

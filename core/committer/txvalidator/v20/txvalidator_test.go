@@ -10,10 +10,12 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric/bccsp/sw"
 	"github.com/hyperledger/fabric/common/ledger/testutil"
-	"github.com/hyperledger/fabric/common/mocks/config"
 	"github.com/hyperledger/fabric/common/semaphore"
-	util2 "github.com/hyperledger/fabric/common/util"
+	tmocks "github.com/hyperledger/fabric/core/committer/txvalidator/mocks"
 	"github.com/hyperledger/fabric/core/committer/txvalidator/v20/mocks"
 	ledger2 "github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
@@ -21,8 +23,6 @@ import (
 	ledgerUtil "github.com/hyperledger/fabric/core/ledger/util"
 	mocktxvalidator "github.com/hyperledger/fabric/core/mocks/txvalidator"
 	mspmgmt "github.com/hyperledger/fabric/msp/mgmt"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -53,15 +53,20 @@ func testValidationWithNTXes(t *testing.T, nBlocks int) {
 		t.Fatalf("Could not construct ProposalResponsePayload bytes, err: %s", err)
 	}
 
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
+
 	mockDispatcher := &mockDispatcher{}
 	mockLedger := &mocks.LedgerResources{}
+	mockCapabilities := &tmocks.ApplicationCapabilities{}
 	mockLedger.On("GetTransactionByID", mock.Anything).Return(nil, ledger2.NotFoundInIndexErr("Day after day, day after day"))
 	tValidator := &TxValidator{
-		ChainID:          "",
+		ChannelID:        "",
 		Semaphore:        semaphore.New(10),
-		ChannelResources: &mocktxvalidator.Support{ACVal: &config.MockApplicationCapabilities{}},
+		ChannelResources: &mocktxvalidator.Support{ACVal: mockCapabilities},
 		Dispatcher:       mockDispatcher,
 		LedgerResources:  mockLedger,
+		CryptoProvider:   cryptoProvider,
 	}
 
 	sr := [][]byte{}
@@ -116,18 +121,21 @@ func TestBlockValidationDuplicateTXId(t *testing.T) {
 		t.Fatalf("Could not construct ProposalResponsePayload bytes, err: %s", err)
 	}
 
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
+
 	mockDispatcher := &mockDispatcher{}
-	acv := &config.MockApplicationCapabilities{
-		ForbidDuplicateTXIdInBlockRv: true,
-	}
+	mockCapabilities := &tmocks.ApplicationCapabilities{}
+	mockCapabilities.On("ForbidDuplicateTXIdInBlock").Return(true)
 	mockLedger := &mocks.LedgerResources{}
 	mockLedger.On("GetTransactionByID", mock.Anything).Return(nil, ledger2.NotFoundInIndexErr("As idle as a painted ship upon a painted ocean"))
 	tValidator := &TxValidator{
-		ChainID:          "",
+		ChannelID:        "",
 		Semaphore:        semaphore.New(10),
-		ChannelResources: &mocktxvalidator.Support{ACVal: acv},
+		ChannelResources: &mocktxvalidator.Support{ACVal: mockCapabilities},
 		Dispatcher:       mockDispatcher,
 		LedgerResources:  mockLedger,
+		CryptoProvider:   cryptoProvider,
 	}
 
 	envs := []*common.Envelope{}
@@ -162,17 +170,22 @@ func TestVeryLargeParallelBlockValidation(t *testing.T) {
 }
 
 func TestTxValidationFailure_InvalidTxid(t *testing.T) {
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
+
 	mockLedger := &mocks.LedgerResources{}
 	mockLedger.On("GetTransactionByID", mock.Anything).Return(nil, ledger2.NotFoundInIndexErr("Water, water, everywhere, nor any drop to drink"))
+	mockCapabilities := &tmocks.ApplicationCapabilities{}
 	tValidator := &TxValidator{
-		ChainID:          "",
+		ChannelID:        "",
 		Semaphore:        semaphore.New(10),
-		ChannelResources: &mocktxvalidator.Support{ACVal: &config.MockApplicationCapabilities{}},
+		ChannelResources: &mocktxvalidator.Support{ACVal: mockCapabilities},
 		Dispatcher:       &mockDispatcher{},
 		LedgerResources:  mockLedger,
+		CryptoProvider:   cryptoProvider,
 	}
 
-	mockSigner, err := mspmgmt.GetLocalMSP().GetDefaultSigningIdentity()
+	mockSigner, err := mspmgmt.GetLocalMSP(cryptoProvider).GetDefaultSigningIdentity()
 	assert.NoError(t, err)
 	mockSignerSerialized, err := mockSigner.Serialize()
 	assert.NoError(t, err)
@@ -183,7 +196,7 @@ func TestTxValidationFailure_InvalidTxid(t *testing.T) {
 			ChannelHeader: protoutil.MarshalOrPanic(&common.ChannelHeader{
 				TxId:      "INVALID TXID!!!",
 				Type:      int32(common.HeaderType_ENDORSER_TRANSACTION),
-				ChannelId: util2.GetTestChainID(),
+				ChannelId: "testchannelid",
 			}),
 			SignatureHeader: protoutil.MarshalOrPanic(&common.SignatureHeader{
 				Nonce:   []byte("nonce"),

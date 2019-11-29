@@ -14,17 +14,24 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/golang/protobuf/proto"
+	cb "github.com/hyperledger/fabric-protos-go/common"
+	ab "github.com/hyperledger/fabric-protos-go/orderer"
+	"github.com/hyperledger/fabric/common/channelconfig"
 	"github.com/hyperledger/fabric/common/flogging"
-	mockconfig "github.com/hyperledger/fabric/common/mocks/config"
+	"github.com/hyperledger/fabric/common/metrics/disabled"
 	"github.com/hyperledger/fabric/orderer/common/localconfig"
 	"github.com/hyperledger/fabric/orderer/consensus"
 	"github.com/hyperledger/fabric/orderer/consensus/kafka/mock"
 	mockmultichannel "github.com/hyperledger/fabric/orderer/mocks/common/multichannel"
-	cb "github.com/hyperledger/fabric/protos/common"
-	ab "github.com/hyperledger/fabric/protos/orderer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
 )
+
+//go:generate counterfeiter -o mock/orderer_config.go --fake-name OrdererConfig . ordererConfig
+
+type ordererConfig interface {
+	channelconfig.Orderer
+}
 
 var mockRetryOptions = localconfig.Retry{
 	ShortInterval: 50 * time.Millisecond,
@@ -75,7 +82,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestHandleChain(t *testing.T) {
-	consenter, _ := New(mockLocalConfig.Kafka, &mock.MetricsProvider{}, &mock.HealthChecker{})
+	consenter, _ := New(mockLocalConfig.Kafka, &disabled.Provider{}, &mock.HealthChecker{})
 
 	oldestOffset := int64(0)
 	newestOffset := int64(5)
@@ -97,11 +104,11 @@ func TestHandleChain(t *testing.T) {
 			SetMessage(mockChannel.topic(), mockChannel.partition(), newestOffset, message),
 	})
 
+	mockOrderer := &mock.OrdererConfig{}
+	mockOrderer.KafkaBrokersReturns([]string{mockBroker.Addr()})
 	mockSupport := &mockmultichannel.ConsenterSupport{
-		ChainIDVal: mockChannel.topic(),
-		SharedConfigVal: &mockconfig.Orderer{
-			KafkaBrokersVal: []string{mockBroker.Addr()},
-		},
+		ChannelIDVal:    mockChannel.topic(),
+		SharedConfigVal: mockOrderer,
 	}
 
 	mockMetadata := &cb.Metadata{Value: protoutil.MarshalOrPanic(&ab.KafkaMetadata{LastOffsetPersisted: newestOffset - 1})}
@@ -146,6 +153,7 @@ func newMockConsenter(brokerConfig *sarama.Config, tlsConfig localconfig.TLS, re
 		tlsConfigVal:    tlsConfig,
 		retryOptionsVal: retryOptions,
 		kafkaVersionVal: kafkaVersion,
+		metrics:         NewMetrics(&disabled.Provider{}, nil),
 	}
 }
 

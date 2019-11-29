@@ -8,15 +8,22 @@ package chaincode
 
 import (
 	"github.com/hyperledger/fabric/core/container/ccintf"
-	pb "github.com/hyperledger/fabric/protos/peer"
 )
 
 // Helpers to access unexported state.
 
-func SetHandlerChaincodeID(h *Handler, chaincodeID *pb.ChaincodeID) {
+func SetHandlerChaincodeID(h *Handler, chaincodeID string) {
 	h.chaincodeID = chaincodeID
 }
 
 func SetHandlerChatStream(h *Handler, chatStream ccintf.ChaincodeStream) {
 	h.chatStream = chatStream
+}
+
+func StreamDone(h *Handler) <-chan struct{} {
+	return h.streamDone()
+}
+
+func SetStreamDoneChan(h *Handler, ch chan struct{}) {
+	h.streamDoneChan = ch
 }

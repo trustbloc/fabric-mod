@@ -9,10 +9,10 @@ package lockbasedtxmgr
 import (
 	"testing"
 
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
 	"github.com/hyperledger/fabric/core/ledger/mock"
-	"github.com/hyperledger/fabric/protos/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -42,25 +42,25 @@ func TestUnknownCollectionValidation(t *testing.T) {
 }
 
 func populateUnknownCollConfigForTest(t *testing.T, txMgr *LockBasedTxMgr, nsColls []collConfigkey, ht *version.Height) {
-	m := map[string]*common.CollectionConfigPackage{}
+	m := map[string]*peer.CollectionConfigPackage{}
 	for _, nsColl := range nsColls {
 		ns, coll := nsColl.ns, nsColl.coll
 		pkg, ok := m[ns]
 		if !ok {
-			pkg = &common.CollectionConfigPackage{}
+			pkg = &peer.CollectionConfigPackage{}
 			m[ns] = pkg
 		}
-		tCollConfig := &common.CollectionConfig_StaticCollectionConfig{
-			StaticCollectionConfig: &common.StaticCollectionConfig{
+		sCollConfig := &peer.CollectionConfig_StaticCollectionConfig{
+			StaticCollectionConfig: &peer.StaticCollectionConfig{
 				Name: coll,
-				Type: common.CollectionType_COL_UNKNOWN,
+				Type: peer.CollectionType_COL_UNKNOWN,
 			},
 		}
-		pkg.Config = append(pkg.Config, &common.CollectionConfig{Payload: tCollConfig})
+		pkg.Config = append(pkg.Config, &peer.CollectionConfig{Payload: sCollConfig})
 	}
 	ccInfoProvider := &mock.DeployedChaincodeInfoProvider{}
-	ccInfoProvider.ChaincodeInfoStub = func(channelName, ccName string, qe ledger.SimpleQueryExecutor) (*ledger.DeployedChaincodeInfo, error) {
-		return &ledger.DeployedChaincodeInfo{Name: ccName, ExplicitCollectionConfigPkg: m[ccName]}, nil
+	ccInfoProvider.AllCollectionsConfigPkgStub = func(channelName, ccName string, qe ledger.SimpleQueryExecutor) (*peer.CollectionConfigPackage, error) {
+		return m[ccName], nil
 	}
 	txMgr.ccInfoProvider = ccInfoProvider
 }

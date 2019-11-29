@@ -7,9 +7,10 @@ SPDX-License-Identifier: Apache-2.0
 package chaincode_test
 
 import (
+	pb "github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric/bccsp/sw"
 	"github.com/hyperledger/fabric/internal/peer/lifecycle/chaincode"
 	"github.com/hyperledger/fabric/internal/peer/lifecycle/chaincode/mock"
-	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 
@@ -64,8 +65,7 @@ var _ = Describe("Install", func() {
 
 			It("returns an error", func() {
 				err := installer.Install()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("chaincode install package must be provided"))
+				Expect(err).To(MatchError("chaincode install package must be provided"))
 			})
 		})
 
@@ -76,8 +76,7 @@ var _ = Describe("Install", func() {
 
 			It("returns an error", func() {
 				err := installer.Install()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("failed to read chaincode package at 'pkgFile': coffee"))
+				Expect(err).To(MatchError("failed to read chaincode package at 'pkgFile': coffee"))
 			})
 		})
 
@@ -88,8 +87,7 @@ var _ = Describe("Install", func() {
 
 			It("returns an error", func() {
 				err := installer.Install()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("failed to serialize signer: cafe"))
+				Expect(err).To(MatchError("failed to serialize signer: cafe"))
 			})
 		})
 
@@ -100,8 +98,7 @@ var _ = Describe("Install", func() {
 
 			It("returns an error", func() {
 				err := installer.Install()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("failed to create signed proposal for chaincode install: tea"))
+				Expect(err).To(MatchError("failed to create signed proposal for chaincode install: tea"))
 			})
 		})
 
@@ -112,8 +109,7 @@ var _ = Describe("Install", func() {
 
 			It("returns an error", func() {
 				err := installer.Install()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("failed to endorse chaincode install: latte"))
+				Expect(err).To(MatchError("failed to endorse chaincode install: latte"))
 			})
 		})
 
@@ -125,8 +121,7 @@ var _ = Describe("Install", func() {
 
 			It("returns an error", func() {
 				err := installer.Install()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("chaincode install failed: received nil proposal response"))
+				Expect(err).To(MatchError("chaincode install failed: received nil proposal response"))
 			})
 		})
 
@@ -138,8 +133,7 @@ var _ = Describe("Install", func() {
 
 			It("returns an error", func() {
 				err := installer.Install()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("chaincode install failed: received proposal response with nil response"))
+				Expect(err).To(MatchError("chaincode install failed: received proposal response with nil response"))
 			})
 		})
 
@@ -154,8 +148,7 @@ var _ = Describe("Install", func() {
 
 			It("returns an error", func() {
 				err := installer.Install()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("chaincode install failed with status: 500 - capuccino"))
+				Expect(err).To(MatchError("chaincode install failed with status: 500 - capuccino"))
 			})
 		})
 
@@ -170,8 +163,7 @@ var _ = Describe("Install", func() {
 
 			It("returns an error", func() {
 				err := installer.Install()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("failed to unmarshal proposal response's response payload"))
+				Expect(err).To(MatchError(ContainSubstring("failed to unmarshal proposal response's response payload")))
 			})
 		})
 	})
@@ -182,7 +174,9 @@ var _ = Describe("Install", func() {
 		)
 
 		BeforeEach(func() {
-			installCmd = chaincode.InstallCmd(nil)
+			cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+			Expect(err).To(BeNil())
+			installCmd = chaincode.InstallCmd(nil, cryptoProvider)
 			installCmd.SetArgs([]string{
 				"testpkg",
 				"--peerAddresses=test1",
@@ -196,8 +190,7 @@ var _ = Describe("Install", func() {
 
 		It("sets up the installer and attempts to install the chaincode", func() {
 			err := installCmd.Execute()
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("failed to retrieve endorser client for install"))
+			Expect(err).To(MatchError(ContainSubstring("failed to retrieve endorser client for install")))
 		})
 
 		Context("when more than one peer address is provided", func() {
@@ -210,8 +203,7 @@ var _ = Describe("Install", func() {
 
 			It("returns an error", func() {
 				err := installCmd.Execute()
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("failed to validate peer connection parameters"))
+				Expect(err).To(MatchError(ContainSubstring("failed to validate peer connection parameters")))
 			})
 		})
 	})

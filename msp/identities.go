@@ -12,12 +12,13 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
+	"sync"
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/msp"
 	"github.com/hyperledger/fabric/bccsp"
 	"github.com/hyperledger/fabric/common/flogging"
-	"github.com/hyperledger/fabric/protos/msp"
 	"github.com/pkg/errors"
 	"go.uber.org/zap/zapcore"
 )
@@ -36,6 +37,18 @@ type identity struct {
 
 	// reference to the MSP that "owns" this identity
 	msp *bccspmsp
+
+	// validationMutex is used to synchronise memory operation
+	// over validated and validationErr
+	validationMutex sync.Mutex
+
+	// validated is true when the validateIdentity function
+	// has been called on this instance
+	validated bool
+
+	// validationErr contains the validation error for this
+	// instance. It can be read if validated is true
+	validationErr error
 }
 
 func newIdentity(cert *x509.Certificate, pk bccsp.Key, msp *bccspmsp) (Identity, error) {
@@ -74,7 +87,7 @@ func (id *identity) ExpiresAt() time.Time {
 	return id.cert.NotAfter
 }
 
-// SatisfiesPrincipal returns null if this instance matches the supplied principal or an error otherwise
+// SatisfiesPrincipal returns nil if this instance matches the supplied principal or an error otherwise
 func (id *identity) SatisfiesPrincipal(principal *msp.MSPPrincipal) error {
 	return id.msp.SatisfiesPrincipal(id, principal)
 }
@@ -214,7 +227,15 @@ func newSigningIdentity(cert *x509.Certificate, pk bccsp.Key, signer crypto.Sign
 	if err != nil {
 		return nil, err
 	}
-	return &signingidentity{identity: *mspId.(*identity), signer: signer}, nil
+	return &signingidentity{
+		identity: identity{
+			id:   mspId.(*identity).id,
+			cert: mspId.(*identity).cert,
+			msp:  mspId.(*identity).msp,
+			pk:   mspId.(*identity).pk,
+		},
+		signer: signer,
+	}, nil
 }
 
 // Sign produces a signature over msg, signed by this instance

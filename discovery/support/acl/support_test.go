@@ -62,7 +62,7 @@ func TestConfigSequence(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			chConfig := &mocks.ChanConfig{}
+			chConfig := &mocks.ChannelConfigGetter{}
 			r := &mocks.Resources{}
 			v := &mocks.ConfigtxValidator{}
 			if test.resourcesFound {
@@ -90,9 +90,9 @@ func TestEligibleForService(t *testing.T) {
 	e := &mocks.Evaluator{}
 	v.VerifyByChannelReturnsOnCall(0, errors.New("verification failed"))
 	v.VerifyByChannelReturnsOnCall(1, nil)
-	e.EvaluateReturnsOnCall(0, errors.New("verification failed for local msp"))
-	e.EvaluateReturnsOnCall(1, nil)
-	chConfig := &mocks.ChanConfig{}
+	e.EvaluateSignedDataReturnsOnCall(0, errors.New("verification failed for local msp"))
+	e.EvaluateSignedDataReturnsOnCall(1, nil)
+	chConfig := &mocks.ChannelConfigGetter{}
 	sup := acl.NewDiscoverySupport(v, e, chConfig)
 	err := sup.EligibleForService("mychannel", protoutil.SignedData{})
 	assert.Equal(t, "verification failed", err.Error())
@@ -106,7 +106,7 @@ func TestEligibleForService(t *testing.T) {
 
 func TestSatisfiesPrincipal(t *testing.T) {
 	var (
-		chConfig                      = &mocks.ChanConfig{}
+		chConfig                      = &mocks.ChannelConfigGetter{}
 		resources                     = &mocks.Resources{}
 		mgr                           = &mocks.MSPManager{}
 		idThatDoesNotSatisfyPrincipal = &mocks.Identity{}

@@ -9,12 +9,12 @@ package channelconfig
 import (
 	"time"
 
+	cb "github.com/hyperledger/fabric-protos-go/common"
+	ab "github.com/hyperledger/fabric-protos-go/orderer"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/configtx"
 	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/msp"
-	cb "github.com/hyperledger/fabric/protos/common"
-	ab "github.com/hyperledger/fabric/protos/orderer"
-	pb "github.com/hyperledger/fabric/protos/peer"
 )
 
 // Org stores the common organizational config
@@ -24,6 +24,9 @@ type Org interface {
 
 	// MSPID returns the MSP ID associated with this org
 	MSPID() string
+
+	// MSP returns the MSP implementation for this org.
+	MSP() msp.MSP
 }
 
 // ApplicationOrg stores the per org application config
@@ -169,6 +172,10 @@ type ApplicationCapabilities interface {
 	//  - new chaincode lifecycle, as described in FAB-11237
 	V1_3Validation() bool
 
+	// StorePvtDataOfInvalidTx() returns true if the peer needs to store the pvtData of
+	// invalid transactions (as introduced in v142).
+	StorePvtDataOfInvalidTx() bool
+
 	// V2_0Validation returns true if this channel supports transaction validation
 	// as introduced in v2.0. This includes:
 	//  - new chaincode lifecycle
@@ -187,9 +194,6 @@ type ApplicationCapabilities interface {
 	// KeyLevelEndorsement returns true if this channel supports endorsement
 	// policies expressible at a ledger key granularity, as described in FAB-8812
 	KeyLevelEndorsement() bool
-
-	// FabToken returns true if this channel supports FabToken functions
-	FabToken() bool
 }
 
 // OrdererCapabilities defines the capabilities for the orderer portion of a channel

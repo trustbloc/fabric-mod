@@ -30,7 +30,6 @@ var logger = flogging.MustGetLogger("localconfig")
 type TopLevel struct {
 	General    General
 	FileLedger FileLedger
-	RAMLedger  RAMLedger
 	Kafka      Kafka
 	Debug      Debug
 	Consensus  interface{}
@@ -40,21 +39,20 @@ type TopLevel struct {
 
 // General contains config which should be common among all orderer types.
 type General struct {
-	LedgerType     string
-	ListenAddress  string
-	ListenPort     uint16
-	TLS            TLS
-	Cluster        Cluster
-	Keepalive      Keepalive
-	GenesisMethod  string
-	GenesisProfile string
-	SystemChannel  string
-	GenesisFile    string
-	Profile        Profile
-	LocalMSPDir    string
-	LocalMSPID     string
-	BCCSP          *bccsp.FactoryOpts
-	Authentication Authentication
+	ListenAddress     string
+	ListenPort        uint16
+	TLS               TLS
+	Cluster           Cluster
+	Keepalive         Keepalive
+	ConnectionTimeout time.Duration
+	GenesisMethod     string
+	GenesisFile       string // For compatibility only, will be replaced by BootstrapFile
+	BootstrapFile     string
+	Profile           Profile
+	LocalMSPDir       string
+	LocalMSPID        string
+	BCCSP             *bccsp.FactoryOpts
+	Authentication    Authentication
 }
 
 type Cluster struct {
@@ -74,6 +72,7 @@ type Cluster struct {
 	ReplicationMaxRetries                int
 	SendBufferSize                       int
 	CertExpirationWarningThreshold       time.Duration
+	TLSHandshakeTimeShift                time.Duration
 }
 
 // Keepalive contains configuration for gRPC servers.
@@ -103,7 +102,8 @@ type SASLPlain struct {
 // Authentication contains configuration parameters related to authenticating
 // client messages.
 type Authentication struct {
-	TimeWindow time.Duration
+	TimeWindow         time.Duration
+	NoExpirationChecks bool
 }
 
 // Profile contains configuration for Go pprof profiling.
@@ -116,11 +116,6 @@ type Profile struct {
 type FileLedger struct {
 	Location string
 	Prefix   string
-}
-
-// RAMLedger contains configuration for the RAM ledger.
-type RAMLedger struct {
-	HistorySize uint
 }
 
 // Kafka contains configuration for the Kafka-based orderer.
@@ -210,13 +205,10 @@ type Statsd struct {
 // Defaults carries the default orderer configuration values.
 var Defaults = TopLevel{
 	General: General{
-		LedgerType:     "file",
-		ListenAddress:  "127.0.0.1",
-		ListenPort:     7050,
-		GenesisMethod:  "provisional",
-		GenesisProfile: "SampleSingleMSPSolo",
-		SystemChannel:  "test-system-channel-name",
-		GenesisFile:    "genesisblock",
+		ListenAddress: "127.0.0.1",
+		ListenPort:    7050,
+		GenesisMethod: "file",
+		BootstrapFile: "genesisblock",
 		Profile: Profile{
 			Enabled: false,
 			Address: "0.0.0.0:6060",
@@ -238,9 +230,6 @@ var Defaults = TopLevel{
 		Authentication: Authentication{
 			TimeWindow: time.Duration(15 * time.Minute),
 		},
-	},
-	RAMLedger: RAMLedger{
-		HistorySize: 10000,
 	},
 	FileLedger: FileLedger{
 		Location: "/var/hyperledger/production/orderer",
@@ -328,31 +317,30 @@ func (c *TopLevel) completeInitialization(configDir string) {
 		c.General.TLS.ClientRootCAs = translateCAs(configDir, c.General.TLS.ClientRootCAs)
 		coreconfig.TranslatePathInPlace(configDir, &c.General.TLS.PrivateKey)
 		coreconfig.TranslatePathInPlace(configDir, &c.General.TLS.Certificate)
-		coreconfig.TranslatePathInPlace(configDir, &c.General.GenesisFile)
+		coreconfig.TranslatePathInPlace(configDir, &c.General.BootstrapFile)
 		coreconfig.TranslatePathInPlace(configDir, &c.General.LocalMSPDir)
+		// Translate file ledger location
+		coreconfig.TranslatePathInPlace(configDir, &c.FileLedger.Location)
 	}()
 
 	for {
 		switch {
-		case c.General.LedgerType == "":
-			logger.Infof("General.LedgerType unset, setting to %s", Defaults.General.LedgerType)
-			c.General.LedgerType = Defaults.General.LedgerType
-
 		case c.General.ListenAddress == "":
 			logger.Infof("General.ListenAddress unset, setting to %s", Defaults.General.ListenAddress)
 			c.General.ListenAddress = Defaults.General.ListenAddress
 		case c.General.ListenPort == 0:
 			logger.Infof("General.ListenPort unset, setting to %v", Defaults.General.ListenPort)
 			c.General.ListenPort = Defaults.General.ListenPort
-
 		case c.General.GenesisMethod == "":
 			c.General.GenesisMethod = Defaults.General.GenesisMethod
-		case c.General.GenesisFile == "":
-			c.General.GenesisFile = Defaults.General.GenesisFile
-		case c.General.GenesisProfile == "":
-			c.General.GenesisProfile = Defaults.General.GenesisProfile
-		case c.General.SystemChannel == "":
-			c.General.SystemChannel = Defaults.General.SystemChannel
+		case c.General.BootstrapFile == "":
+			if c.General.GenesisFile != "" {
+				// This is to keep the compatibility with old config file that uses genesisfile
+				logger.Warn("General.GenesisFile should be replaced by General.BootstrapFile")
+				c.General.BootstrapFile = c.General.GenesisFile
+			} else {
+				c.General.BootstrapFile = Defaults.General.BootstrapFile
+			}
 		case c.General.Cluster.RPCTimeout == 0:
 			c.General.Cluster.RPCTimeout = Defaults.General.Cluster.RPCTimeout
 		case c.General.Cluster.DialTimeout == 0:

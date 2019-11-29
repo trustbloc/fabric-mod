@@ -9,13 +9,12 @@ package aclmgmt
 import (
 	"fmt"
 
+	"github.com/hyperledger/fabric-protos-go/common"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/core/aclmgmt/resources"
-	"github.com/hyperledger/fabric/core/peer"
 	"github.com/hyperledger/fabric/core/policy"
 	"github.com/hyperledger/fabric/msp/mgmt"
-	"github.com/hyperledger/fabric/protos/common"
-	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 )
 
@@ -41,33 +40,24 @@ type defaultACLProviderImpl struct {
 	cResourcePolicyMap map[string]string
 }
 
-func newDefaultACLProvider() defaultACLProvider {
-	d := &defaultACLProviderImpl{}
-	d.initialize()
-
-	return d
-}
-
-func (d *defaultACLProviderImpl) initialize() {
-	d.policyChecker = policy.NewPolicyChecker(
-		peer.NewChannelPolicyManagerGetter(),
-		mgmt.GetLocalMSP(),
-		mgmt.NewLocalMSPPrincipalGetter(),
-	)
-
-	d.pResourcePolicyMap = make(map[string]string)
-	d.cResourcePolicyMap = make(map[string]string)
+func newDefaultACLProvider(policyChecker policy.PolicyChecker) defaultACLProvider {
+	d := &defaultACLProviderImpl{
+		policyChecker:      policyChecker,
+		pResourcePolicyMap: map[string]string{},
+		cResourcePolicyMap: map[string]string{},
+	}
 
 	//-------------- _lifecycle --------------
 	d.pResourcePolicyMap[resources.Lifecycle_InstallChaincode] = mgmt.Admins
 	d.pResourcePolicyMap[resources.Lifecycle_QueryInstalledChaincode] = mgmt.Admins
+	d.pResourcePolicyMap[resources.Lifecycle_GetInstalledChaincodePackage] = mgmt.Admins
 	d.pResourcePolicyMap[resources.Lifecycle_QueryInstalledChaincodes] = mgmt.Admins
 	d.pResourcePolicyMap[resources.Lifecycle_ApproveChaincodeDefinitionForMyOrg] = mgmt.Admins
 
 	d.cResourcePolicyMap[resources.Lifecycle_CommitChaincodeDefinition] = CHANNELWRITERS
 	d.cResourcePolicyMap[resources.Lifecycle_QueryChaincodeDefinition] = CHANNELWRITERS
-	d.cResourcePolicyMap[resources.Lifecycle_QueryNamespaceDefinitions] = CHANNELWRITERS
-	d.cResourcePolicyMap[resources.Lifecycle_QueryApprovalStatus] = CHANNELWRITERS
+	d.cResourcePolicyMap[resources.Lifecycle_QueryChaincodeDefinitions] = CHANNELWRITERS
+	d.cResourcePolicyMap[resources.Lifecycle_CheckCommitReadiness] = CHANNELWRITERS
 
 	//-------------- LSCC --------------
 	//p resources (implemented by the chaincode currently)
@@ -100,20 +90,17 @@ func (d *defaultACLProviderImpl) initialize() {
 
 	//c resources
 	d.cResourcePolicyMap[resources.Cscc_GetConfigBlock] = CHANNELREADERS
-	d.cResourcePolicyMap[resources.Cscc_GetConfigTree] = CHANNELREADERS
-	d.cResourcePolicyMap[resources.Cscc_SimulateConfigTreeUpdate] = CHANNELWRITERS
 
 	//---------------- non-scc resources ------------
 	//Peer resources
 	d.cResourcePolicyMap[resources.Peer_Propose] = CHANNELWRITERS
 	d.cResourcePolicyMap[resources.Peer_ChaincodeToChaincode] = CHANNELWRITERS
-	d.cResourcePolicyMap[resources.Token_Issue] = CHANNELWRITERS
-	d.cResourcePolicyMap[resources.Token_Transfer] = CHANNELWRITERS
-	d.cResourcePolicyMap[resources.Token_List] = CHANNELREADERS
 
 	//Event resources
 	d.cResourcePolicyMap[resources.Event_Block] = CHANNELREADERS
 	d.cResourcePolicyMap[resources.Event_FilteredBlock] = CHANNELREADERS
+
+	return d
 }
 
 func (d *defaultACLProviderImpl) IsPtypePolicy(resName string) bool {
@@ -121,7 +108,7 @@ func (d *defaultACLProviderImpl) IsPtypePolicy(resName string) bool {
 	return ok
 }
 
-//CheckACL provides default (v 1.0) behavior by mapping resources to their ACL for a channel
+// CheckACL provides default (v 1.0) behavior by mapping resources to their ACL for a channel.
 func (d *defaultACLProviderImpl) CheckACL(resName string, channelID string, idinfo interface{}) error {
 	//the default behavior is to use p type if defined and use channeless policy checks
 	policy := d.pResourcePolicyMap[resName]

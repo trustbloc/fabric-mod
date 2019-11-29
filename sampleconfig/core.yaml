@@ -43,10 +43,6 @@ peer:
     # This case is useful for docker containers.
     addressAutoDetect: false
 
-    # Setting for runtime.GOMAXPROCS(n). If n < 1, it does not change the
-    # current setting
-    gomaxprocs: -1
-
     # Keepalive settings for peer server and clients
     keepalive:
         # Interval is the duration after which if the server does not see
@@ -204,6 +200,10 @@ peer:
             reconcileSleepInterval: 1m
             # reconciliationEnabled is a flag that indicates whether private data reconciliation is enable or not.
             reconciliationEnabled: true
+            # skipPullingInvalidTransactionsDuringCommit is a flag that indicates whether pulling of invalid
+            # transaction's private data from other peers need to be skipped during the commit time and pulled
+            # only through reconciler.
+            skipPullingInvalidTransactionsDuringCommit: false
 
         # Gossip state transfer related configuration
         state:
@@ -297,8 +297,6 @@ peer:
             Pin:
             Hash:
             Security:
-            FileKeyStore:
-                KeyStore:
 
     # Path on the file system where peer will find MSP local configurations
     mspConfigPath: msp
@@ -329,6 +327,16 @@ peer:
         # It sets the delivery service maximal delay between consecutive retries
         reConnectBackoffThreshold: 3600s
 
+        # A list of orderer endpoint addresses which should be overridden
+        # when found in channel configurations.
+        addressOverrides:
+        #  - from:
+        #    to:
+        #    caCertsFile:
+        #  - from:
+        #    to:
+        #    caCertsFile:
+
     # Type for the local MSP - by default it's of type bccsp
     localMspType: bccsp
 
@@ -337,16 +345,6 @@ peer:
     profile:
         enabled:     false
         listenAddress: 0.0.0.0:6060
-
-    # The admin service is used for administrative operations such as
-    # control over logger levels, etc.
-    # Only peer administrators can use the service.
-    adminService:
-        # The interface and port on which the admin server will listen on.
-        # If this is commented out, or the port number is equal to the port
-        # of the peer listen address - the admin service is attached to the
-        # peer's service (defaults to 7051).
-        #listenAddress: 0.0.0.0:7055
 
     # Handlers defines custom handlers that can filter and mutate
     # objects passing within the peer, such as:
@@ -520,8 +518,17 @@ chaincode:
         # This is an image based on node:$(NODE_VER)-alpine
         runtime: $(DOCKER_NS)/fabric-nodeenv:latest
 
+    # List of directories to treat as external builders and launchers for
+    # chaincode. The external builder detection processing will iterate over the
+    # builders in the order specified below.
+    externalBuilders: []
+
+    # The maximum duration to wait for the chaincode build and install process
+    # to complete.
+    installTimeout: 300s
+
     # Timeout duration for starting up a container and waiting for Register
-    # to come through. 1sec should be plenty for chaincode unit tests
+    # to come through.
     startuptimeout: 300s
 
     # Timeout duration for Invoke and Init calls to prevent runaway.
@@ -556,18 +563,6 @@ chaincode:
         escc: enable
         vscc: enable
         qscc: enable
-
-    # System chaincode plugins:
-    # System chaincodes can be loaded as shared objects compiled as Go plugins.
-    # See examples/plugins/scc for an example.
-    # Plugins must be white listed in the chaincode.system section above.
-    systemPlugins:
-      # example configuration:
-      # - enabled: true
-      #   name: myscc
-      #   path: /opt/lib/myscc.so
-      #   invokableExternal: true
-      #   invokableCC2CC: true
 
     # Logging section for the chaincode container
     logging:
@@ -633,6 +628,11 @@ ledger:
        # This is optional.  Creating the global changes database will require
        # additional system resources to track changes and maintain the database
        createGlobalChangesDB: false
+       # CacheSize denotes the maximum mega bytes (MB) to be allocated for the in-memory state
+       # cache. Note that CacheSize needs to be a multiple of 32 MB. If it is not a multiple
+       # of 32 MB, the peer would round the size to the next multiple of 32 MB.
+       # To disable the cache, 0 MB needs to be assigned to the cacheSize.
+       cacheSize: 64
 
   history:
     # enableHistoryDatabase - options are true or false

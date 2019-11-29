@@ -10,10 +10,10 @@ import (
 	"fmt"
 
 	"github.com/golang/protobuf/proto"
+	m "github.com/hyperledger/fabric-protos-go/msp"
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/msp"
-	"github.com/hyperledger/fabric/protos/common"
-	m "github.com/hyperledger/fabric/protos/msp"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 )
@@ -24,11 +24,19 @@ type SimpleCollection struct {
 	name         string
 	accessPolicy policies.Policy
 	memberOrgs   []string
-	conf         common.StaticCollectionConfig
+	conf         peer.StaticCollectionConfig
 }
 
 type SimpleCollectionPersistenceConfigs struct {
 	blockToLive uint64
+}
+
+// NewSimpleCollection returns a simple collection object based on a given
+// StaticCollectionConfig proto that has all the necessary information
+func NewSimpleCollection(collectionConfig *peer.StaticCollectionConfig, deserializer msp.IdentityDeserializer) (*SimpleCollection, error) {
+	sc := &SimpleCollection{}
+	err := sc.Setup(collectionConfig, deserializer)
+	return sc, err
 }
 
 // CollectionID returns the collection's ID
@@ -57,7 +65,7 @@ func (sc *SimpleCollection) MaximumPeerCount() int {
 // against the member access policy of this collection
 func (sc *SimpleCollection) AccessFilter() Filter {
 	return func(sd protoutil.SignedData) bool {
-		if err := sc.accessPolicy.Evaluate([]*protoutil.SignedData{&sd}); err != nil {
+		if err := sc.accessPolicy.EvaluateSignedData([]*protoutil.SignedData{&sd}); err != nil {
 			return false
 		}
 		return true
@@ -78,7 +86,7 @@ func (sc *SimpleCollection) IsMemberOnlyWrite() bool {
 
 // Setup configures a simple collection object based on a given
 // StaticCollectionConfig proto that has all the necessary information
-func (sc *SimpleCollection) Setup(collectionConfig *common.StaticCollectionConfig, deserializer msp.IdentityDeserializer) error {
+func (sc *SimpleCollection) Setup(collectionConfig *peer.StaticCollectionConfig, deserializer msp.IdentityDeserializer) error {
 	if collectionConfig == nil {
 		return errors.New("Nil config passed to collection setup")
 	}
@@ -132,9 +140,9 @@ func (sc *SimpleCollection) Setup(collectionConfig *common.StaticCollectionConfi
 	return nil
 }
 
-// Setup configures a simple collection object based on a given
+// setupAccessPolicy configures a simple collection object based on a given
 // StaticCollectionConfig proto that has all the necessary information
-func (sc *SimpleCollection) setupAccessPolicy(collectionPolicyConfig *common.CollectionPolicyConfig, deserializer msp.IdentityDeserializer) error {
+func (sc *SimpleCollection) setupAccessPolicy(collectionPolicyConfig *peer.CollectionPolicyConfig, deserializer msp.IdentityDeserializer) error {
 	var err error
 	sc.accessPolicy, err = getPolicy(collectionPolicyConfig, deserializer)
 	return err

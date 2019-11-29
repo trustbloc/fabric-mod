@@ -12,12 +12,15 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
-	"github.com/hyperledger/fabric/common/viperutil"
+	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/core/handlers/library"
 	"github.com/hyperledger/fabric/core/testutil"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
+	"github.com/hyperledger/fabric/internal/peer/node/mock"
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
+	"github.com/mitchellh/mapstructure"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
@@ -61,39 +64,21 @@ func TestStartCmd(t *testing.T) {
 	g.Eventually(grpcProbe("localhost:6051")).Should(BeTrue())
 }
 
-func TestAdminHasSeparateListener(t *testing.T) {
-	assert.False(t, adminHasSeparateListener("0.0.0.0:7051", ""))
-
-	assert.Panics(t, func() {
-		adminHasSeparateListener("foo", "blabla")
-	})
-
-	assert.Panics(t, func() {
-		adminHasSeparateListener("0.0.0.0:7051", "blabla")
-	})
-
-	assert.False(t, adminHasSeparateListener("0.0.0.0:7051", "0.0.0.0:7051"))
-	assert.False(t, adminHasSeparateListener("0.0.0.0:7051", "127.0.0.1:7051"))
-	assert.True(t, adminHasSeparateListener("0.0.0.0:7051", "0.0.0.0:7055"))
-}
-
 func TestHandlerMap(t *testing.T) {
 	config1 := `
   peer:
     handlers:
       authFilters:
-        -
-          name: filter1
+        - name: filter1
           library: /opt/lib/filter1.so
-        -
-          name: filter2
+        - name: filter2
   `
 	viper.SetConfigType("yaml")
 	err := viper.ReadConfig(bytes.NewBuffer([]byte(config1)))
 	assert.NoError(t, err)
 
-	libConf := library.Config{}
-	err = viperutil.EnhancedExactUnmarshalKey("peer.handlers", &libConf)
+	var libConf library.Config
+	err = mapstructure.Decode(viper.Get("peer.handlers"), &libConf)
 	assert.NoError(t, err)
 	assert.Len(t, libConf.AuthFilters, 2, "expected two filters")
 	assert.Equal(t, "/opt/lib/filter1.so", libConf.AuthFilters[0].Library)
@@ -183,4 +168,55 @@ func TestGetDockerHostConfig(t *testing.T) {
 	assert.Equal(t, "5", hostConfig.LogConfig.Config["max-file"])
 	assert.Equal(t, int64(1024*1024*1024*2), hostConfig.Memory)
 	assert.Equal(t, int64(0), hostConfig.CPUShares)
+}
+
+func TestResetLoop(t *testing.T) {
+	peerLedger := &mock.PeerLedger{}
+	peerLedger.GetBlockchainInfoReturnsOnCall(
+		0,
+		&common.BlockchainInfo{
+			Height: uint64(1),
+		},
+		nil,
+	)
+
+	peerLedger.GetBlockchainInfoReturnsOnCall(
+		1,
+		&common.BlockchainInfo{
+			Height: uint64(5),
+		},
+		nil,
+	)
+
+	peerLedger.GetBlockchainInfoReturnsOnCall(
+		2,
+		&common.BlockchainInfo{
+			Height: uint64(11),
+		},
+		nil,
+	)
+
+	peerLedger.GetBlockchainInfoReturnsOnCall(
+		3,
+		&common.BlockchainInfo{
+			Height: uint64(11),
+		},
+		nil,
+	)
+
+	getLedger := &mock.GetLedger{}
+	getLedger.Returns(peerLedger)
+	resetFilter := &reset{
+		reject: true,
+	}
+
+	ledgerIDs := []string{"testchannel", "testchannel2"}
+	heights := map[string]uint64{
+		"testchannel":  uint64(10),
+		"testchannel2": uint64(10),
+	}
+
+	resetLoop(resetFilter, heights, ledgerIDs, getLedger.Spy, 1*time.Second)
+	assert.False(t, resetFilter.reject)
+	assert.Equal(t, 4, peerLedger.GetBlockchainInfoCallCount())
 }

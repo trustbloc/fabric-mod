@@ -55,7 +55,7 @@ paper might be subsequently sold to BrokerHouse or HedgeMatic, and the
 corresponding change to `Owner`. Note how `Current state` allow us to easily
 identify that the paper is now `trading`.
 
-After 6 months, if DigiBank still holds the the commercial paper, it can redeem
+After 6 months, if DigiBank still holds the commercial paper, it can redeem
 it with MagnetoCorp:
 
 ```
@@ -75,7 +75,7 @@ The value of `Owner` of a paper can be used to perform access control on the
 **redeem** transaction, by comparing the `Owner` against the identity of the
 transaction creator. Fabric supports this through the
 [`getCreator()` chaincode API](https://github.com/hyperledger/fabric-chaincode-node/blob/master/fabric-shim/lib/stub.js#L293).
-If golang is used as a chaincode language, the [client identity chaincode library](https://github.com/hyperledger/fabric/blob/master/core/chaincode/shim/ext/cid/README.md)
+If golang is used as a chaincode language, the [client identity chaincode library](https://github.com/hyperledger/fabric-chaincode-go/blob/master/pkg/cid/README.md)
 can be used to retrieve additional attributes of the transaction creator.
 
 ## Transactions
@@ -170,7 +170,7 @@ Purchase time = 3 June 2020 15:59:00 EST
 Price = 4.90M USD
 ```
 
-See how the paper owners changes, and how in out example, the price changes. Can
+See how the paper owners changes, and how in our example, the price changes. Can
 you think of a reason why the price of MagnetoCorp commercial paper might be
 falling?
 
@@ -181,7 +181,7 @@ proof of the mutual agreement among the two parties that are part of the deal.
 ### Redeem
 
 The **redeem** transaction for paper 00001 represents the end of its lifecycle.
-In our relatively simple example, DigiBank initiates the transaction which
+In our relatively simple example, HedgeMatic initiates the transaction which
 transfers the commercial paper back to MagnetoCorp:
 
 ```

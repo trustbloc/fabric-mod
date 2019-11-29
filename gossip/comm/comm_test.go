@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	cb "github.com/hyperledger/fabric-protos-go/common"
+	proto "github.com/hyperledger/fabric-protos-go/gossip"
 	"github.com/hyperledger/fabric/bccsp/factory"
 	"github.com/hyperledger/fabric/common/metrics/disabled"
 	"github.com/hyperledger/fabric/core/comm"
@@ -31,7 +33,6 @@ import (
 	"github.com/hyperledger/fabric/gossip/metrics"
 	"github.com/hyperledger/fabric/gossip/protoext"
 	"github.com/hyperledger/fabric/gossip/util"
-	proto "github.com/hyperledger/fabric/protos/gossip"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"google.golang.org/grpc"
@@ -89,7 +90,7 @@ func (*naiveSecProvider) GetPKIidOfCert(peerIdentity api.PeerIdentityType) commo
 
 // VerifyBlock returns nil if the block is properly signed,
 // else returns error
-func (*naiveSecProvider) VerifyBlock(chainID common.ChainID, seqNum uint64, signedBlock []byte) error {
+func (*naiveSecProvider) VerifyBlock(channelID common.ChannelID, seqNum uint64, signedBlock *cb.Block) error {
 	return nil
 }
 
@@ -116,7 +117,7 @@ func (*naiveSecProvider) Verify(peerIdentity api.PeerIdentityType, signature, me
 
 // VerifyByChannel verifies a peer's signature on a message in the context
 // of a specific channel
-func (*naiveSecProvider) VerifyByChannel(_ common.ChainID, _ api.PeerIdentityType, _, _ []byte) error {
+func (*naiveSecProvider) VerifyByChannel(_ common.ChannelID, _ api.PeerIdentityType, _, _ []byte) error {
 	return nil
 }
 
@@ -441,27 +442,6 @@ func TestHandshake(t *testing.T) {
 	tempL.Close()
 }
 
-func TestBasic(t *testing.T) {
-	t.Parallel()
-	comm1, port1 := newCommInstance(t, naiveSec)
-	comm2, port2 := newCommInstance(t, naiveSec)
-	defer comm1.Stop()
-	defer comm2.Stop()
-	m1 := comm1.Accept(acceptAll)
-	m2 := comm2.Accept(acceptAll)
-	out := make(chan uint64, 2)
-	reader := func(ch <-chan protoext.ReceivedMessage) {
-		m := <-ch
-		out <- m.GetGossipMessage().Nonce
-	}
-	go reader(m1)
-	go reader(m2)
-	comm1.Send(createGossipMsg(), remotePeer(port2))
-	time.Sleep(time.Second)
-	comm2.Send(createGossipMsg(), remotePeer(port1))
-	waitForMessages(t, out, 2, "Didn't receive 2 messages")
-}
-
 func TestConnectUnexpectedPeer(t *testing.T) {
 	t.Parallel()
 	// Scenarios: In both scenarios, comm1 connects to comm2 or comm3.
@@ -529,27 +509,6 @@ func TestConnectUnexpectedPeer(t *testing.T) {
 		case <-time.After(time.Second * 5):
 		}
 	})
-}
-
-func TestProdConstructor(t *testing.T) {
-	t.Parallel()
-	comm1, port1 := newCommInstance(t, naiveSec)
-	comm2, port2 := newCommInstance(t, naiveSec)
-	defer comm1.Stop()
-	defer comm2.Stop()
-	m1 := comm1.Accept(acceptAll)
-	m2 := comm2.Accept(acceptAll)
-	out := make(chan uint64, 2)
-	reader := func(ch <-chan protoext.ReceivedMessage) {
-		m := <-ch
-		out <- m.GetGossipMessage().Nonce
-	}
-	go reader(m1)
-	go reader(m2)
-	comm1.Send(createGossipMsg(), remotePeer(port2))
-	time.Sleep(time.Second)
-	comm2.Send(createGossipMsg(), remotePeer(port1))
-	waitForMessages(t, out, 2, "Didn't receive 2 messages")
 }
 
 func TestGetConnectionInfo(t *testing.T) {
@@ -622,46 +581,78 @@ func TestCloseConn(t *testing.T) {
 	assert.True(t, gotErr, "Should have failed because connection is closed")
 }
 
-func TestParallelSend(t *testing.T) {
+// TestCommSend makes sure that enough messages get through
+// eventually. Comm.Send() is both asynchronous and best-effort, so this test
+// case assumes some will fail, but that eventually enough messages will get
+// through that the test will end.
+func TestCommSend(t *testing.T) {
 	t.Parallel()
-	comm1, _ := newCommInstance(t, naiveSec)
+	comm1, port1 := newCommInstance(t, naiveSec)
 	comm2, port2 := newCommInstance(t, naiveSec)
 	defer comm1.Stop()
 	defer comm2.Stop()
 
-	messages2Send := DefRecvBuffSize
+	// Create the receive channel before sending the messages
+	ch1 := comm1.Accept(acceptAll)
+	ch2 := comm2.Accept(acceptAll)
 
-	wg := sync.WaitGroup{}
-	wg.Add(messages2Send)
+	// control channels for background senders
+	stopch1 := make(chan struct{})
+	stopch2 := make(chan struct{})
+
 	go func() {
-		for i := 0; i < messages2Send; i++ {
+		for {
 			emptyMsg := createGossipMsg()
-			go func() {
-				defer wg.Done()
+			select {
+			case <-stopch1:
+				return
+			default:
 				comm1.Send(emptyMsg, remotePeer(port2))
-			}()
+			}
 		}
 	}()
 
-	// Making sure all messages was indeed sent
-	wg.Wait()
-
-	c := 0
-	waiting := true
-	ticker := time.NewTicker(30 * time.Second)
-	ch := comm2.Accept(acceptAll)
-	for waiting {
-		select {
-		case <-ch:
-			c++
-			if c == messages2Send {
-				waiting = false
+	go func() {
+		for {
+			emptyMsg := createGossipMsg()
+			select {
+			case <-stopch2:
+				return
+			default:
+				comm2.Send(emptyMsg, remotePeer(port1))
 			}
-		case <-ticker.C:
-			waiting = false
+		}
+	}()
+
+	c1recieved := 0
+	c2recieved := 0
+	// hopefully in some runs we'll fill both send and receive buffers and
+	// drop overflowing messages, but still finish, because the endless
+	// stream of messages inexorably gets through unless something is very
+	// broken.
+	totalMessagesRecieved := (DefSendBuffSize + DefRecvBuffSize) * 2
+RECV:
+	for {
+		select {
+		case <-ch1:
+			c1recieved++
+			if c1recieved == totalMessagesRecieved {
+				close(stopch2)
+			}
+		case <-ch2:
+			c2recieved++
+			if c2recieved == totalMessagesRecieved {
+				close(stopch1)
+			}
+		case <-time.After(30 * time.Second):
+			t.Fatalf("timed out waiting for messages to be recieved.\nc1 got %d messages\nc2 got %d messages", c1recieved, c2recieved)
+		default:
+			if c1recieved > totalMessagesRecieved && c2recieved > totalMessagesRecieved {
+				break RECV
+			}
 		}
 	}
-	assert.Equal(t, messages2Send, c)
+	t.Logf("c1 got %d messages\nc2 got %d messages", c1recieved, c2recieved)
 }
 
 type nonResponsivePeer struct {
@@ -750,6 +741,8 @@ func TestResponses(t *testing.T) {
 	}
 }
 
+// TestAccept makes sure that accept filters work. The probability of the parity
+// of all nonces being 0 or 1 is very low.
 func TestAccept(t *testing.T) {
 	t.Parallel()
 	comm1, port1 := newCommInstance(t, naiveSec)
@@ -769,13 +762,16 @@ func TestAccept(t *testing.T) {
 	var evenResults []uint64
 	var oddResults []uint64
 
-	out := make(chan uint64, DefRecvBuffSize)
-	sem := make(chan struct{}, 0)
+	out := make(chan uint64)
+	sem := make(chan struct{})
 
 	readIntoSlice := func(a *[]uint64, ch <-chan protoext.ReceivedMessage) {
 		for m := range ch {
 			*a = append(*a, m.GetGossipMessage().Nonce)
-			out <- m.GetGossipMessage().Nonce
+			select {
+			case out <- m.GetGossipMessage().Nonce:
+			default: // avoid blocking when we stop reading from out
+			}
 		}
 		sem <- struct{}{}
 	}
@@ -783,17 +779,29 @@ func TestAccept(t *testing.T) {
 	go readIntoSlice(&evenResults, evenNONCES)
 	go readIntoSlice(&oddResults, oddNONCES)
 
-	for i := 0; i < DefRecvBuffSize; i++ {
-		comm2.Send(createGossipMsg(), remotePeer(port1))
-	}
+	stopSend := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-stopSend:
+				return
+			default:
+				comm2.Send(createGossipMsg(), remotePeer(port1))
+			}
+		}
+	}()
 
-	waitForMessages(t, out, DefRecvBuffSize, "Didn't receive all messages sent")
+	waitForMessages(t, out, (DefSendBuffSize+DefRecvBuffSize)*2, "Didn't receive all messages sent")
+	close(stopSend)
 
 	comm1.Stop()
 	comm2.Stop()
 
 	<-sem
 	<-sem
+
+	t.Logf("%d even nonces received", len(evenResults))
+	t.Logf("%d  odd nonces received", len(oddResults))
 
 	assert.NotEmpty(t, evenResults)
 	assert.NotEmpty(t, oddResults)

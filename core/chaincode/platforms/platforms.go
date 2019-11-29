@@ -1,7 +1,7 @@
 /*
-# Copyright IBM Corp. All Rights Reserved.
-#
-# SPDX-License-Identifier: Apache-2.0
+Copyright IBM Corp. All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
 */
 
 package platforms
@@ -21,7 +21,6 @@ import (
 	"github.com/hyperledger/fabric/core/chaincode/platforms/java"
 	"github.com/hyperledger/fabric/core/chaincode/platforms/node"
 	"github.com/hyperledger/fabric/core/chaincode/platforms/util"
-	cutil "github.com/hyperledger/fabric/core/container/util"
 	"github.com/pkg/errors"
 )
 
@@ -36,12 +35,8 @@ var SupportedPlatforms = []Platform{
 // the given platform
 type Platform interface {
 	Name() string
-	ValidatePath(path string) error
-	ValidateCodePackage(code []byte) error
-	GetDeploymentPayload(path string) ([]byte, error)
 	GenerateDockerfile() (string, error)
 	DockerBuildOptions(path string) (util.DockerBuildOptions, error)
-	GetMetadataAsTarEntries(code []byte) ([]byte, error)
 }
 
 type PackageWriter interface {
@@ -71,50 +66,11 @@ func NewRegistry(platformTypes ...Platform) *Registry {
 	}
 	return &Registry{
 		Platforms:     platforms,
-		PackageWriter: PackageWriterWrapper(cutil.WriteBytesToPackage),
+		PackageWriter: PackageWriterWrapper(writeBytesToPackage),
 	}
 }
 
-func (r *Registry) ValidateSpec(ccType, path string) error {
-	platform, ok := r.Platforms[ccType]
-	if !ok {
-		return fmt.Errorf("Unknown chaincodeType: %s", ccType)
-	}
-	return platform.ValidatePath(path)
-}
-
-func (r *Registry) ValidateDeploymentSpec(ccType string, codePackage []byte) error {
-	platform, ok := r.Platforms[ccType]
-	if !ok {
-		return fmt.Errorf("Unknown chaincodeType: %s", ccType)
-	}
-
-	// ignore empty packages
-	if len(codePackage) == 0 {
-		return nil
-	}
-
-	return platform.ValidateCodePackage(codePackage)
-}
-
-func (r *Registry) GetMetadataProvider(ccType string, codePackage []byte) ([]byte, error) {
-	platform, ok := r.Platforms[ccType]
-	if !ok {
-		return nil, fmt.Errorf("Unknown chaincodeType: %s", ccType)
-	}
-	return platform.GetMetadataAsTarEntries(codePackage)
-}
-
-func (r *Registry) GetDeploymentPayload(ccType, path string) ([]byte, error) {
-	platform, ok := r.Platforms[ccType]
-	if !ok {
-		return nil, fmt.Errorf("Unknown chaincodeType: %s", ccType)
-	}
-
-	return platform.GetDeploymentPayload(path)
-}
-
-func (r *Registry) GenerateDockerfile(ccType, name, version string) (string, error) {
+func (r *Registry) GenerateDockerfile(ccType string) (string, error) {
 	platform, ok := r.Platforms[ccType]
 	if !ok {
 		return "", fmt.Errorf("Unknown chaincodeType: %s", ccType)
@@ -130,16 +86,7 @@ func (r *Registry) GenerateDockerfile(ccType, name, version string) (string, err
 		return "", fmt.Errorf("Failed to generate platform-specific Dockerfile: %s", err)
 	}
 	buf = append(buf, base)
-
-	// ----------------------------------------------------------------------------------------------------
-	// Add some handy labels
-	// ----------------------------------------------------------------------------------------------------
-	// FIXME: remove these two fields since they are *NOT* properties of the chaincode; rather add packageid/label (FAB-14630)
-	/* REMOVE */
-	buf = append(buf, fmt.Sprintf(`LABEL %s.chaincode.id.name="%s" \`, metadata.BaseDockerLabel, name))
-	/* REMOVE */ buf = append(buf, fmt.Sprintf(`      %s.chaincode.id.version="%s" \`, metadata.BaseDockerLabel, version))
-
-	buf = append(buf, fmt.Sprintf(`      %s.chaincode.type="%s" \`, metadata.BaseDockerLabel, ccType))
+	buf = append(buf, fmt.Sprintf(`LABEL %s.chaincode.type="%s" \`, metadata.BaseDockerLabel, ccType))
 	buf = append(buf, fmt.Sprintf(`      %s.version="%s"`, metadata.BaseDockerLabel, metadata.Version))
 	// ----------------------------------------------------------------------------------------------------
 	// Then augment it with any general options
@@ -156,7 +103,7 @@ func (r *Registry) GenerateDockerfile(ccType, name, version string) (string, err
 	return contents, nil
 }
 
-func (r *Registry) StreamDockerBuild(ccType, path string, codePackage []byte, inputFiles map[string][]byte, tw *tar.Writer, client *docker.Client) error {
+func (r *Registry) StreamDockerBuild(ccType, path string, codePackage io.Reader, inputFiles map[string][]byte, tw *tar.Writer, client *docker.Client) error {
 	var err error
 
 	// ----------------------------------------------------------------------------------------------------
@@ -183,7 +130,7 @@ func (r *Registry) StreamDockerBuild(ccType, path string, codePackage []byte, in
 	}
 
 	output := &bytes.Buffer{}
-	buildOptions.InputStream = bytes.NewReader(codePackage)
+	buildOptions.InputStream = codePackage
 	buildOptions.OutputStream = output
 
 	err = util.DockerBuild(buildOptions, client)
@@ -191,16 +138,34 @@ func (r *Registry) StreamDockerBuild(ccType, path string, codePackage []byte, in
 		return errors.Wrap(err, "docker build failed")
 	}
 
-	return cutil.WriteBytesToPackage("binpackage.tar", output.Bytes(), tw)
+	return writeBytesToPackage("binpackage.tar", output.Bytes(), tw)
 }
 
-func (r *Registry) GenerateDockerBuild(ccType, path, name, version string, codePackage []byte, client *docker.Client) (io.Reader, error) {
+func writeBytesToPackage(name string, payload []byte, tw *tar.Writer) error {
+	err := tw.WriteHeader(&tar.Header{
+		Name: name,
+		Size: int64(len(payload)),
+		Mode: 0100644,
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = tw.Write(payload)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *Registry) GenerateDockerBuild(ccType, path string, codePackage io.Reader, client *docker.Client) (io.Reader, error) {
 	inputFiles := make(map[string][]byte)
 
 	// ----------------------------------------------------------------------------------------------------
 	// Generate the Dockerfile specific to our context
 	// ----------------------------------------------------------------------------------------------------
-	dockerFile, err := r.GenerateDockerfile(ccType, name, version)
+	dockerFile, err := r.GenerateDockerfile(ccType)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to generate a Dockerfile: %s", err)
 	}

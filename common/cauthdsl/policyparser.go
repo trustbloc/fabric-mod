@@ -14,8 +14,8 @@ import (
 	"strings"
 
 	"github.com/Knetic/govaluate"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/msp"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/msp"
 	"github.com/hyperledger/fabric/protoutil"
 )
 
@@ -28,17 +28,17 @@ const (
 
 // Role values for principals
 const (
-	RoleAdmin  = "admin"
-	RoleMember = "member"
-	RoleClient = "client"
-	RolePeer   = "peer"
-	// RoleOrderer = "orderer" TODO
+	RoleAdmin   = "admin"
+	RoleMember  = "member"
+	RoleClient  = "client"
+	RolePeer    = "peer"
+	RoleOrderer = "orderer"
 )
 
 var (
 	regex = regexp.MustCompile(
-		fmt.Sprintf("^([[:alnum:].-]+)([.])(%s|%s|%s|%s)$",
-			RoleAdmin, RoleMember, RoleClient, RolePeer),
+		fmt.Sprintf("^([[:alnum:].-]+)([.])(%s|%s|%s|%s|%s)$",
+			RoleAdmin, RoleMember, RoleClient, RolePeer, RoleOrderer),
 	)
 	regexErr = regexp.MustCompile("^No parameter '([^']+)' found[.]$")
 )
@@ -170,6 +170,8 @@ func secondPass(args ...interface{}) (interface{}, error) {
 				r = msp.MSPRole_CLIENT
 			case RolePeer:
 				r = msp.MSPRole_PEER
+			case RoleOrderer:
+				r = msp.MSPRole_ORDERER
 			default:
 				return nil, fmt.Errorf("Error parsing role %s", t)
 			}

@@ -4,13 +4,28 @@ package mock
 import (
 	"sync"
 
+	"github.com/hyperledger/fabric-protos-go/ledger/rwset/kvrwset"
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/core/chaincode/lifecycle"
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
 )
 
 type LegacyDeployedCCInfoProvider struct {
+	AllCollectionsConfigPkgStub        func(string, string, ledger.SimpleQueryExecutor) (*peer.CollectionConfigPackage, error)
+	allCollectionsConfigPkgMutex       sync.RWMutex
+	allCollectionsConfigPkgArgsForCall []struct {
+		arg1 string
+		arg2 string
+		arg3 ledger.SimpleQueryExecutor
+	}
+	allCollectionsConfigPkgReturns struct {
+		result1 *peer.CollectionConfigPackage
+		result2 error
+	}
+	allCollectionsConfigPkgReturnsOnCall map[int]struct {
+		result1 *peer.CollectionConfigPackage
+		result2 error
+	}
 	ChaincodeInfoStub        func(string, string, ledger.SimpleQueryExecutor) (*ledger.DeployedChaincodeInfo, error)
 	chaincodeInfoMutex       sync.RWMutex
 	chaincodeInfoArgsForCall []struct {
@@ -26,7 +41,7 @@ type LegacyDeployedCCInfoProvider struct {
 		result1 *ledger.DeployedChaincodeInfo
 		result2 error
 	}
-	CollectionInfoStub        func(string, string, string, ledger.SimpleQueryExecutor) (*common.StaticCollectionConfig, error)
+	CollectionInfoStub        func(string, string, string, ledger.SimpleQueryExecutor) (*peer.StaticCollectionConfig, error)
 	collectionInfoMutex       sync.RWMutex
 	collectionInfoArgsForCall []struct {
 		arg1 string
@@ -35,14 +50,14 @@ type LegacyDeployedCCInfoProvider struct {
 		arg4 ledger.SimpleQueryExecutor
 	}
 	collectionInfoReturns struct {
-		result1 *common.StaticCollectionConfig
+		result1 *peer.StaticCollectionConfig
 		result2 error
 	}
 	collectionInfoReturnsOnCall map[int]struct {
-		result1 *common.StaticCollectionConfig
+		result1 *peer.StaticCollectionConfig
 		result2 error
 	}
-	ImplicitCollectionsStub        func(string, string, ledger.SimpleQueryExecutor) ([]*common.StaticCollectionConfig, error)
+	ImplicitCollectionsStub        func(string, string, ledger.SimpleQueryExecutor) ([]*peer.StaticCollectionConfig, error)
 	implicitCollectionsMutex       sync.RWMutex
 	implicitCollectionsArgsForCall []struct {
 		arg1 string
@@ -50,11 +65,11 @@ type LegacyDeployedCCInfoProvider struct {
 		arg3 ledger.SimpleQueryExecutor
 	}
 	implicitCollectionsReturns struct {
-		result1 []*common.StaticCollectionConfig
+		result1 []*peer.StaticCollectionConfig
 		result2 error
 	}
 	implicitCollectionsReturnsOnCall map[int]struct {
-		result1 []*common.StaticCollectionConfig
+		result1 []*peer.StaticCollectionConfig
 		result2 error
 	}
 	NamespacesStub        func() []string
@@ -82,6 +97,71 @@ type LegacyDeployedCCInfoProvider struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *LegacyDeployedCCInfoProvider) AllCollectionsConfigPkg(arg1 string, arg2 string, arg3 ledger.SimpleQueryExecutor) (*peer.CollectionConfigPackage, error) {
+	fake.allCollectionsConfigPkgMutex.Lock()
+	ret, specificReturn := fake.allCollectionsConfigPkgReturnsOnCall[len(fake.allCollectionsConfigPkgArgsForCall)]
+	fake.allCollectionsConfigPkgArgsForCall = append(fake.allCollectionsConfigPkgArgsForCall, struct {
+		arg1 string
+		arg2 string
+		arg3 ledger.SimpleQueryExecutor
+	}{arg1, arg2, arg3})
+	fake.recordInvocation("AllCollectionsConfigPkg", []interface{}{arg1, arg2, arg3})
+	fake.allCollectionsConfigPkgMutex.Unlock()
+	if fake.AllCollectionsConfigPkgStub != nil {
+		return fake.AllCollectionsConfigPkgStub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	fakeReturns := fake.allCollectionsConfigPkgReturns
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *LegacyDeployedCCInfoProvider) AllCollectionsConfigPkgCallCount() int {
+	fake.allCollectionsConfigPkgMutex.RLock()
+	defer fake.allCollectionsConfigPkgMutex.RUnlock()
+	return len(fake.allCollectionsConfigPkgArgsForCall)
+}
+
+func (fake *LegacyDeployedCCInfoProvider) AllCollectionsConfigPkgCalls(stub func(string, string, ledger.SimpleQueryExecutor) (*peer.CollectionConfigPackage, error)) {
+	fake.allCollectionsConfigPkgMutex.Lock()
+	defer fake.allCollectionsConfigPkgMutex.Unlock()
+	fake.AllCollectionsConfigPkgStub = stub
+}
+
+func (fake *LegacyDeployedCCInfoProvider) AllCollectionsConfigPkgArgsForCall(i int) (string, string, ledger.SimpleQueryExecutor) {
+	fake.allCollectionsConfigPkgMutex.RLock()
+	defer fake.allCollectionsConfigPkgMutex.RUnlock()
+	argsForCall := fake.allCollectionsConfigPkgArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *LegacyDeployedCCInfoProvider) AllCollectionsConfigPkgReturns(result1 *peer.CollectionConfigPackage, result2 error) {
+	fake.allCollectionsConfigPkgMutex.Lock()
+	defer fake.allCollectionsConfigPkgMutex.Unlock()
+	fake.AllCollectionsConfigPkgStub = nil
+	fake.allCollectionsConfigPkgReturns = struct {
+		result1 *peer.CollectionConfigPackage
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *LegacyDeployedCCInfoProvider) AllCollectionsConfigPkgReturnsOnCall(i int, result1 *peer.CollectionConfigPackage, result2 error) {
+	fake.allCollectionsConfigPkgMutex.Lock()
+	defer fake.allCollectionsConfigPkgMutex.Unlock()
+	fake.AllCollectionsConfigPkgStub = nil
+	if fake.allCollectionsConfigPkgReturnsOnCall == nil {
+		fake.allCollectionsConfigPkgReturnsOnCall = make(map[int]struct {
+			result1 *peer.CollectionConfigPackage
+			result2 error
+		})
+	}
+	fake.allCollectionsConfigPkgReturnsOnCall[i] = struct {
+		result1 *peer.CollectionConfigPackage
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *LegacyDeployedCCInfoProvider) ChaincodeInfo(arg1 string, arg2 string, arg3 ledger.SimpleQueryExecutor) (*ledger.DeployedChaincodeInfo, error) {
@@ -149,7 +229,7 @@ func (fake *LegacyDeployedCCInfoProvider) ChaincodeInfoReturnsOnCall(i int, resu
 	}{result1, result2}
 }
 
-func (fake *LegacyDeployedCCInfoProvider) CollectionInfo(arg1 string, arg2 string, arg3 string, arg4 ledger.SimpleQueryExecutor) (*common.StaticCollectionConfig, error) {
+func (fake *LegacyDeployedCCInfoProvider) CollectionInfo(arg1 string, arg2 string, arg3 string, arg4 ledger.SimpleQueryExecutor) (*peer.StaticCollectionConfig, error) {
 	fake.collectionInfoMutex.Lock()
 	ret, specificReturn := fake.collectionInfoReturnsOnCall[len(fake.collectionInfoArgsForCall)]
 	fake.collectionInfoArgsForCall = append(fake.collectionInfoArgsForCall, struct {
@@ -176,7 +256,7 @@ func (fake *LegacyDeployedCCInfoProvider) CollectionInfoCallCount() int {
 	return len(fake.collectionInfoArgsForCall)
 }
 
-func (fake *LegacyDeployedCCInfoProvider) CollectionInfoCalls(stub func(string, string, string, ledger.SimpleQueryExecutor) (*common.StaticCollectionConfig, error)) {
+func (fake *LegacyDeployedCCInfoProvider) CollectionInfoCalls(stub func(string, string, string, ledger.SimpleQueryExecutor) (*peer.StaticCollectionConfig, error)) {
 	fake.collectionInfoMutex.Lock()
 	defer fake.collectionInfoMutex.Unlock()
 	fake.CollectionInfoStub = stub
@@ -189,33 +269,33 @@ func (fake *LegacyDeployedCCInfoProvider) CollectionInfoArgsForCall(i int) (stri
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
-func (fake *LegacyDeployedCCInfoProvider) CollectionInfoReturns(result1 *common.StaticCollectionConfig, result2 error) {
+func (fake *LegacyDeployedCCInfoProvider) CollectionInfoReturns(result1 *peer.StaticCollectionConfig, result2 error) {
 	fake.collectionInfoMutex.Lock()
 	defer fake.collectionInfoMutex.Unlock()
 	fake.CollectionInfoStub = nil
 	fake.collectionInfoReturns = struct {
-		result1 *common.StaticCollectionConfig
+		result1 *peer.StaticCollectionConfig
 		result2 error
 	}{result1, result2}
 }
 
-func (fake *LegacyDeployedCCInfoProvider) CollectionInfoReturnsOnCall(i int, result1 *common.StaticCollectionConfig, result2 error) {
+func (fake *LegacyDeployedCCInfoProvider) CollectionInfoReturnsOnCall(i int, result1 *peer.StaticCollectionConfig, result2 error) {
 	fake.collectionInfoMutex.Lock()
 	defer fake.collectionInfoMutex.Unlock()
 	fake.CollectionInfoStub = nil
 	if fake.collectionInfoReturnsOnCall == nil {
 		fake.collectionInfoReturnsOnCall = make(map[int]struct {
-			result1 *common.StaticCollectionConfig
+			result1 *peer.StaticCollectionConfig
 			result2 error
 		})
 	}
 	fake.collectionInfoReturnsOnCall[i] = struct {
-		result1 *common.StaticCollectionConfig
+		result1 *peer.StaticCollectionConfig
 		result2 error
 	}{result1, result2}
 }
 
-func (fake *LegacyDeployedCCInfoProvider) ImplicitCollections(arg1 string, arg2 string, arg3 ledger.SimpleQueryExecutor) ([]*common.StaticCollectionConfig, error) {
+func (fake *LegacyDeployedCCInfoProvider) ImplicitCollections(arg1 string, arg2 string, arg3 ledger.SimpleQueryExecutor) ([]*peer.StaticCollectionConfig, error) {
 	fake.implicitCollectionsMutex.Lock()
 	ret, specificReturn := fake.implicitCollectionsReturnsOnCall[len(fake.implicitCollectionsArgsForCall)]
 	fake.implicitCollectionsArgsForCall = append(fake.implicitCollectionsArgsForCall, struct {
@@ -241,7 +321,7 @@ func (fake *LegacyDeployedCCInfoProvider) ImplicitCollectionsCallCount() int {
 	return len(fake.implicitCollectionsArgsForCall)
 }
 
-func (fake *LegacyDeployedCCInfoProvider) ImplicitCollectionsCalls(stub func(string, string, ledger.SimpleQueryExecutor) ([]*common.StaticCollectionConfig, error)) {
+func (fake *LegacyDeployedCCInfoProvider) ImplicitCollectionsCalls(stub func(string, string, ledger.SimpleQueryExecutor) ([]*peer.StaticCollectionConfig, error)) {
 	fake.implicitCollectionsMutex.Lock()
 	defer fake.implicitCollectionsMutex.Unlock()
 	fake.ImplicitCollectionsStub = stub
@@ -254,28 +334,28 @@ func (fake *LegacyDeployedCCInfoProvider) ImplicitCollectionsArgsForCall(i int) 
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
-func (fake *LegacyDeployedCCInfoProvider) ImplicitCollectionsReturns(result1 []*common.StaticCollectionConfig, result2 error) {
+func (fake *LegacyDeployedCCInfoProvider) ImplicitCollectionsReturns(result1 []*peer.StaticCollectionConfig, result2 error) {
 	fake.implicitCollectionsMutex.Lock()
 	defer fake.implicitCollectionsMutex.Unlock()
 	fake.ImplicitCollectionsStub = nil
 	fake.implicitCollectionsReturns = struct {
-		result1 []*common.StaticCollectionConfig
+		result1 []*peer.StaticCollectionConfig
 		result2 error
 	}{result1, result2}
 }
 
-func (fake *LegacyDeployedCCInfoProvider) ImplicitCollectionsReturnsOnCall(i int, result1 []*common.StaticCollectionConfig, result2 error) {
+func (fake *LegacyDeployedCCInfoProvider) ImplicitCollectionsReturnsOnCall(i int, result1 []*peer.StaticCollectionConfig, result2 error) {
 	fake.implicitCollectionsMutex.Lock()
 	defer fake.implicitCollectionsMutex.Unlock()
 	fake.ImplicitCollectionsStub = nil
 	if fake.implicitCollectionsReturnsOnCall == nil {
 		fake.implicitCollectionsReturnsOnCall = make(map[int]struct {
-			result1 []*common.StaticCollectionConfig
+			result1 []*peer.StaticCollectionConfig
 			result2 error
 		})
 	}
 	fake.implicitCollectionsReturnsOnCall[i] = struct {
-		result1 []*common.StaticCollectionConfig
+		result1 []*peer.StaticCollectionConfig
 		result2 error
 	}{result1, result2}
 }
@@ -398,6 +478,8 @@ func (fake *LegacyDeployedCCInfoProvider) UpdatedChaincodesReturnsOnCall(i int, 
 func (fake *LegacyDeployedCCInfoProvider) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.allCollectionsConfigPkgMutex.RLock()
+	defer fake.allCollectionsConfigPkgMutex.RUnlock()
 	fake.chaincodeInfoMutex.RLock()
 	defer fake.chaincodeInfoMutex.RUnlock()
 	fake.collectionInfoMutex.RLock()

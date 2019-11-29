@@ -17,15 +17,18 @@ import (
 )
 
 func TestNewStoreProvider(t *testing.T) {
-	cleanup := setupPath(t)
+	path, cleanup := setupPath(t)
 	defer cleanup()
-	require.NotEmpty(t, NewStoreProvider())
+
+	p, err := NewStoreProvider(path)
+	require.NoError(t, err)
+	require.NotEmpty(t, p)
 }
 
-func setupPath(t *testing.T) (cleanup func()) {
+func setupPath(t *testing.T) (string, func()) {
 	tempDir, err := ioutil.TempDir("", "transientstore")
 	require.NoError(t, err)
 
 	viper.Set("peer.fileSystemPath", tempDir)
-	return func() { os.RemoveAll(tempDir) }
+	return tempDir, func() { os.RemoveAll(tempDir) }
 }

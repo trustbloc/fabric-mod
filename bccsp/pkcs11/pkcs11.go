@@ -118,7 +118,6 @@ func (csp *impl) returnSession(session pkcs11.SessionHandle) {
 }
 
 // Look for an EC key by SKI, stored in CKA_ID
-// This function can probably be adapted for both EC and RSA keys.
 func (csp *impl) getECKey(ski []byte) (pubKey *ecdsa.PublicKey, isPriv bool, err error) {
 	p11lib := csp.ctx
 	session := csp.getSession()
@@ -243,7 +242,10 @@ func (csp *impl) generateECKey(curve asn1.ObjectIdentifier, ephemeral bool) (ski
 		return nil, nil, fmt.Errorf("P11: keypair generate failed [%s]", err)
 	}
 
-	ecpt, _, _ := ecPoint(p11lib, session, pub)
+	ecpt, _, err := ecPoint(p11lib, session, pub)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Error querying EC-point: [%s]", err)
+	}
 	hash := sha256.Sum256(ecpt)
 	ski = hash[:]
 

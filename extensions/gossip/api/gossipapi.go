@@ -7,11 +7,11 @@ SPDX-License-Identifier: Apache-2.0
 package api
 
 import (
+	cb "github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/ledger/rwset/kvrwset"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/ledger"
-	cb "github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
-	pb "github.com/hyperledger/fabric/protos/peer"
 )
 
 // ConfigUpdateHandler handles a config update
@@ -30,7 +30,7 @@ type ChaincodeEventHandler func(txMetadata TxMetadata, event *pb.ChaincodeEvent)
 type ChaincodeUpgradeHandler func(txMetadata TxMetadata, chaincodeName string) error
 
 // LSCCWriteHandler handles chaincode instantiation/upgrade events
-type LSCCWriteHandler func(txMetadata TxMetadata, chaincodeName string, ccData *ccprovider.ChaincodeData, ccp *cb.CollectionConfigPackage) error
+type LSCCWriteHandler func(txMetadata TxMetadata, chaincodeName string, ccData *ccprovider.ChaincodeData, ccp *pb.CollectionConfigPackage) error
 
 // BlockPublisher allows clients to add handlers for various block events
 type BlockPublisher interface {
@@ -60,12 +60,6 @@ type TxMetadata struct {
 	TxID      string
 }
 
-//BlockEventer performs pre commit operation for a block
-type BlockEventer interface {
-	//PreCommit performs pre commit operation for given block
-	PreCommit(block *cb.Block) error
-}
-
 //LedgerHeightProvider provides current ledger height
 type LedgerHeightProvider interface {
 	//LedgerHeight  returns current in-memory ledger height
@@ -77,7 +71,6 @@ type LedgerHeightProvider interface {
 type Support struct {
 	Ledger               ledger.PeerLedger
 	LedgerHeightProvider LedgerHeightProvider
-	BlockEventer         BlockEventer
 }
 
 // GossipService contains Gossip function

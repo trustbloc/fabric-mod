@@ -10,8 +10,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/msp"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/msp"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
 )
@@ -226,6 +226,37 @@ func TestBadStringsNoPanic(t *testing.T) {
 
 	_, err = FromString(`OR('A.member', '\'Bmember\'')`) // error after 3rd Evalute()
 	assert.EqualError(t, err, "unrecognized token 'Bmember' in policy string")
+}
+
+func TestNodeOUs(t *testing.T) {
+	p1, err := FromString("OR('A.peer', 'B.admin', 'C.orderer', 'D.client')")
+	assert.NoError(t, err)
+
+	principals := make([]*msp.MSPPrincipal, 0)
+
+	principals = append(principals, &msp.MSPPrincipal{
+		PrincipalClassification: msp.MSPPrincipal_ROLE,
+		Principal:               protoutil.MarshalOrPanic(&msp.MSPRole{Role: msp.MSPRole_PEER, MspIdentifier: "A"})})
+
+	principals = append(principals, &msp.MSPPrincipal{
+		PrincipalClassification: msp.MSPPrincipal_ROLE,
+		Principal:               protoutil.MarshalOrPanic(&msp.MSPRole{Role: msp.MSPRole_ADMIN, MspIdentifier: "B"})})
+
+	principals = append(principals, &msp.MSPPrincipal{
+		PrincipalClassification: msp.MSPPrincipal_ROLE,
+		Principal:               protoutil.MarshalOrPanic(&msp.MSPRole{Role: msp.MSPRole_ORDERER, MspIdentifier: "C"})})
+
+	principals = append(principals, &msp.MSPPrincipal{
+		PrincipalClassification: msp.MSPPrincipal_ROLE,
+		Principal:               protoutil.MarshalOrPanic(&msp.MSPRole{Role: msp.MSPRole_CLIENT, MspIdentifier: "D"})})
+
+	p2 := &common.SignaturePolicyEnvelope{
+		Version:    0,
+		Rule:       NOutOf(1, []*common.SignaturePolicy{SignedBy(0), SignedBy(1), SignedBy(2), SignedBy(3)}),
+		Identities: principals,
+	}
+
+	assert.Equal(t, p1, p2)
 }
 
 func TestOutOfNumIsString(t *testing.T) {

@@ -13,14 +13,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
+	proto "github.com/hyperledger/fabric-protos-go/gossip"
 	"github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/gossip/msgstore"
 	"github.com/hyperledger/fabric/gossip/protoext"
 	"github.com/hyperledger/fabric/gossip/util"
-	proto "github.com/hyperledger/fabric/protos/gossip"
 	"github.com/pkg/errors"
 )
 
@@ -66,7 +65,6 @@ type gossipDiscoveryImpl struct {
 	lock  *sync.RWMutex
 
 	toDieChan        chan struct{}
-	toDieFlag        int32
 	port             int
 	logger           util.Logger
 	disclosurePolicy DisclosurePolicy
@@ -76,6 +74,8 @@ type gossipDiscoveryImpl struct {
 	aliveExpirationTimeout       time.Duration
 	aliveExpirationCheckInterval time.Duration
 	reconnectInterval            time.Duration
+
+	bootstrapPeers []string
 }
 
 type DiscoveryConfig struct {
@@ -83,6 +83,7 @@ type DiscoveryConfig struct {
 	AliveExpirationTimeout       time.Duration
 	AliveExpirationCheckInterval time.Duration
 	ReconnectInterval            time.Duration
+	BootstrapPeers               []string
 }
 
 // NewDiscoveryService returns a new discovery service with the comm module passed and the crypto service passed
@@ -100,8 +101,7 @@ func NewDiscoveryService(self NetworkMember, comm CommService, crypt CryptoServi
 		crypt:            crypt,
 		comm:             comm,
 		lock:             &sync.RWMutex{},
-		toDieChan:        make(chan struct{}, 1),
-		toDieFlag:        int32(0),
+		toDieChan:        make(chan struct{}),
 		logger:           util.GetLogger(util.DiscoveryLogger, self.InternalEndpoint),
 		disclosurePolicy: disPol,
 		pubsub:           util.NewPubSub(),
@@ -110,6 +110,8 @@ func NewDiscoveryService(self NetworkMember, comm CommService, crypt CryptoServi
 		aliveExpirationTimeout:       config.AliveExpirationTimeout,
 		aliveExpirationCheckInterval: config.AliveExpirationCheckInterval,
 		reconnectInterval:            config.ReconnectInterval,
+
+		bootstrapPeers: config.BootstrapPeers,
 	}
 
 	d.validateSelfConfig()
@@ -119,7 +121,7 @@ func NewDiscoveryService(self NetworkMember, comm CommService, crypt CryptoServi
 	go d.periodicalCheckAlive()
 	go d.handleMessages()
 	go d.periodicalReconnectToDead()
-	go d.handlePresumedDeadPeers()
+	go d.handleEvents()
 
 	return d
 }
@@ -268,17 +270,19 @@ func (d *gossipDiscoveryImpl) InitiateSync(peerNum int) {
 	}
 }
 
-func (d *gossipDiscoveryImpl) handlePresumedDeadPeers() {
+func (d *gossipDiscoveryImpl) handleEvents() {
 	defer d.logger.Debug("Stopped")
 
-	for !d.toDie() {
+	for {
 		select {
 		case deadPeer := <-d.comm.PresumedDead():
 			if d.isAlive(deadPeer) {
 				d.expireDeadMembers([]common.PKIidType{deadPeer})
 			}
-		case s := <-d.toDieChan:
-			d.toDieChan <- s
+		case changedPKIID := <-d.comm.IdentitySwitch():
+			// If a peer changed its PKI-ID, purge the old PKI-ID
+			d.purge(changedPKIID)
+		case <-d.toDieChan:
 			return
 		}
 	}
@@ -295,13 +299,12 @@ func (d *gossipDiscoveryImpl) handleMessages() {
 	defer d.logger.Debug("Stopped")
 
 	in := d.comm.Accept()
-	for !d.toDie() {
+	for {
 		select {
-		case s := <-d.toDieChan:
-			d.toDieChan <- s
-			return
 		case m := <-in:
 			d.handleMsgFromComm(m)
+		case <-d.toDieChan:
+			return
 		}
 	}
 }
@@ -542,6 +545,17 @@ func (d *gossipDiscoveryImpl) handleAliveMessage(m *protoext.SignedGossipMessage
 
 	}
 	// else, ignore the message because it is too old
+}
+
+func (d *gossipDiscoveryImpl) purge(id common.PKIidType) {
+	d.logger.Infof("Purging %s from membership", id)
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	d.aliveMembership.Remove(id)
+	d.deadMembership.Remove(id)
+	delete(d.id2Member, string(id))
+	delete(d.deadLastTS, string(id))
+	delete(d.aliveLastTS, string(id))
 }
 
 func (d *gossipDiscoveryImpl) isSentByMe(m *protoext.SignedGossipMessage) bool {
@@ -977,16 +991,23 @@ func (d *gossipDiscoveryImpl) Self() NetworkMember {
 }
 
 func (d *gossipDiscoveryImpl) toDie() bool {
-	toDie := atomic.LoadInt32(&d.toDieFlag) == int32(1)
-	return toDie
+	select {
+	case <-d.toDieChan:
+		return true
+	default:
+		return false
+	}
 }
 
 func (d *gossipDiscoveryImpl) Stop() {
-	defer d.logger.Info("Stopped")
-	d.logger.Info("Stopping")
-	atomic.StoreInt32(&d.toDieFlag, int32(1))
-	d.msgStore.Stop()
-	d.toDieChan <- struct{}{}
+	select {
+	case <-d.toDieChan:
+	default:
+		close(d.toDieChan)
+		defer d.logger.Info("Stopped")
+		d.logger.Info("Stopping")
+		d.msgStore.Stop()
+	}
 }
 
 func copyNetworkMember(member *NetworkMember) *NetworkMember {
@@ -1027,7 +1048,15 @@ func newAliveMsgStore(d *gossipDiscoveryImpl) *aliveMsgStore {
 		if !protoext.IsAliveMsg(msg.GossipMessage) {
 			return
 		}
-		id := msg.GetAliveMsg().Membership.PkiId
+		membership := msg.GetAliveMsg().Membership
+		id := membership.PkiId
+		endpoint := membership.Endpoint
+		internalEndpoint := protoext.InternalEndpoint(msg.SecretEnvelope)
+		if util.Contains(endpoint, d.bootstrapPeers) || util.Contains(internalEndpoint, d.bootstrapPeers) {
+			// Never remove a bootstrap peer
+			return
+		}
+		d.logger.Infof("Removing member: Endpoint: %s, InternalEndpoint: %s, PKIID: %x", endpoint, internalEndpoint, id)
 		d.aliveMembership.Remove(id)
 		d.deadMembership.Remove(id)
 		delete(d.id2Member, string(id))

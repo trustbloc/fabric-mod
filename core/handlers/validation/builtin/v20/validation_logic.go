@@ -10,6 +10,8 @@ import (
 	"fmt"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/peer"
 	commonerrors "github.com/hyperledger/fabric/common/errors"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/common/validation/statebased"
@@ -17,8 +19,6 @@ import (
 	vi "github.com/hyperledger/fabric/core/handlers/validation/api/identities"
 	vp "github.com/hyperledger/fabric/core/handlers/validation/api/policies"
 	vs "github.com/hyperledger/fabric/core/handlers/validation/api/state"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 )
@@ -119,7 +119,7 @@ func (vscc *Validator) extractValidationArtifacts(
 	}
 
 	// ...and the payload...
-	payl, err := protoutil.GetPayload(env)
+	payl, err := protoutil.UnmarshalPayload(env.Payload)
 	if err != nil {
 		logger.Errorf("VSCC error: GetPayload failed, err %s", err)
 		return nil, err
@@ -138,19 +138,19 @@ func (vscc *Validator) extractValidationArtifacts(
 	}
 
 	// ...and the transaction...
-	tx, err := protoutil.GetTransaction(payl.Data)
+	tx, err := protoutil.UnmarshalTransaction(payl.Data)
 	if err != nil {
 		logger.Errorf("VSCC error: GetTransaction failed, err %s", err)
 		return nil, err
 	}
 
-	cap, err := protoutil.GetChaincodeActionPayload(tx.Actions[actionPosition].Payload)
+	cap, err := protoutil.UnmarshalChaincodeActionPayload(tx.Actions[actionPosition].Payload)
 	if err != nil {
 		logger.Errorf("VSCC error: GetChaincodeActionPayload failed, err %s", err)
 		return nil, err
 	}
 
-	pRespPayload, err := protoutil.GetProposalResponsePayload(cap.Action.ProposalResponsePayload)
+	pRespPayload, err := protoutil.UnmarshalProposalResponsePayload(cap.Action.ProposalResponsePayload)
 	if err != nil {
 		err = fmt.Errorf("GetProposalResponsePayload error %s", err)
 		return nil, err
@@ -159,7 +159,7 @@ func (vscc *Validator) extractValidationArtifacts(
 		err = fmt.Errorf("nil pRespPayload.Extension")
 		return nil, err
 	}
-	respPayload, err := protoutil.GetChaincodeAction(pRespPayload.Extension)
+	respPayload, err := protoutil.UnmarshalChaincodeAction(pRespPayload.Extension)
 	if err != nil {
 		err = fmt.Errorf("GetChaincodeAction error %s", err)
 		return nil, err

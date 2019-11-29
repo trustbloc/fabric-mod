@@ -9,16 +9,19 @@ package chaincode
 import (
 	"sync"
 
-	persistence "github.com/hyperledger/fabric/core/chaincode/persistence/intf"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/gossip"
+	"github.com/hyperledger/fabric-protos-go/gossip"
+	"github.com/hyperledger/fabric-protos-go/peer"
 )
 
 // InstalledChaincode defines metadata about an installed chaincode
 type InstalledChaincode struct {
-	PackageID persistence.PackageID
+	PackageID string
 	Hash      []byte
 	Label     string
+	// References is a map of channel name to chaincode
+	// metadata. This represents the channels and chaincode
+	// definitions that use this installed chaincode package.
+	References map[string][]*Metadata
 
 	// FIXME: we should remove these two
 	// fields since they are not properties
@@ -33,7 +36,7 @@ type Metadata struct {
 	Version           string
 	Policy            []byte
 	Id                []byte
-	CollectionsConfig *common.CollectionConfigPackage
+	CollectionsConfig *peer.CollectionConfigPackage
 	// These two fields (Approved, Installed) are only set for
 	// _lifecycle chaincodes. They are used to ensure service
 	// discovery doesn't publish a stale chaincode definition

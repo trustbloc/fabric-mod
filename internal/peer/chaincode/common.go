@@ -17,15 +17,15 @@ import (
 	"sync"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-chaincode-go/shim"
+	pcommon "github.com/hyperledger/fabric-protos-go/common"
+	ab "github.com/hyperledger/fabric-protos-go/orderer"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric/bccsp"
 	"github.com/hyperledger/fabric/common/cauthdsl"
 	"github.com/hyperledger/fabric/common/util"
-	"github.com/hyperledger/fabric/core/chaincode/shim"
-	"github.com/hyperledger/fabric/core/container"
 	"github.com/hyperledger/fabric/internal/peer/common"
 	"github.com/hyperledger/fabric/internal/pkg/identity"
-	pcommon "github.com/hyperledger/fabric/protos/common"
-	ab "github.com/hyperledger/fabric/protos/orderer"
-	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -54,17 +54,21 @@ func getChaincodeDeploymentSpec(spec *pb.ChaincodeSpec, crtPkg bool) (*pb.Chainc
 			return nil, err
 		}
 
-		codePackageBytes, err = container.GetChaincodePackageBytes(platformRegistry, spec)
+		codePackageBytes, err = platformRegistry.GetDeploymentPayload(spec.Type.String(), spec.ChaincodeId.Path)
 		if err != nil {
-			err = errors.WithMessage(err, "error getting chaincode package bytes")
-			return nil, err
+			return nil, errors.WithMessage(err, "error getting chaincode package bytes")
 		}
+		chaincodePath, err := platformRegistry.NormalizePath(spec.Type.String(), spec.ChaincodeId.Path)
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed to normalize chaincode path")
+		}
+		spec.ChaincodeId.Path = chaincodePath
 	}
-	chaincodeDeploymentSpec := &pb.ChaincodeDeploymentSpec{ChaincodeSpec: spec, CodePackage: codePackageBytes}
-	return chaincodeDeploymentSpec, nil
+
+	return &pb.ChaincodeDeploymentSpec{ChaincodeSpec: spec, CodePackage: codePackageBytes}, nil
 }
 
-// getChaincodeSpec get chaincode spec from the cli cmd pramameters
+// getChaincodeSpec get chaincode spec from the cli cmd parameters
 func getChaincodeSpec(cmd *cobra.Command) (*pb.ChaincodeSpec, error) {
 	spec := &pb.ChaincodeSpec{}
 	if err := checkChaincodeCmdParams(cmd); err != nil {
@@ -142,11 +146,11 @@ func chaincodeInvokeOrQuery(cmd *cobra.Command, invoke bool, cf *ChaincodeCmdFac
 
 	if invoke {
 		logger.Debugf("ESCC invoke result: %v", proposalResp)
-		pRespPayload, err := protoutil.GetProposalResponsePayload(proposalResp.Payload)
+		pRespPayload, err := protoutil.UnmarshalProposalResponsePayload(proposalResp.Payload)
 		if err != nil {
 			return errors.WithMessage(err, "error while unmarshaling proposal response payload")
 		}
-		ca, err := protoutil.GetChaincodeAction(pRespPayload.Extension)
+		ca, err := protoutil.UnmarshalChaincodeAction(pRespPayload.Extension)
 		if err != nil {
 			return errors.WithMessage(err, "error while unmarshaling chaincode action")
 		}
@@ -188,14 +192,20 @@ const (
 	CollectionType_DCAS      CollectionType = "DCAS"
 )
 
+type endorsementPolicy struct {
+	ChannelConfigPolicy string `json:"channelConfigPolicy,omitempty"`
+	SignaturePolicy     string `json:"signaturePolicy,omitempty"`
+}
+
 type collectionConfigJson struct {
-	Name            string `json:"name"`
-	Policy          string `json:"policy"`
-	RequiredCount   int32  `json:"requiredPeerCount"`
-	MaxPeerCount    int32  `json:"maxPeerCount"`
-	BlockToLive     uint64 `json:"blockToLive"`
-	MemberOnlyRead  bool   `json:"memberOnlyRead"`
-	MemberOnlyWrite bool   `json:"memberOnlyWrite"`
+	Name              string             `json:"name"`
+	Policy            string             `json:"policy"`
+	RequiredPeerCount int32              `json:"requiredPeerCount"`
+	MaxPeerCount      int32              `json:"maxPeerCount"`
+	BlockToLive       uint64             `json:"blockToLive"`
+	MemberOnlyRead    bool               `json:"memberOnlyRead"`
+	MemberOnlyWrite   bool               `json:"memberOnlyWrite"`
+	EndorsementPolicy *endorsementPolicy `json:"endorsementPolicy,omitempty"`
 
 	Type       CollectionType `json:"type"`
 	TimeToLive string         `json:"timeToLive"`
@@ -204,7 +214,7 @@ type collectionConfigJson struct {
 // GetCollectionConfigFromFile retrieves the collection configuration
 // from the supplied file; the supplied file must contain a
 // json-formatted array of collectionConfigJson elements
-func GetCollectionConfigFromFile(ccFile string) (*pcommon.CollectionConfigPackage, []byte, error) {
+func GetCollectionConfigFromFile(ccFile string) (*pb.CollectionConfigPackage, []byte, error) {
 	fileBytes, err := ioutil.ReadFile(ccFile)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "could not read file '%s'", ccFile)
@@ -216,69 +226,82 @@ func GetCollectionConfigFromFile(ccFile string) (*pcommon.CollectionConfigPackag
 // getCollectionConfig retrieves the collection configuration
 // from the supplied byte array; the byte array must contain a
 // json-formatted array of collectionConfigJson elements
-func getCollectionConfigFromBytes(cconfBytes []byte) (*pcommon.CollectionConfigPackage, []byte, error) {
+func getCollectionConfigFromBytes(cconfBytes []byte) (*pb.CollectionConfigPackage, []byte, error) {
 	cconf := &[]collectionConfigJson{}
 	err := json.Unmarshal(cconfBytes, cconf)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "could not parse the collection configuration")
 	}
 
-	ccarray := make([]*pcommon.CollectionConfig, 0, len(*cconf))
+	ccarray := make([]*pb.CollectionConfig, 0, len(*cconf))
 	for _, cconfitem := range *cconf {
 		p, err := cauthdsl.FromString(cconfitem.Policy)
 		if err != nil {
 			return nil, nil, errors.WithMessagef(err, "invalid policy %s", cconfitem.Policy)
 		}
 
-		cpc := &pcommon.CollectionPolicyConfig{
-			Payload: &pcommon.CollectionPolicyConfig_SignaturePolicy{
+		cpc := &pb.CollectionPolicyConfig{
+			Payload: &pb.CollectionPolicyConfig_SignaturePolicy{
 				SignaturePolicy: p,
 			},
 		}
 
-		var cc *pcommon.CollectionConfig
+		var ep *pb.ApplicationPolicy
+		if cconfitem.EndorsementPolicy != nil {
+			signaturePolicy := cconfitem.EndorsementPolicy.SignaturePolicy
+			channelConfigPolicy := cconfitem.EndorsementPolicy.ChannelConfigPolicy
+			ep, err = getApplicationPolicy(signaturePolicy, channelConfigPolicy)
+			if err != nil {
+				return nil, nil, errors.WithMessagef(err, "invalid endorsement policy [%#v]", cconfitem.EndorsementPolicy)
+			}
+		}
+
+		var cc *pb.CollectionConfig
 		switch cconfitem.Type {
 		case CollectionType_TRANSIENT:
-			cc = &pcommon.CollectionConfig{
-				Payload: &pcommon.CollectionConfig_StaticCollectionConfig{
-					StaticCollectionConfig: &pcommon.StaticCollectionConfig{
+			cc = &pb.CollectionConfig{
+				Payload: &pb.CollectionConfig_StaticCollectionConfig{
+					StaticCollectionConfig: &pb.StaticCollectionConfig{
 						Name:              cconfitem.Name,
 						MemberOrgsPolicy:  cpc,
-						RequiredPeerCount: cconfitem.RequiredCount,
+						RequiredPeerCount: cconfitem.RequiredPeerCount,
 						MaximumPeerCount:  cconfitem.MaxPeerCount,
 						MemberOnlyRead:    cconfitem.MemberOnlyRead,
 						MemberOnlyWrite:   cconfitem.MemberOnlyWrite,
-						Type:              pcommon.CollectionType_COL_TRANSIENT,
+						EndorsementPolicy: ep,
+						Type:              pb.CollectionType_COL_TRANSIENT,
 						TimeToLive:        cconfitem.TimeToLive,
 					},
 				},
 			}
 		case CollectionType_OFFLEDGER:
-			cc = &pcommon.CollectionConfig{
-				Payload: &pcommon.CollectionConfig_StaticCollectionConfig{
-					StaticCollectionConfig: &pcommon.StaticCollectionConfig{
+			cc = &pb.CollectionConfig{
+				Payload: &pb.CollectionConfig_StaticCollectionConfig{
+					StaticCollectionConfig: &pb.StaticCollectionConfig{
 						Name:              cconfitem.Name,
 						MemberOrgsPolicy:  cpc,
-						RequiredPeerCount: cconfitem.RequiredCount,
+						RequiredPeerCount: cconfitem.RequiredPeerCount,
 						MaximumPeerCount:  cconfitem.MaxPeerCount,
 						MemberOnlyRead:    cconfitem.MemberOnlyRead,
 						MemberOnlyWrite:   cconfitem.MemberOnlyWrite,
-						Type:              pcommon.CollectionType_COL_OFFLEDGER,
+						EndorsementPolicy: ep,
+						Type:              pb.CollectionType_COL_OFFLEDGER,
 						TimeToLive:        cconfitem.TimeToLive,
 					},
 				},
 			}
 		case CollectionType_DCAS:
-			cc = &pcommon.CollectionConfig{
-				Payload: &pcommon.CollectionConfig_StaticCollectionConfig{
-					StaticCollectionConfig: &pcommon.StaticCollectionConfig{
+			cc = &pb.CollectionConfig{
+				Payload: &pb.CollectionConfig_StaticCollectionConfig{
+					StaticCollectionConfig: &pb.StaticCollectionConfig{
 						Name:              cconfitem.Name,
 						MemberOrgsPolicy:  cpc,
-						RequiredPeerCount: cconfitem.RequiredCount,
+						RequiredPeerCount: cconfitem.RequiredPeerCount,
 						MaximumPeerCount:  cconfitem.MaxPeerCount,
 						MemberOnlyRead:    cconfitem.MemberOnlyRead,
 						MemberOnlyWrite:   cconfitem.MemberOnlyWrite,
-						Type:              pcommon.CollectionType_COL_DCAS,
+						EndorsementPolicy: ep,
+						Type:              pb.CollectionType_COL_DCAS,
 						TimeToLive:        cconfitem.TimeToLive,
 					},
 				},
@@ -286,16 +309,17 @@ func getCollectionConfigFromBytes(cconfBytes []byte) (*pcommon.CollectionConfigP
 		case CollectionType_PRIVATE:
 			fallthrough
 		case "":
-			cc = &pcommon.CollectionConfig{
-				Payload: &pcommon.CollectionConfig_StaticCollectionConfig{
-					StaticCollectionConfig: &pcommon.StaticCollectionConfig{
+			cc = &pb.CollectionConfig{
+				Payload: &pb.CollectionConfig_StaticCollectionConfig{
+					StaticCollectionConfig: &pb.StaticCollectionConfig{
 						Name:              cconfitem.Name,
 						MemberOrgsPolicy:  cpc,
-						RequiredPeerCount: cconfitem.RequiredCount,
+						RequiredPeerCount: cconfitem.RequiredPeerCount,
 						MaximumPeerCount:  cconfitem.MaxPeerCount,
 						BlockToLive:       cconfitem.BlockToLive,
 						MemberOnlyRead:    cconfitem.MemberOnlyRead,
 						MemberOnlyWrite:   cconfitem.MemberOnlyWrite,
+						EndorsementPolicy: ep,
 					},
 				},
 			}
@@ -306,9 +330,45 @@ func getCollectionConfigFromBytes(cconfBytes []byte) (*pcommon.CollectionConfigP
 		ccarray = append(ccarray, cc)
 	}
 
-	ccp := &pcommon.CollectionConfigPackage{Config: ccarray}
+	ccp := &pb.CollectionConfigPackage{Config: ccarray}
 	ccpBytes, err := proto.Marshal(ccp)
 	return ccp, ccpBytes, err
+}
+
+func getApplicationPolicy(signaturePolicy, channelConfigPolicy string) (*pb.ApplicationPolicy, error) {
+	if signaturePolicy == "" && channelConfigPolicy == "" {
+		// no policy, no problem
+		return nil, nil
+	}
+
+	if signaturePolicy != "" && channelConfigPolicy != "" {
+		// mo policies, mo problems
+		return nil, errors.New(`cannot specify both "--signature-policy" and "--channel-config-policy"`)
+	}
+
+	var applicationPolicy *pb.ApplicationPolicy
+	if signaturePolicy != "" {
+		signaturePolicyEnvelope, err := cauthdsl.FromString(signaturePolicy)
+		if err != nil {
+			return nil, errors.Errorf("invalid signature policy: %s", signaturePolicy)
+		}
+
+		applicationPolicy = &pb.ApplicationPolicy{
+			Type: &pb.ApplicationPolicy_SignaturePolicy{
+				SignaturePolicy: signaturePolicyEnvelope,
+			},
+		}
+	}
+
+	if channelConfigPolicy != "" {
+		applicationPolicy = &pb.ApplicationPolicy{
+			Type: &pb.ApplicationPolicy_ChannelConfigPolicyReference{
+				ChannelConfigPolicyReference: channelConfigPolicy,
+			},
+		}
+	}
+
+	return applicationPolicy, nil
 }
 
 func checkChaincodeCmdParams(cmd *cobra.Command) error {
@@ -440,7 +500,7 @@ type ChaincodeCmdFactory struct {
 }
 
 // InitCmdFactory init the ChaincodeCmdFactory with default clients
-func InitCmdFactory(cmdName string, isEndorserRequired, isOrdererRequired bool) (*ChaincodeCmdFactory, error) {
+func InitCmdFactory(cmdName string, isEndorserRequired, isOrdererRequired bool, cryptoProvider bccsp.BCCSP) (*ChaincodeCmdFactory, error) {
 	var err error
 	var endorserClients []pb.EndorserClient
 	var deliverClients []pb.DeliverClient
@@ -470,7 +530,7 @@ func InitCmdFactory(cmdName string, isEndorserRequired, isOrdererRequired bool) 
 	}
 	certificate, err := common.GetCertificateFnc()
 	if err != nil {
-		return nil, errors.WithMessage(err, "error getting client cerificate")
+		return nil, errors.WithMessage(err, "error getting client certificate")
 	}
 
 	signer, err := common.GetDefaultSignerFnc()
@@ -486,7 +546,7 @@ func InitCmdFactory(cmdName string, isEndorserRequired, isOrdererRequired bool) 
 			}
 			endorserClient := endorserClients[0]
 
-			orderingEndpoints, err := common.GetOrdererEndpointOfChainFnc(channelID, signer, endorserClient)
+			orderingEndpoints, err := common.GetOrdererEndpointOfChainFnc(channelID, signer, endorserClient, cryptoProvider)
 			if err != nil {
 				return nil, errors.WithMessagef(err, "error getting channel (%s) orderer endpoint", channelID)
 			}
@@ -511,6 +571,36 @@ func InitCmdFactory(cmdName string, isEndorserRequired, isOrdererRequired bool) 
 		BroadcastClient: broadcastClient,
 		Certificate:     certificate,
 	}, nil
+}
+
+// processProposals sends a signed proposal to a set of peers, and gathers all the responses.
+func processProposals(endorserClients []pb.EndorserClient, signedProposal *pb.SignedProposal) ([]*pb.ProposalResponse, error) {
+	responsesCh := make(chan *pb.ProposalResponse, len(endorserClients))
+	errorCh := make(chan error, len(endorserClients))
+	wg := sync.WaitGroup{}
+	for _, endorser := range endorserClients {
+		wg.Add(1)
+		go func(endorser pb.EndorserClient) {
+			defer wg.Done()
+			proposalResp, err := endorser.ProcessProposal(context.Background(), signedProposal)
+			if err != nil {
+				errorCh <- err
+				return
+			}
+			responsesCh <- proposalResp
+		}(endorser)
+	}
+	wg.Wait()
+	close(responsesCh)
+	close(errorCh)
+	for err := range errorCh {
+		return nil, err
+	}
+	var responses []*pb.ProposalResponse
+	for response := range responsesCh {
+		responses = append(responses, response)
+	}
+	return responses, nil
 }
 
 // ChaincodeInvokeOrQuery invokes or queries the chaincode. If successful, the
@@ -563,13 +653,10 @@ func ChaincodeInvokeOrQuery(
 	if err != nil {
 		return nil, errors.WithMessagef(err, "error creating signed proposal for %s", funcName)
 	}
-	var responses []*pb.ProposalResponse
-	for _, endorser := range endorserClients {
-		proposalResp, err := endorser.ProcessProposal(context.Background(), signedProp)
-		if err != nil {
-			return nil, errors.WithMessagef(err, "error endorsing %s", funcName)
-		}
-		responses = append(responses, proposalResp)
+
+	responses, err := processProposals(endorserClients, signedProp)
+	if err != nil {
+		return nil, errors.WithMessagef(err, "error endorsing %s", funcName)
 	}
 
 	if len(responses) == 0 {

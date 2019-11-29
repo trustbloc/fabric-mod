@@ -6,8 +6,8 @@ SPDX-License-Identifier: Apache-2.0
 package lockbasedtxmgr
 
 import (
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/protos/common"
 )
 
 // collNameValidator validates the presence of a collection in a namespace
@@ -44,17 +44,12 @@ func (v *collNameValidator) validateCollName(ns, coll string) error {
 	return nil
 }
 
-func (v *collNameValidator) retrieveCollConfigFromStateDB(ns string) (*common.CollectionConfigPackage, error) {
+func (v *collNameValidator) retrieveCollConfigFromStateDB(ns string) (*peer.CollectionConfigPackage, error) {
 	logger.Debugf("retrieveCollConfigFromStateDB() begin - ns=[%s]", ns)
-	ccInfo, err := v.ccInfoProvider.ChaincodeInfo(v.ledgerID, ns, v.queryExecutor)
+	confPkg, err := v.ccInfoProvider.AllCollectionsConfigPkg(v.ledgerID, ns, v.queryExecutor)
 	if err != nil {
 		return nil, err
 	}
-	if ccInfo == nil {
-		return nil, &ledger.CollConfigNotDefinedError{Ns: ns}
-	}
-
-	confPkg := ccInfo.AllCollectionsConfigPkg()
 	if confPkg == nil {
 		return nil, &ledger.CollConfigNotDefinedError{Ns: ns}
 	}
@@ -62,13 +57,13 @@ func (v *collNameValidator) retrieveCollConfigFromStateDB(ns string) (*common.Co
 	return confPkg, nil
 }
 
-type collConfigCache map[collConfigkey]*common.CollectionConfig
+type collConfigCache map[collConfigkey]*peer.CollectionConfig
 
 type collConfigkey struct {
 	ns, coll string
 }
 
-func (c collConfigCache) populate(ns string, pkg *common.CollectionConfigPackage) {
+func (c collConfigCache) populate(ns string, pkg *peer.CollectionConfigPackage) {
 	// an entry with an empty collection name to indicate that the cache is populated for the namespace 'ns'
 	// see function 'isPopulatedFor'
 	c[collConfigkey{ns, ""}] = nil
