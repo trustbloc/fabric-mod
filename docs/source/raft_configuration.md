@@ -84,9 +84,8 @@ This is useful for cases where you want TLS certificates issued by the
 organizational CAs, but used only by the cluster nodes to communicate among each
 other, and TLS certificates issued by a public TLS CA for the client facing API.
 
-  * `ClientCertificate`, `ClientPrivateKey`: If you wish to use a different
-  TLS client certificate key pair (otherwise, the certificate key pair is taken
-  from the general TLS section, i.e., `general.tls.{privateKey, certificate}`)
+  * `ClientCertificate`, `ClientPrivateKey`: The file path of the client TLS certificate
+  and corresponding private key.
   * `ListenPort`: The port the cluster listens on. If blank, the port is the same
   port as the orderer general port (`general.listenPort`)
   * `ListenAddress`: The address the cluster service is listening on.
@@ -97,6 +96,8 @@ other, and TLS certificates issued by a public TLS CA for the client facing API.
 
 Note: `ListenPort`, `ListenAddress`, `ServerCertificate`, `ServerPrivateKey` must
 be either set together or unset together.
+If they are unset, they are inherited from the general TLS section,
+in example `general.tls.{privateKey, certificate}`.
 
 There are also hidden configuration parameters for `general.cluster` which can be
 used to further fine tune the cluster communication or replication mechanisms:
@@ -114,6 +115,22 @@ used to further fine tune the cluster communication or replication mechanisms:
   attempts to replicate existing channels that this node was added to, or
   channels that this node failed to replicate in the past. Defaults to five
   minutes.
+  * `TLSHandshakeTimeShift`: If the TLS certificates of the ordering nodes
+  expire and are not replaced in time (see TLS certificate rotation below),
+   communication between them cannot be established, and it will be impossible
+   to send new transactions to the ordering service.
+   To recover from such a scenario, it is possible to make TLS handshakes
+   between ordering nodes consider the time to be shifted backwards a given
+   amount that is configured to `TLSHandshakeTimeShift`.
+   In order to be as uninvasive as possible, this configuration option
+   only effects ordering nodes that use a separate gRPC server for their
+   intra-cluster communication.
+   If your cluster is communicating via the same gRPC server that is used
+   to service clients and peers, you need to first reconfigure your orderer
+   by additionally setting `general.cluster.ListenPort`, `general.cluster.ListenAddress`,
+   `ServerCertificate` and `ServerPrivateKey`, and then restarting the orderer
+   in order for the new configuration to take effect.
+
 
 
 **Consensus parameters:**
@@ -200,7 +217,7 @@ Adding a new node to a Raft cluster is done by:
   by checking that the config block that was fetched includes the certificate of
   (soon to be) added node.
   4. **Starting the new Raft node** with the path to the config block in the
-  `General.GenesisFile` configuration parameter.
+  `General.BootstrapFile` configuration parameter.
   5. **Waiting for the Raft node to replicate the blocks** from existing nodes for
   all channels its certificates have been added to. After this step has been
   completed, the node begins servicing the channel.
@@ -263,6 +280,22 @@ as quickly as possible.**
 If for some reason the rotation of the TLS certificates has started but cannot
 complete in all channels, it is advised to rotate TLS certificates back to
 what they were and attempt the rotation later.
+
+### Certificate expiration related authentication
+Whenever a client with an identity that has an expiration date (such as an identity based on an x509 certificate)
+sends a transaction to the orderer, the orderer checks whether its identity has expired, and if
+so, rejects the transaction submission.
+
+However, it is possible to configure the orderer to ignore expiration of identities via enabling
+the `General.Authentication.NoExpirationChecks` configuration option in the `orderer.yaml`.
+
+This should be done only under extreme circumstances, where the certificates of the administrators
+have expired, and due to this it is not possible to send configuration updates to replace the administrator
+certificates with renewed ones, because the config transactions signed by the existing administrators
+are now rejected because they have expired.
+After updating the channel it is recommended to change back to the default configuration which enforces
+expiration checks on identities.
+
 
 ## Metrics
 

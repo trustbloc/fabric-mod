@@ -11,13 +11,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/integration"
 	"github.com/hyperledger/fabric/integration/nwo"
 	"github.com/hyperledger/fabric/integration/nwo/commands"
-	"github.com/hyperledger/fabric/protos/common"
-	pb "github.com/hyperledger/fabric/protos/peer"
-	"github.com/hyperledger/fabric/protoutil"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
@@ -29,12 +25,16 @@ func TestRaft(t *testing.T) {
 	RunSpecs(t, "Raft-based Ordering Service Suite")
 }
 
-var components *nwo.Components
-var suiteBase = integration.RaftBasePort
+var (
+	buildServer *nwo.BuildServer
+	components  *nwo.Components
+)
 
 var _ = SynchronizedBeforeSuite(func() []byte {
-	components = &nwo.Components{}
+	buildServer = nwo.NewBuildServer()
+	buildServer.Serve()
 
+	components = buildServer.Components()
 	payload, err := json.Marshal(components)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -46,11 +46,11 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 var _ = SynchronizedAfterSuite(func() {
 }, func() {
-	components.Cleanup()
+	buildServer.Shutdown()
 })
 
 func StartPort() int {
-	return suiteBase + (GinkgoParallelNode()-1)*100
+	return integration.RaftBasePort.StartPortForNode()
 }
 
 func RunInvoke(n *nwo.Network, orderer *nwo.Orderer, peer *nwo.Peer, channel string) {
@@ -86,39 +86,4 @@ func RunQuery(n *nwo.Network, orderer *nwo.Orderer, peer *nwo.Peer, channel stri
 	Expect(err).NotTo(HaveOccurred())
 	Expect(i).To(Equal(1))
 	return int(result)
-}
-
-func RunQueryInvokeQuery(n *nwo.Network, orderer *nwo.Orderer, peer *nwo.Peer, channel string) {
-	res := RunQuery(n, orderer, peer, channel)
-	Expect(res).To(Equal(100))
-
-	RunInvoke(n, orderer, peer, channel)
-
-	res = RunQuery(n, orderer, peer, channel)
-	Expect(res).To(Equal(90))
-}
-
-// SetACLPolicy sets the ACL policy for a running network. It resets all
-// previously defined ACL policies, generates the config update, signs the
-// configuration with Org2's signer, and then submits the config update using
-// Org1.
-func SetACLPolicy(network *nwo.Network, channel, policyName, policy string, ordererName string) {
-	orderer := network.Orderer(ordererName)
-	submitter := network.Peer("Org1", "peer0")
-	signer := network.Peer("Org2", "peer0")
-
-	config := nwo.GetConfig(network, submitter, orderer, channel)
-	updatedConfig := proto.Clone(config).(*common.Config)
-
-	// set the policy
-	updatedConfig.ChannelGroup.Groups["Application"].Values["ACLs"] = &common.ConfigValue{
-		ModPolicy: "Admins",
-		Value: protoutil.MarshalOrPanic(&pb.ACLs{
-			Acls: map[string]*pb.APIResource{
-				policyName: {PolicyRef: policy},
-			},
-		}),
-	}
-
-	nwo.UpdateConfig(network, orderer, channel, config, updatedConfig, true, submitter, signer)
 }

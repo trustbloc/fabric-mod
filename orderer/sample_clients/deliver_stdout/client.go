@@ -10,12 +10,13 @@ import (
 	"math"
 	"os"
 
+	cb "github.com/hyperledger/fabric-protos-go/common"
+	ab "github.com/hyperledger/fabric-protos-go/orderer"
+	"github.com/hyperledger/fabric/bccsp/factory"
 	"github.com/hyperledger/fabric/common/tools/protolator"
 	"github.com/hyperledger/fabric/internal/pkg/identity"
 	mspmgmt "github.com/hyperledger/fabric/msp/mgmt"
 	"github.com/hyperledger/fabric/orderer/common/localconfig"
-	cb "github.com/hyperledger/fabric/protos/common"
-	ab "github.com/hyperledger/fabric/protos/orderer"
 	"github.com/hyperledger/fabric/protoutil"
 	"google.golang.org/grpc"
 )
@@ -102,7 +103,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	signer, err := mspmgmt.GetLocalMSP().GetDefaultSigningIdentity()
+	signer, err := mspmgmt.GetLocalMSP(factory.GetDefault()).GetDefaultSigningIdentity()
 	if err != nil {
 		fmt.Println("Failed to load local signing identity:", err)
 		os.Exit(0)
@@ -114,7 +115,7 @@ func main() {
 	var quiet bool
 
 	flag.StringVar(&serverAddr, "server", fmt.Sprintf("%s:%d", conf.General.ListenAddress, conf.General.ListenPort), "The RPC server to connect to.")
-	flag.StringVar(&channelID, "channelID", localconfig.Defaults.General.SystemChannel, "The channel ID to deliver from.")
+	flag.StringVar(&channelID, "channelID", "mychannel", "The channel ID to deliver from.")
 	flag.BoolVar(&quiet, "quiet", false, "Only print the block number, will not attempt to print its block contents.")
 	flag.IntVar(&seek, "seek", -2, "Specify the range of requested blocks."+
 		"Acceptable values:"+

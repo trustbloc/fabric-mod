@@ -15,8 +15,7 @@ import (
 	"strings"
 
 	"github.com/hyperledger/fabric/core/chaincode/persistence"
-	"github.com/hyperledger/fabric/core/chaincode/platforms"
-	cutil "github.com/hyperledger/fabric/core/container/util"
+	"github.com/hyperledger/fabric/internal/peer/packaging"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -25,11 +24,7 @@ import (
 // for a chaincode given the type and path
 type PlatformRegistry interface {
 	GetDeploymentPayload(ccType, path string) ([]byte, error)
-}
-
-// Writer defines the interface needed for writing a file
-type Writer interface {
-	WriteFile(string, string, []byte) error
+	NormalizePath(ccType, path string) (string, error)
 }
 
 // Packager holds the dependencies needed to package
@@ -77,7 +72,7 @@ func PackageCmd(p *Packager) *cobra.Command {
 		ValidArgs: []string{"1"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if p == nil {
-				pr := platforms.NewRegistry(platforms.SupportedPlatforms...)
+				pr := packaging.NewRegistry(packaging.SupportedPlatforms...)
 
 				p = &Packager{
 					PlatformRegistry: pr,
@@ -160,11 +155,15 @@ func (p *Packager) getTarGzBytes() ([]byte, error) {
 	gw := gzip.NewWriter(payload)
 	tw := tar.NewWriter(gw)
 
-	metadataBytes, err := toJSON(p.Input.Path, p.Input.Type, p.Input.Label)
+	normalizedPath, err := p.PlatformRegistry.NormalizePath(strings.ToUpper(p.Input.Type), p.Input.Path)
+	if err != nil {
+		return nil, errors.WithMessage(err, "failed to normalize chaincode path")
+	}
+	metadataBytes, err := toJSON(normalizedPath, p.Input.Type, p.Input.Label)
 	if err != nil {
 		return nil, err
 	}
-	err = cutil.WriteBytesToPackage("Chaincode-Package-Metadata.json", metadataBytes, tw)
+	err = writeBytesToPackage(tw, "metadata.json", metadataBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "error writing package metadata to tar")
 	}
@@ -174,12 +173,9 @@ func (p *Packager) getTarGzBytes() ([]byte, error) {
 		return nil, errors.WithMessage(err, "error getting chaincode bytes")
 	}
 
-	codePackageName := "Code-Package.tar.gz"
-	if strings.ToLower(p.Input.Type) == "car" {
-		codePackageName = "Code-Package.car"
-	}
+	codePackageName := "code.tar.gz"
 
-	err = cutil.WriteBytesToPackage(codePackageName, codeBytes, tw)
+	err = writeBytesToPackage(tw, codePackageName, codeBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "error writing package code bytes to tar")
 	}
@@ -193,6 +189,24 @@ func (p *Packager) getTarGzBytes() ([]byte, error) {
 	}
 
 	return payload.Bytes(), nil
+}
+
+func writeBytesToPackage(tw *tar.Writer, name string, payload []byte) error {
+	err := tw.WriteHeader(&tar.Header{
+		Name: name,
+		Size: int64(len(payload)),
+		Mode: 0100644,
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = tw.Write(payload)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // PackageMetadata holds the path and type for a chaincode package

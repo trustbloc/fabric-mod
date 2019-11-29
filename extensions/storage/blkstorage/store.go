@@ -9,12 +9,13 @@ package blkstorage
 import (
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	"github.com/hyperledger/fabric/common/ledger/blkstorage/fsblkstorage"
+	"github.com/hyperledger/fabric/common/metrics"
 	"github.com/hyperledger/fabric/core/ledger"
 )
 
 //NewProvider is redirect hook for fabric/fsblkstorage NewProvider()
-func NewProvider(conf *fsblkstorage.Conf, indexConfig *blkstorage.IndexConfig, ledgerconfig *ledger.Config) blkstorage.BlockStoreProvider {
-	return fsblkstorage.NewProvider(conf, indexConfig)
+func NewProvider(conf *fsblkstorage.Conf, indexConfig *blkstorage.IndexConfig, ledgerconfig *ledger.Config, metricsProvider metrics.Provider) (blkstorage.BlockStoreProvider, error) {
+	return fsblkstorage.NewProvider(conf, indexConfig, metricsProvider)
 }
 
 //NewConf is redirect hook for fabric/fsblkstorage NewConf()

@@ -10,15 +10,14 @@ import (
 	"fmt"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/cauthdsl"
 	commonerrors "github.com/hyperledger/fabric/common/errors"
-	coreUtil "github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/common/sysccprovider"
 	validation "github.com/hyperledger/fabric/core/handlers/validation/api"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 )
@@ -26,29 +25,38 @@ import (
 // VsccValidatorImpl is the implementation used to call
 // the vscc chaincode and validate block transactions
 type VsccValidatorImpl struct {
-	chainID         string
+	channelID       string
 	cr              ChannelResources
-	sccprovider     sysccprovider.SystemChaincodeProvider
 	pluginValidator *PluginValidator
 }
 
 // newVSCCValidator creates new vscc validator
-func newVSCCValidator(chainID string, cr ChannelResources, sccp sysccprovider.SystemChaincodeProvider, pluginValidator *PluginValidator) *VsccValidatorImpl {
+func newVSCCValidator(channelID string, cr ChannelResources, pluginValidator *PluginValidator) *VsccValidatorImpl {
 	return &VsccValidatorImpl{
-		chainID:         chainID,
+		channelID:       channelID,
 		cr:              cr,
-		sccprovider:     sccp,
 		pluginValidator: pluginValidator,
 	}
 }
 
+func getChaincodeHeaderExtension(hdr *common.Header) (*peer.ChaincodeHeaderExtension, error) {
+	chdr, err := protoutil.UnmarshalChannelHeader(hdr.ChannelHeader)
+	if err != nil {
+		return nil, err
+	}
+
+	chaincodeHdrExt := &peer.ChaincodeHeaderExtension{}
+	err = proto.Unmarshal(chdr.Extension, chaincodeHdrExt)
+	return chaincodeHdrExt, errors.Wrap(err, "error unmarshaling ChaincodeHeaderExtension")
+}
+
 // VSCCValidateTx executes vscc validation for transaction
 func (v *VsccValidatorImpl) VSCCValidateTx(seq int, payload *common.Payload, envBytes []byte, block *common.Block) (error, peer.TxValidationCode) {
-	chainID := v.chainID
+	chainID := v.channelID
 	logger.Debugf("[%s] VSCCValidateTx starts for bytes %p", chainID, envBytes)
 
 	// get header extensions so we have the chaincode ID
-	hdrExt, err := protoutil.GetChaincodeHeaderExtension(payload.Header)
+	hdrExt, err := getChaincodeHeaderExtension(payload.Header)
 	if err != nil {
 		return err, peer.TxValidationCode_BAD_HEADER_EXTENSION
 	}
@@ -121,7 +129,15 @@ func (v *VsccValidatorImpl) VSCCValidateTx(seq int, payload *common.Payload, env
 		}
 	}
 
+	namespaces := make(map[string]struct{})
 	for _, ns := range txRWSet.NsRwSets {
+		// check to make sure there is no duplicate namespace in txRWSet
+		if _, ok := namespaces[ns.NameSpace]; ok {
+			return errors.Errorf("duplicate namespace '%s' in txRWSet", ns.NameSpace),
+				peer.TxValidationCode_ILLEGAL_WRITESET
+		}
+		namespaces[ns.NameSpace] = struct{}{}
+
 		if !v.txWritesToNamespace(ns) {
 			continue
 		}
@@ -136,11 +152,11 @@ func (v *VsccValidatorImpl) VSCCValidateTx(seq int, payload *common.Payload, env
 			writesToLSCC = true
 		}
 
-		if !writesToNonInvokableSCC && v.sccprovider.IsSysCCAndNotInvokableCC2CC(ns.NameSpace) {
+		if !writesToNonInvokableSCC && IsSysCCAndNotInvokableCC2CC(ns.NameSpace) {
 			writesToNonInvokableSCC = true
 		}
 
-		if !writesToNonInvokableSCC && v.sccprovider.IsSysCCAndNotInvokableExternal(ns.NameSpace) {
+		if !writesToNonInvokableSCC && IsSysCCAndNotInvokableExternal(ns.NameSpace) {
 			writesToNonInvokableSCC = true
 		}
 	}
@@ -149,7 +165,7 @@ func (v *VsccValidatorImpl) VSCCValidateTx(seq int, payload *common.Payload, env
 	// validation will behave differently depending on the type of
 	// chaincode (system vs. application)
 
-	if !v.sccprovider.IsSysCC(ccID) {
+	if !IsSysCC(ccID) {
 		// if we're here, we know this is an invocation of an application chaincode;
 		// first of all, we make sure that:
 		// 1) we don't write to LSCC - an application chaincode is free to invoke LSCC
@@ -216,7 +232,7 @@ func (v *VsccValidatorImpl) VSCCValidateTx(seq int, payload *common.Payload, env
 		// cannot be invoked through a proposal to this peer, we have to drop the
 		// transaction; if we didn't, we wouldn't know how to decide whether it's
 		// valid or not because in v1, system chaincodes have no endorsement policy
-		if v.sccprovider.IsSysCCAndNotInvokableExternal(ccID) {
+		if IsSysCCAndNotInvokableExternal(ccID) {
 			return errors.Errorf("committing an invocation of cc %s is illegal", ccID),
 				peer.TxValidationCode_ILLEGAL_WRITESET
 		}
@@ -270,7 +286,7 @@ func (v *VsccValidatorImpl) VSCCValidateTxForCC(ctx *Context) error {
 	return &commonerrors.VSCCEndorsementPolicyError{Err: err}
 }
 
-func (v *VsccValidatorImpl) getCDataForCC(chid, ccid string) (ccprovider.ChaincodeDefinition, error) {
+func (v *VsccValidatorImpl) getCDataForCC(chid, ccid string) (*ccprovider.ChaincodeData, error) {
 	l := v.cr.Ledger()
 	if l == nil {
 		return nil, errors.New("nil ledger instance")
@@ -313,18 +329,16 @@ func (v *VsccValidatorImpl) getCDataForCC(chid, ccid string) (ccprovider.Chainco
 // GetInfoForValidate gets the ChaincodeInstance(with latest version) of tx, vscc and policy from lscc
 func (v *VsccValidatorImpl) GetInfoForValidate(chdr *common.ChannelHeader, ccID string) (*sysccprovider.ChaincodeInstance, *sysccprovider.ChaincodeInstance, []byte, error) {
 	cc := &sysccprovider.ChaincodeInstance{
-		ChainID:          chdr.ChannelId,
-		ChaincodeName:    ccID,
-		ChaincodeVersion: coreUtil.GetSysCCVersion(),
+		ChannelID:     chdr.ChannelId,
+		ChaincodeName: ccID,
 	}
 	vscc := &sysccprovider.ChaincodeInstance{
-		ChainID:          chdr.ChannelId,
-		ChaincodeName:    "vscc",                     // default vscc for system chaincodes
-		ChaincodeVersion: coreUtil.GetSysCCVersion(), // Get vscc version
+		ChannelID:     chdr.ChannelId,
+		ChaincodeName: "vscc", // default vscc for system chaincodes
 	}
 	var policy []byte
 	var err error
-	if !v.sccprovider.IsSysCC(ccID) {
+	if !IsSysCC(ccID) {
 		// when we are validating a chaincode that is not a
 		// system CC, we need to ask the CC to give us the name
 		// of VSCC and of the policy that should be used
@@ -336,14 +350,14 @@ func (v *VsccValidatorImpl) GetInfoForValidate(chdr *common.ChannelHeader, ccID 
 			logger.Errorf(msg)
 			return nil, nil, nil, err
 		}
-		cc.ChaincodeName = cd.CCName()
-		cc.ChaincodeVersion = cd.CCVersion()
-		vscc.ChaincodeName, policy = cd.Validation()
+		cc.ChaincodeName = cd.Name
+		cc.ChaincodeVersion = cd.Version
+		vscc.ChaincodeName, policy = cd.Vscc, cd.Policy
 	} else {
 		// when we are validating a system CC, we use the default
 		// VSCC and a default policy that requires one signature
 		// from any of the members of the channel
-		p := cauthdsl.SignedByAnyMember(v.cr.GetMSPIDs(chdr.ChannelId))
+		p := cauthdsl.SignedByAnyMember(v.cr.GetMSPIDs())
 		policy, err = protoutil.Marshal(p)
 		if err != nil {
 			return nil, nil, nil, err
@@ -388,4 +402,16 @@ func (v *VsccValidatorImpl) txWritesToNamespace(ns *rwsetutil.NsRwSet) bool {
 	}
 
 	return false
+}
+
+func IsSysCCAndNotInvokableExternal(name string) bool {
+	return name == "vscc" || name == "escc"
+}
+
+func IsSysCC(name string) bool {
+	return name == "vscc" || name == "escc" || name == "lscc" || name == "qscc" || name == "cscc"
+}
+
+func IsSysCCAndNotInvokableCC2CC(name string) bool {
+	return name == "vscc" || name == "escc" || name == "cscc"
 }

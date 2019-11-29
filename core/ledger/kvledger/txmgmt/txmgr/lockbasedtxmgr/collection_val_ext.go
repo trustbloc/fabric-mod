@@ -7,11 +7,11 @@ SPDX-License-Identifier: Apache-2.0
 package lockbasedtxmgr
 
 import (
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/protos/common"
 )
 
-func (v *collNameValidator) getCollConfig(ns, coll string) (*common.CollectionConfig, error) {
+func (v *collNameValidator) getCollConfig(ns, coll string) (*peer.CollectionConfig, error) {
 	if !v.cache.isPopulatedFor(ns) {
 		conf, err := v.retrieveCollConfigFromStateDB(ns)
 		if err != nil {
@@ -29,7 +29,7 @@ func (v *collNameValidator) getCollConfig(ns, coll string) (*common.CollectionCo
 	return config, nil
 }
 
-func (c collConfigCache) getCollConfig(ns, coll string) (*common.CollectionConfig, bool) {
+func (c collConfigCache) getCollConfig(ns, coll string) (*peer.CollectionConfig, bool) {
 	config, ok := c[collConfigkey{ns, coll}]
 	return config, ok
 }

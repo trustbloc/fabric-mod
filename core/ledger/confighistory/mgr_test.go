@@ -14,11 +14,13 @@ import (
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/mock"
-	"github.com/hyperledger/fabric/protos/common"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -33,7 +35,8 @@ func TestWithNoCollectionConfig(t *testing.T) {
 	}
 	defer os.RemoveAll(dbPath)
 	mockCCInfoProvider := &mock.DeployedChaincodeInfoProvider{}
-	mgr := NewMgr(dbPath, mockCCInfoProvider)
+	mgr, err := NewMgr(dbPath, mockCCInfoProvider)
+	assert.NoError(t, err)
 	testutilEquipMockCCInfoProviderToReturnDesiredCollConfig(mockCCInfoProvider, "chaincode1", nil)
 	err = mgr.HandleStateUpdates(&ledger.StateUpdateTrigger{
 		LedgerID:           "ledger1",
@@ -57,11 +60,12 @@ func TestWithEmptyCollectionConfig(t *testing.T) {
 	}
 	defer os.RemoveAll(dbPath)
 	mockCCInfoProvider := &mock.DeployedChaincodeInfoProvider{}
-	mgr := NewMgr(dbPath, mockCCInfoProvider)
+	mgr, err := NewMgr(dbPath, mockCCInfoProvider)
+	assert.NoError(t, err)
 	testutilEquipMockCCInfoProviderToReturnDesiredCollConfig(
 		mockCCInfoProvider,
 		"chaincode1",
-		&common.CollectionConfigPackage{},
+		&peer.CollectionConfigPackage{},
 	)
 	err = mgr.HandleStateUpdates(&ledger.StateUpdateTrigger{
 		LedgerID:           "ledger1",
@@ -85,7 +89,8 @@ func TestMgr(t *testing.T) {
 	}
 	defer os.RemoveAll(dbPath)
 	mockCCInfoProvider := &mock.DeployedChaincodeInfoProvider{}
-	mgr := NewMgr(dbPath, mockCCInfoProvider)
+	mgr, err := NewMgr(dbPath, mockCCInfoProvider)
+	assert.NoError(t, err)
 	chaincodeName := "chaincode1"
 	maxBlockNumberInLedger := uint64(2000)
 	dummyLedgerInfoRetriever := &dummyLedgerInfoRetriever{
@@ -164,7 +169,7 @@ func TestWithImplicitColls(t *testing.T) {
 	collConfigPackage := testutilCreateCollConfigPkg([]string{"Explicit-coll-1", "Explicit-coll-2"})
 	mockCCInfoProvider := &mock.DeployedChaincodeInfoProvider{}
 	mockCCInfoProvider.ImplicitCollectionsReturns(
-		[]*common.StaticCollectionConfig{
+		[]*peer.StaticCollectionConfig{
 			{
 				Name: "Implicit-coll-1",
 			},
@@ -174,15 +179,17 @@ func TestWithImplicitColls(t *testing.T) {
 		},
 		nil,
 	)
+	p, err := newDBProvider(dbPath)
+	require.NoError(t, err)
 
 	mgr := &mgr{
 		ccInfoProvider: mockCCInfoProvider,
-		dbProvider:     newDBProvider(dbPath),
+		dbProvider:     p,
 	}
 
 	// add explicit collections at height 20
 	batch, err := prepareDBBatch(
-		map[string]*common.CollectionConfigPackage{
+		map[string]*peer.CollectionConfigPackage{
 			"chaincode1": collConfigPackage,
 		},
 		20,
@@ -250,7 +257,7 @@ func TestWithImplicitColls(t *testing.T) {
 
 }
 
-func sampleCollectionConfigPackage(collNamePart1 string, collNamePart2 uint64) *common.CollectionConfigPackage {
+func sampleCollectionConfigPackage(collNamePart1 string, collNamePart2 uint64) *peer.CollectionConfigPackage {
 	collName := fmt.Sprintf("%s-%d", collNamePart1, collNamePart2)
 	return testutilCreateCollConfigPkg([]string{collName})
 }
@@ -258,7 +265,7 @@ func sampleCollectionConfigPackage(collNamePart1 string, collNamePart2 uint64) *
 func testutilEquipMockCCInfoProviderToReturnDesiredCollConfig(
 	mockCCInfoProvider *mock.DeployedChaincodeInfoProvider,
 	chaincodeName string,
-	collConfigPackage *common.CollectionConfigPackage) {
+	collConfigPackage *peer.CollectionConfigPackage) {
 	mockCCInfoProvider.UpdatedChaincodesReturns(
 		[]*ledger.ChaincodeLifecycleInfo{
 			{Name: chaincodeName},
@@ -271,15 +278,15 @@ func testutilEquipMockCCInfoProviderToReturnDesiredCollConfig(
 	)
 }
 
-func testutilCreateCollConfigPkg(collNames []string) *common.CollectionConfigPackage {
-	pkg := &common.CollectionConfigPackage{
-		Config: []*common.CollectionConfig{},
+func testutilCreateCollConfigPkg(collNames []string) *peer.CollectionConfigPackage {
+	pkg := &peer.CollectionConfigPackage{
+		Config: []*peer.CollectionConfig{},
 	}
 	for _, collName := range collNames {
 		pkg.Config = append(pkg.Config,
-			&common.CollectionConfig{
-				Payload: &common.CollectionConfig_StaticCollectionConfig{
-					StaticCollectionConfig: &common.StaticCollectionConfig{
+			&peer.CollectionConfig{
+				Payload: &peer.CollectionConfig_StaticCollectionConfig{
+					StaticCollectionConfig: &peer.StaticCollectionConfig{
 						Name: collName,
 					},
 				},

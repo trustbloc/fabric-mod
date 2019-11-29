@@ -38,11 +38,11 @@ func GetExtStateDBProvider(t testing.TB, dbProvider statedb.VersionedDBProvider)
 func TestLedgerConf() *ledger.Config {
 	conf := &ledger.Config{
 		RootFSPath: "",
-		StateDB: &ledger.StateDB{
+		StateDBConfig: &ledger.StateDBConfig{
 			CouchDB: &couchdb.Config{},
 		},
-		PrivateData: &ledger.PrivateData{},
-		HistoryDB:   &ledger.HistoryDB{},
+		PrivateDataConfig: &ledger.PrivateDataConfig{},
+		HistoryDBConfig:   &ledger.HistoryDBConfig{},
 	}
 
 	return conf

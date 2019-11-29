@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	protosgossip "github.com/hyperledger/fabric-protos-go/gossip"
 	commonutil "github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/common/privdata"
 	"github.com/hyperledger/fabric/gossip/api"
@@ -26,8 +27,6 @@ import (
 	privdatacommon "github.com/hyperledger/fabric/gossip/privdata/common"
 	"github.com/hyperledger/fabric/gossip/protoext"
 	"github.com/hyperledger/fabric/gossip/util"
-	fcommon "github.com/hyperledger/fabric/protos/common"
-	protosgossip "github.com/hyperledger/fabric/protos/gossip"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 	"go.uber.org/zap/zapcore"
@@ -56,11 +55,11 @@ type gossip interface {
 
 	// PeersOfChannel returns the NetworkMembers considered alive
 	// and also subscribed to the channel given
-	PeersOfChannel(common.ChainID) []discovery.NetworkMember
+	PeersOfChannel(common.ChannelID) []discovery.NetworkMember
 
 	// PeerFilter receives a SubChannelSelectionCriteria and returns a RoutingFilter that selects
 	// only peer identities that match the given criteria, and that they published their channel participation
-	PeerFilter(channel common.ChainID, messagePredicate api.SubChannelSelectionCriteria) (filter.RoutingFilter, error)
+	PeerFilter(channel common.ChannelID, messagePredicate api.SubChannelSelectionCriteria) (filter.RoutingFilter, error)
 
 	// Accept returns a dedicated read-only channel for messages sent by other nodes that match a certain predicate.
 	// If passThrough is false, the messages are processed by the gossip layer beforehand.
@@ -210,7 +209,7 @@ func hashDigest(dig *protosgossip.PvtDataDigest) (string, error) {
 func (p *puller) waitForMembership() []discovery.NetworkMember {
 	polIteration := 0
 	for {
-		members := p.PeersOfChannel(common.ChainID(p.channel))
+		members := p.PeersOfChannel(common.ChannelID(p.channel))
 		if len(members) != 0 {
 			return members
 		}
@@ -465,7 +464,7 @@ func (p *puller) computeFilters(dig2src dig2sources) (digestToFilterMapping, err
 		}
 
 		sources := sources
-		endorserPeer, err := p.PeerFilter(common.ChainID(p.channel), func(peerSignature api.PeerSignature) bool {
+		endorserPeer, err := p.PeerFilter(common.ChannelID(p.channel), func(peerSignature api.PeerSignature) bool {
 			for _, endorsement := range sources {
 				if bytes.Equal(endorsement.Endorser, []byte(peerSignature.PeerIdentity)) {
 					return true
@@ -522,7 +521,7 @@ func (p *puller) computeReconciliationFilters(dig2collectionConfig privdatacommo
 }
 
 func (p *puller) getLatestCollectionConfigRoutingFilter(chaincode string, collection string) (filter.RoutingFilter, error) {
-	cc := fcommon.CollectionCriteria{
+	cc := privdata.CollectionCriteria{
 		Channel:    p.channel,
 		Collection: collection,
 		Namespace:  chaincode,
@@ -547,7 +546,7 @@ func (p *puller) getLatestCollectionConfigRoutingFilter(chaincode string, collec
 }
 
 func (p *puller) getMatchAllRoutingFilter(filt privdata.Filter) (filter.RoutingFilter, error) {
-	routingFilter, err := p.PeerFilter(common.ChainID(p.channel), func(peerSignature api.PeerSignature) bool {
+	routingFilter, err := p.PeerFilter(common.ChannelID(p.channel), func(peerSignature api.PeerSignature) bool {
 		return filt(protoutil.SignedData{
 			Signature: peerSignature.Signature,
 			Identity:  peerSignature.PeerIdentity,
@@ -579,9 +578,8 @@ func (p *puller) getPurgedCollections(members []discovery.NetworkMember, dig2Fil
 }
 
 func (p *puller) purgedFilter(dig privdatacommon.DigKey) (filter.RoutingFilter, error) {
-	cc := fcommon.CollectionCriteria{
+	cc := privdata.CollectionCriteria{
 		Channel:    p.channel,
-		TxId:       dig.TxId,
 		Collection: dig.Collection,
 		Namespace:  dig.Namespace,
 	}
@@ -607,7 +605,7 @@ func (p *puller) purgedFilter(dig privdatacommon.DigKey) (filter.RoutingFilter, 
 		if isPurged {
 			logger.Debugf("skipping peer [%s], since pvt for channel [%s], txID = [%s], "+
 				"collection [%s] has been purged or will soon be purged, BTL=[%d]",
-				peer.Endpoint, p.channel, cc.TxId, cc.Collection, colPersistConfig.BlockToLive())
+				peer.Endpoint, p.channel, dig.TxId, cc.Collection, colPersistConfig.BlockToLive())
 		}
 		return isPurged
 	}, nil
@@ -672,7 +670,7 @@ func (p *puller) validatePvtRWSetsForEndpoint(d *protosgossip.PvtDataDigest, rwS
 }
 
 func (p *puller) isEligibleByLatestConfig(channel string, collection string, chaincode string, signedData protoutil.SignedData) bool {
-	cc := fcommon.CollectionCriteria{
+	cc := privdata.CollectionCriteria{
 		Channel:    channel,
 		Collection: collection,
 		Namespace:  chaincode,

@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/core/chaincode/platforms/java"
 	"github.com/hyperledger/fabric/core/chaincode/platforms/util"
 	"github.com/hyperledger/fabric/core/config/configtest"
-	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -151,7 +151,7 @@ func TestGenerateDockerfile(t *testing.T) {
 
 	var buf []string
 
-	buf = append(buf, "FROM "+util.GetDockerfileFromConfig("chaincode.java.runtime"))
+	buf = append(buf, "FROM "+util.GetDockerImageFromConfig("chaincode.java.runtime"))
 	buf = append(buf, "ADD binpackage.tar /root/chaincode-java/chaincode")
 
 	dockerFileContents := strings.Join(buf, "\n")

@@ -7,13 +7,13 @@ SPDX-License-Identifier: Apache-2.0
 package state
 
 import (
+	"github.com/hyperledger/fabric-protos-go/common"
+	proto "github.com/hyperledger/fabric-protos-go/gossip"
 	"github.com/hyperledger/fabric/extensions/gossip/api"
 	common2 "github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/discovery"
 	"github.com/hyperledger/fabric/gossip/protoext"
 	"github.com/hyperledger/fabric/gossip/util"
-	"github.com/hyperledger/fabric/protos/common"
-	proto "github.com/hyperledger/fabric/protos/gossip"
 )
 
 //GossipStateProviderExtension extends GossipStateProvider features
@@ -44,11 +44,11 @@ type GossipServiceMediator interface {
 	// VerifyBlock returns nil if the block is properly signed, and the claimed seqNum is the
 	// sequence number that the block's header contains.
 	// else returns error
-	VerifyBlock(chainID common2.ChainID, seqNum uint64, signedBlock []byte) error
+	VerifyBlock(channelID common2.ChannelID, seqNum uint64, signedBlock *common.Block) error
 
 	// PeersOfChannel returns the NetworkMembers considered alive
 	// and also subscribed to the channel given
-	PeersOfChannel(common2.ChainID) []discovery.NetworkMember
+	PeersOfChannel(common2.ChannelID) []discovery.NetworkMember
 
 	// Gossip sends a message to other peers to the network
 	Gossip(msg *proto.GossipMessage)

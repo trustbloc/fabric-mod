@@ -106,13 +106,6 @@ func TestPeerClient(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, eClient)
 
-	aClient, err := pClient1.Admin()
-	assert.NoError(t, err)
-	assert.NotNil(t, aClient)
-	aClient, err = common.GetAdminClient()
-	assert.NoError(t, err)
-	assert.NotNil(t, aClient)
-
 	dClient, err := pClient1.Deliver()
 	assert.NoError(t, err)
 	assert.NotNil(t, dClient)
@@ -139,24 +132,6 @@ func TestPeerClientTimeout(t *testing.T) {
 		defer cleanup()
 		_, err := common.GetEndorserClient("", "")
 		assert.Contains(t, err.Error(), "endorser client failed to connect")
-	})
-	t.Run("PeerClient.GetAdmin() timeout", func(t *testing.T) {
-		cleanup := initPeerTestEnv(t)
-		viper.Set("peer.client.connTimeout", 10*time.Millisecond)
-		defer cleanup()
-		pClient, err := common.NewPeerClientFromEnv()
-		if err != nil {
-			t.Fatalf("failed to create PeerClient for test: %v", err)
-		}
-		_, err = pClient.Admin()
-		assert.Contains(t, err.Error(), "admin client failed to connect")
-	})
-	t.Run("GetAdminClient() timeout", func(t *testing.T) {
-		cleanup := initPeerTestEnv(t)
-		viper.Set("peer.client.connTimeout", 10*time.Millisecond)
-		defer cleanup()
-		_, err := common.GetAdminClient()
-		assert.Contains(t, err.Error(), "admin client failed to connect")
 	})
 	t.Run("PeerClient.Deliver() timeout", func(t *testing.T) {
 		cleanup := initPeerTestEnv(t)
@@ -215,6 +190,9 @@ func TestNewPeerClientForAddress(t *testing.T) {
 	// TLS enabled
 	viper.Set("peer.tls.enabled", true)
 
+	// Enable clientAuthRequired
+	viper.Set("peer.tls.clientAuthRequired", true)
+
 	// success case
 	pClient, err = common.NewPeerClientForAddress("tlsPeer", "./testdata/certs/ca.crt")
 	assert.NoError(t, err)
@@ -229,6 +207,20 @@ func TestNewPeerClientForAddress(t *testing.T) {
 	pClient, err = common.NewPeerClientForAddress("badPeer", "")
 	assert.Contains(t, err.Error(), "tls root cert file must be set")
 	assert.Nil(t, pClient)
+
+	// failure - empty tls root cert file
+	viper.Set("peer.tls.clientCert.file", "./nocert.crt")
+	pClient, err = common.NewPeerClientForAddress("badPeer", "")
+	assert.Contains(t, err.Error(), "unable to load peer.tls.clientCert.file")
+	assert.Nil(t, pClient)
+
+	// bad key file
+	viper.Set("peer.tls.clientKey.file", "./nokey.key")
+	viper.Set("peer.client.connTimeout", time.Duration(0))
+	pClient, err = common.NewPeerClientForAddress("badPeer", "")
+	assert.Contains(t, err.Error(), "unable to load peer.tls.clientKey.file")
+	assert.Nil(t, pClient)
+
 }
 
 func TestGetClients_AddressError(t *testing.T) {

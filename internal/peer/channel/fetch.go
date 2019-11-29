@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"github.com/golang/protobuf/proto"
+	cb "github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/internal/peer/common"
-	cb "github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/spf13/cobra"
 )
@@ -30,6 +30,7 @@ func fetchCmd(cf *ChannelCmdFactory) *cobra.Command {
 	}
 	flagList := []string{
 		"channelID",
+		"bestEffort",
 	}
 	attachFlags(fetchCmd, flagList)
 
@@ -78,6 +79,7 @@ func fetch(cmd *cobra.Command, args []string, cf *ChannelCmdFactory) error {
 		if err2 != nil {
 			return err2
 		}
+		logger.Infof("Retrieving last config block: %d", lc)
 		block, err = cf.DeliverClient.GetSpecifiedBlock(lc)
 	default:
 		num, err2 := strconv.Atoi(args[0])

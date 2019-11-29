@@ -8,14 +8,16 @@ package statecouchdb
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/hyperledger/fabric/common/flogging"
+	"github.com/hyperledger/fabric/common/ledger/dataformat"
 	"github.com/hyperledger/fabric/common/ledger/testutil"
+	"github.com/hyperledger/fabric/common/metrics/disabled"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/commontests"
@@ -23,17 +25,18 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 	"github.com/hyperledger/fabric/integration/runner"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
-	// Switch to CouchDB
+	flogging.ActivateSpec("statecouchdb=debug")
+
 	address, cleanup := couchDBSetup()
 	couchAddress = address
-	defer cleanup()
 
-	flogging.ActivateSpec("statecouchdb=debug")
-	//run the actual test
-	os.Exit(m.Run())
+	rc := m.Run()
+	cleanup()
+	os.Exit(rc)
 }
 
 func couchDBSetup() (addr string, cleanup func()) {
@@ -55,6 +58,285 @@ func TestBasicRW(t *testing.T) {
 	defer env.Cleanup()
 	commontests.TestBasicRW(t, env.DBProvider)
 
+}
+
+// TestGetStateFromCache checks cache hits, cache misses, and cache
+// updates during GetState call.
+func TestGetStateFromCache(t *testing.T) {
+	cache := statedb.NewCache(32, []string{"lscc"})
+
+	env := newTestVDBEnvWithCache(t, cache)
+	defer env.Cleanup()
+	chainID := "testgetstatefromcache"
+	db, err := env.DBProvider.GetDBHandle(chainID)
+	require.NoError(t, err)
+
+	// scenario 1: get state would receives a
+	// cache miss as the given key does not exist.
+	// As the key does not exist in the
+	// db also, get state call would not update
+	// the cache.
+	vv, err := db.GetState("ns", "key1")
+	require.NoError(t, err)
+	require.Nil(t, vv)
+	testDoesNotExistInCache(t, cache, chainID, "ns", "key1")
+
+	// scenario 2: get state would receive a cache hit.
+	// directly store an entry in the cache
+	cacheValue := &statedb.CacheValue{
+		Value:          []byte("value1"),
+		Metadata:       []byte("meta1"),
+		VersionBytes:   version.NewHeight(1, 1).ToBytes(),
+		AdditionalInfo: []byte("rev1"),
+	}
+	require.NoError(t, cache.PutState(chainID, "ns", "key1", cacheValue))
+
+	vv, err = db.GetState("ns", "key1")
+	expectedVV, err := constructVersionedValue(cacheValue)
+	require.NoError(t, err)
+	require.Equal(t, expectedVV, vv)
+
+	// scenario 3: get state would receives a
+	// cache miss as the given key does not present.
+	// The value associated with the key would be
+	// fetched from the database and the cache would
+	// be updated accordingly.
+
+	// store an entry in the db
+	batch := statedb.NewUpdateBatch()
+	vv2 := &statedb.VersionedValue{Value: []byte("value2"), Metadata: []byte("meta2"), Version: version.NewHeight(1, 2)}
+	batch.PutValAndMetadata("lscc", "key1", vv2.Value, vv2.Metadata, vv2.Version)
+	savePoint := version.NewHeight(1, 2)
+	db.ApplyUpdates(batch, savePoint)
+	// Note that the ApplyUpdates() updates only the existing entry in the cache. Currently, the
+	// cache has only ns, key1 but we are storing lscc, key1. Hence, no changes would happen in the cache.
+	testDoesNotExistInCache(t, cache, chainID, "lscc", "key1")
+
+	// calling GetState() would update the cache
+	vv, err = db.GetState("lscc", "key1")
+	require.NoError(t, err)
+	require.Equal(t, vv2, vv)
+
+	// cache should have been updated with lscc, key1
+	nsdb, err := db.(*VersionedDB).getNamespaceDBHandle("lscc")
+	require.NoError(t, err)
+	testExistInCache(t, nsdb, cache, chainID, "lscc", "key1", vv2)
+}
+
+// TestGetVersionFromCache checks cache hits, cache misses, and
+// updates during GetVersion call.
+func TestGetVersionFromCache(t *testing.T) {
+	cache := statedb.NewCache(32, []string{"lscc"})
+
+	env := newTestVDBEnvWithCache(t, cache)
+	defer env.Cleanup()
+	chainID := "testgetstatefromcache"
+	db, err := env.DBProvider.GetDBHandle(chainID)
+	require.NoError(t, err)
+
+	// scenario 1: get version would receives a
+	// cache miss as the given key does not exist.
+	// As the key does not exist in the
+	// db also, get version call would not update
+	// the cache.
+	ver, err := db.GetVersion("ns", "key1")
+	require.Nil(t, err)
+	require.Nil(t, ver)
+	testDoesNotExistInCache(t, cache, chainID, "ns", "key1")
+
+	// scenario 2: get version would receive a cache hit.
+	// directly store an entry in the cache
+	cacheValue := &statedb.CacheValue{
+		Value:          []byte("value1"),
+		Metadata:       []byte("meta1"),
+		VersionBytes:   version.NewHeight(1, 1).ToBytes(),
+		AdditionalInfo: []byte("rev1"),
+	}
+	require.NoError(t, cache.PutState(chainID, "ns", "key1", cacheValue))
+
+	ver, err = db.GetVersion("ns", "key1")
+	expectedVer, _, err := version.NewHeightFromBytes(cacheValue.VersionBytes)
+	require.NoError(t, err)
+	require.Equal(t, expectedVer, ver)
+
+	// scenario 3: get version would receives a
+	// cache miss as the given key does not present.
+	// The value associated with the key would be
+	// fetched from the database and the cache would
+	// be updated accordingly.
+
+	// store an entry in the db
+	batch := statedb.NewUpdateBatch()
+	vv2 := &statedb.VersionedValue{Value: []byte("value2"), Metadata: []byte("meta2"), Version: version.NewHeight(1, 2)}
+	batch.PutValAndMetadata("lscc", "key1", vv2.Value, vv2.Metadata, vv2.Version)
+	savePoint := version.NewHeight(1, 2)
+	db.ApplyUpdates(batch, savePoint)
+	// Note that the ApplyUpdates() updates only the existing entry in the cache. Currently, the
+	// cache has only ns, key1 but we are storing lscc, key1. Hence, no changes would happen in the cache.
+	testDoesNotExistInCache(t, cache, chainID, "lscc", "key1")
+
+	// calling GetVersion() would update the cache
+	ver, err = db.GetVersion("lscc", "key1")
+	require.NoError(t, err)
+	require.Equal(t, vv2.Version, ver)
+
+	// cache should have been updated with lscc, key1
+	nsdb, err := db.(*VersionedDB).getNamespaceDBHandle("lscc")
+	require.NoError(t, err)
+	testExistInCache(t, nsdb, cache, chainID, "lscc", "key1", vv2)
+}
+
+// TestGetMultipleStatesFromCache checks cache hits, cache misses,
+// and updates during GetStateMultipleKeys call.
+func TestGetMultipleStatesFromCache(t *testing.T) {
+	cache := statedb.NewCache(32, []string{"lscc"})
+
+	env := newTestVDBEnvWithCache(t, cache)
+	defer env.Cleanup()
+	chainID := "testgetmultiplestatesfromcache"
+	db, err := env.DBProvider.GetDBHandle(chainID)
+	require.NoError(t, err)
+
+	// scenario: given 5 keys, get multiple states find
+	// 2 keys in the cache. The remaining 2 keys would be fetched
+	// from the database and the cache would be updated. The last
+	// key is not present in the db and hence it won't be sent to
+	// the cache.
+
+	// key1 and key2 exist only in the cache
+	cacheValue1 := &statedb.CacheValue{
+		Value:          []byte("value1"),
+		Metadata:       []byte("meta1"),
+		VersionBytes:   version.NewHeight(1, 1).ToBytes(),
+		AdditionalInfo: []byte("rev1"),
+	}
+	require.NoError(t, cache.PutState(chainID, "ns", "key1", cacheValue1))
+	cacheValue2 := &statedb.CacheValue{
+		Value:          []byte("value2"),
+		Metadata:       []byte("meta2"),
+		VersionBytes:   version.NewHeight(1, 1).ToBytes(),
+		AdditionalInfo: []byte("rev2"),
+	}
+	require.NoError(t, cache.PutState(chainID, "ns", "key2", cacheValue2))
+
+	// key3 and key4 exist only in the db
+	batch := statedb.NewUpdateBatch()
+	vv3 := &statedb.VersionedValue{Value: []byte("value3"), Metadata: []byte("meta3"), Version: version.NewHeight(1, 1)}
+	batch.PutValAndMetadata("ns", "key3", vv3.Value, vv3.Metadata, vv3.Version)
+	vv4 := &statedb.VersionedValue{Value: []byte("value4"), Metadata: []byte("meta4"), Version: version.NewHeight(1, 1)}
+	batch.PutValAndMetadata("ns", "key4", vv4.Value, vv4.Metadata, vv4.Version)
+	savePoint := version.NewHeight(1, 2)
+	db.ApplyUpdates(batch, savePoint)
+
+	testDoesNotExistInCache(t, cache, chainID, "ns", "key3")
+	testDoesNotExistInCache(t, cache, chainID, "ns", "key4")
+
+	// key5 does not exist at all while key3 and key4 does not exist in the cache
+	vvalues, err := db.GetStateMultipleKeys("ns", []string{"key1", "key2", "key3", "key4", "key5"})
+	require.Nil(t, err)
+	vv1, err := constructVersionedValue(cacheValue1)
+	require.NoError(t, err)
+	vv2, err := constructVersionedValue(cacheValue2)
+	require.NoError(t, err)
+	require.Equal(t, []*statedb.VersionedValue{vv1, vv2, vv3, vv4, nil}, vvalues)
+
+	// cache should have been updated with key3 and key4
+	nsdb, err := db.(*VersionedDB).getNamespaceDBHandle("ns")
+	require.NoError(t, err)
+	testExistInCache(t, nsdb, cache, chainID, "ns", "key3", vv3)
+	testExistInCache(t, nsdb, cache, chainID, "ns", "key4", vv4)
+}
+
+// TestCacheUpdatesAfterCommit checks whether the cache is updated
+// after a commit of a update batch.
+func TestCacheUpdatesAfterCommit(t *testing.T) {
+	cache := statedb.NewCache(32, []string{"lscc"})
+
+	env := newTestVDBEnvWithCache(t, cache)
+	defer env.Cleanup()
+	chainID := "testcacheupdatesaftercommit"
+	db, err := env.DBProvider.GetDBHandle(chainID)
+	require.NoError(t, err)
+
+	// scenario: cache has 4 keys while the commit operation
+	// updates 2 of those keys, delete the remaining 2 keys, and
+	// adds a new key. At the end of the commit operation, only
+	// those 2 keys should be present with the recent value
+	// in the cache and the new key should not be present in the cache.
+
+	// store 4 keys in the db
+	batch := statedb.NewUpdateBatch()
+	vv1 := &statedb.VersionedValue{Value: []byte("value1"), Metadata: []byte("meta1"), Version: version.NewHeight(1, 2)}
+	vv2 := &statedb.VersionedValue{Value: []byte("value2"), Metadata: []byte("meta2"), Version: version.NewHeight(1, 2)}
+	vv3 := &statedb.VersionedValue{Value: []byte("value3"), Metadata: []byte("meta3"), Version: version.NewHeight(1, 2)}
+	vv4 := &statedb.VersionedValue{Value: []byte("value4"), Metadata: []byte("meta4"), Version: version.NewHeight(1, 2)}
+
+	batch.PutValAndMetadata("ns1", "key1", vv1.Value, vv1.Metadata, vv1.Version)
+	batch.PutValAndMetadata("ns1", "key2", vv2.Value, vv2.Metadata, vv2.Version)
+	batch.PutValAndMetadata("ns2", "key1", vv3.Value, vv3.Metadata, vv3.Version)
+	batch.PutValAndMetadata("ns2", "key2", vv4.Value, vv4.Metadata, vv4.Version)
+	savePoint := version.NewHeight(1, 5)
+	db.ApplyUpdates(batch, savePoint)
+
+	// key1, key2 in ns1 and ns2 would not be in cache
+	testDoesNotExistInCache(t, cache, chainID, "ns1", "key1")
+	testDoesNotExistInCache(t, cache, chainID, "ns1", "key2")
+	testDoesNotExistInCache(t, cache, chainID, "ns2", "key1")
+	testDoesNotExistInCache(t, cache, chainID, "ns2", "key2")
+
+	// add key1 and key2 from ns1 to the cache
+	_, err = db.GetState("ns1", "key1")
+	require.NoError(t, err)
+	_, err = db.GetState("ns1", "key2")
+	require.NoError(t, err)
+	// add key1 and key2 from ns2 to the cache
+	_, err = db.GetState("ns2", "key1")
+	require.NoError(t, err)
+	_, err = db.GetState("ns2", "key2")
+	require.NoError(t, err)
+
+	v, err := cache.GetState(chainID, "ns1", "key1")
+	require.NoError(t, err)
+	ns1key1rev := string(v.AdditionalInfo)
+
+	v, err = cache.GetState(chainID, "ns1", "key2")
+	require.NoError(t, err)
+	ns1key2rev := string(v.AdditionalInfo)
+
+	// update key1 and key2 in ns1. delete key1 and key2 in ns2. add a new key3 in ns2.
+	batch = statedb.NewUpdateBatch()
+	vv1Update := &statedb.VersionedValue{Value: []byte("new-value1"), Metadata: []byte("meta1"), Version: version.NewHeight(2, 2)}
+	vv2Update := &statedb.VersionedValue{Value: []byte("new-value2"), Metadata: []byte("meta2"), Version: version.NewHeight(2, 2)}
+	vv3Update := &statedb.VersionedValue{Version: version.NewHeight(2, 4)}
+	vv4Update := &statedb.VersionedValue{Version: version.NewHeight(2, 5)}
+	vv5 := &statedb.VersionedValue{Value: []byte("value5"), Metadata: []byte("meta5"), Version: version.NewHeight(1, 2)}
+
+	batch.PutValAndMetadata("ns1", "key1", vv1Update.Value, vv1Update.Metadata, vv1Update.Version)
+	batch.PutValAndMetadata("ns1", "key2", vv2Update.Value, vv2Update.Metadata, vv2Update.Version)
+	batch.Delete("ns2", "key1", vv3Update.Version)
+	batch.Delete("ns2", "key2", vv4Update.Version)
+	batch.PutValAndMetadata("ns2", "key3", vv5.Value, vv5.Metadata, vv5.Version)
+	savePoint = version.NewHeight(2, 5)
+	db.ApplyUpdates(batch, savePoint)
+
+	// cache should have only the update key1 and key2 in ns1
+	cacheValue, err := cache.GetState(chainID, "ns1", "key1")
+	require.NoError(t, err)
+	vv, err := constructVersionedValue(cacheValue)
+	require.NoError(t, err)
+	require.Equal(t, vv1Update, vv)
+	require.NotEqual(t, ns1key1rev, string(cacheValue.AdditionalInfo))
+
+	cacheValue, err = cache.GetState(chainID, "ns1", "key2")
+	require.NoError(t, err)
+	vv, err = constructVersionedValue(cacheValue)
+	require.NoError(t, err)
+	require.Equal(t, vv2Update, vv)
+	require.NotEqual(t, ns1key2rev, string(cacheValue.AdditionalInfo))
+
+	testDoesNotExistInCache(t, cache, chainID, "ns2", "key1")
+	testDoesNotExistInCache(t, cache, chainID, "ns2", "key2")
+	testDoesNotExistInCache(t, cache, chainID, "ns2", "key3")
 }
 
 func TestMultiDBBasicRW(t *testing.T) {
@@ -656,75 +938,6 @@ func TestPaginatedQueryValidation(t *testing.T) {
 	assert.Error(t, err, "An should have been thrown for an invalid options")
 }
 
-func TestLSCCStateCache(t *testing.T) {
-	env := NewTestVDBEnv(t)
-	defer env.Cleanup()
-
-	db, err := env.DBProvider.GetDBHandle("testinit")
-	assert.NoError(t, err)
-	db.Open()
-	defer db.Close()
-
-	// Scenario 1: Storing two keys in the lscc name space.
-	// Checking whether the cache is populated correctly during
-	// GetState()
-	batch := statedb.NewUpdateBatch()
-	batch.Put("lscc", "key1", []byte("value1"), version.NewHeight(1, 1))
-	batch.Put("lscc", "key2", []byte("value2"), version.NewHeight(1, 1))
-
-	savePoint := version.NewHeight(1, 1)
-	db.ApplyUpdates(batch, savePoint)
-
-	// cache should not contain key1 and key2
-	assert.Nil(t, db.(*VersionedDB).lsccStateCache.getState("key1"))
-	assert.Nil(t, db.(*VersionedDB).lsccStateCache.getState("key2"))
-
-	// GetState() populates the cache
-	valueFromDB, err := db.GetState("lscc", "key1")
-	assert.NoError(t, err)
-	valueFromCache := db.(*VersionedDB).lsccStateCache.getState("key1")
-	assert.Equal(t, valueFromCache, valueFromDB)
-
-	// Scenario 2: updates an existing key in lscc namespace. Note that the
-	// key in lsccStateCache should be updated
-	batch = statedb.NewUpdateBatch()
-	batch.Put("lscc", "key1", []byte("new-value1"), version.NewHeight(1, 2))
-	savePoint = version.NewHeight(1, 2)
-	db.ApplyUpdates(batch, savePoint)
-
-	valueFromCache = db.(*VersionedDB).lsccStateCache.getState("key1")
-	expectedValue := &statedb.VersionedValue{Value: []byte("new-value1"), Version: version.NewHeight(1, 2)}
-	assert.Equal(t, expectedValue, valueFromCache)
-
-	// Scenario 3: adds LsccCacheSize number of keys in lscc namespace.
-	// Read all keys in lscc namespace to make the cache full. This is to
-	// test the eviction.
-	batch = statedb.NewUpdateBatch()
-	for i := 0; i < lsccCacheSize; i++ {
-		batch.Put("lscc", "key"+strconv.Itoa(i), []byte("value"+strconv.Itoa(i)), version.NewHeight(1, 3))
-	}
-	savePoint = version.NewHeight(1, 3)
-	db.ApplyUpdates(batch, savePoint)
-
-	for i := 0; i < lsccCacheSize; i++ {
-		_, err := db.GetState("lscc", "key"+strconv.Itoa(i))
-		assert.NoError(t, err)
-	}
-	assert.Equal(t, true, db.(*VersionedDB).lsccStateCache.isCacheFull())
-
-	batch = statedb.NewUpdateBatch()
-	batch.Put("lscc", "key50", []byte("value1"), version.NewHeight(1, 4))
-	savePoint = version.NewHeight(1, 4)
-	db.ApplyUpdates(batch, savePoint)
-
-	// GetState() populates the cache after a eviction
-	valueFromDB, err = db.GetState("lscc", "key50")
-	assert.NoError(t, err)
-	valueFromCache = db.(*VersionedDB).lsccStateCache.getState("key50")
-	assert.Equal(t, valueFromCache, valueFromDB)
-	assert.Equal(t, true, db.(*VersionedDB).lsccStateCache.isCacheFull())
-}
-
 func TestApplyUpdatesWithNilHeight(t *testing.T) {
 	env := NewTestVDBEnv(t)
 	defer env.Cleanup()
@@ -800,4 +1013,225 @@ func assertQueryResults(t *testing.T, results []*couchdb.QueryResult, expectedId
 		actualIds = append(actualIds, res.ID)
 	}
 	assert.Equal(t, expectedIds, actualIds)
+}
+
+func TestFormatCheck(t *testing.T) {
+	testCases := []struct {
+		dataFormat     string                         // precondition
+		dataExists     bool                           // precondition
+		expectedFormat string                         // postcondition
+		expectedErr    *dataformat.ErrVersionMismatch // postcondition
+	}{
+		{
+			dataFormat: "",
+			dataExists: true,
+			expectedErr: &dataformat.ErrVersionMismatch{
+				DBInfo:          "CouchDB for state database",
+				Version:         "",
+				ExpectedVersion: "2.0",
+			},
+			expectedFormat: "does not matter as the test should not reach to check this",
+		},
+
+		{
+			dataFormat:     "",
+			dataExists:     false,
+			expectedErr:    nil,
+			expectedFormat: dataformat.Version20,
+		},
+
+		{
+			dataFormat:     dataformat.Version20,
+			dataExists:     false,
+			expectedFormat: dataformat.Version20,
+			expectedErr:    nil,
+		},
+
+		{
+			dataFormat:     dataformat.Version20,
+			dataExists:     true,
+			expectedFormat: dataformat.Version20,
+			expectedErr:    nil,
+		},
+
+		{
+			dataFormat: "3.0",
+			dataExists: true,
+			expectedErr: &dataformat.ErrVersionMismatch{
+				DBInfo:          "CouchDB for state database",
+				Version:         "3.0",
+				ExpectedVersion: dataformat.Version20,
+			},
+			expectedFormat: "does not matter as the test should not reach to check this",
+		},
+	}
+
+	for i, testCase := range testCases {
+		t.Run(
+			fmt.Sprintf("testCase %d", i),
+			func(t *testing.T) {
+				testFormatCheck(t, testCase.dataFormat, testCase.dataExists, testCase.expectedErr, testCase.expectedFormat)
+			})
+	}
+}
+
+func testFormatCheck(t *testing.T, dataFormat string, dataExists bool, expectedErr *dataformat.ErrVersionMismatch, expectedFormat string) {
+	redoPath, err := ioutil.TempDir("", "redoPath")
+	require.NoError(t, err)
+	defer os.RemoveAll(redoPath)
+	config := &couchdb.Config{
+		Address:             couchAddress,
+		MaxRetries:          3,
+		MaxRetriesOnStartup: 20,
+		RequestTimeout:      35 * time.Second,
+		RedoLogPath:         redoPath,
+	}
+	dbProvider, err := NewVersionedDBProvider(config, &disabled.Provider{}, &statedb.Cache{})
+	require.NoError(t, err)
+
+	// create preconditions for test
+	if dataExists {
+		db, err := dbProvider.GetDBHandle("testns")
+		require.NoError(t, err)
+		batch := statedb.NewUpdateBatch()
+		batch.Put("testns", "testkey", []byte("testVal"), version.NewHeight(1, 1))
+		require.NoError(t, db.ApplyUpdates(batch, version.NewHeight(1, 1)))
+	}
+	if dataFormat == "" {
+		testutilDropDB(t, dbProvider.couchInstance, fabricInternalDBName)
+	} else {
+		require.NoError(t, writeDataFormatVersion(dbProvider.couchInstance, dataFormat))
+	}
+	dbProvider.Close()
+	defer cleanupDB(t, dbProvider.couchInstance)
+
+	// close and reopen with preconditions set and check the expected behavior
+	dbProvider, err = NewVersionedDBProvider(config, &disabled.Provider{}, &statedb.Cache{})
+	if expectedErr != nil {
+		require.Equal(t, expectedErr, err)
+		return
+	}
+	require.NoError(t, err)
+	defer func() {
+		if dbProvider != nil {
+			dbProvider.Close()
+		}
+	}()
+	format, err := readDataformatVersion(dbProvider.couchInstance)
+	require.NoError(t, err)
+	require.Equal(t, expectedFormat, format)
+}
+
+func testDoesNotExistInCache(t *testing.T, cache *statedb.Cache, chainID, ns, key string) {
+	cacheValue, err := cache.GetState(chainID, ns, key)
+	require.NoError(t, err)
+	require.Nil(t, cacheValue)
+}
+
+func testExistInCache(t *testing.T, db *couchdb.CouchDatabase, cache *statedb.Cache, chainID, ns, key string, expectedVV *statedb.VersionedValue) {
+	cacheValue, err := cache.GetState(chainID, ns, key)
+	require.NoError(t, err)
+	vv, err := constructVersionedValue(cacheValue)
+	require.NoError(t, err)
+	require.Equal(t, expectedVV, vv)
+	metadata, err := retrieveNsMetadata(db, []string{key})
+	require.NoError(t, err)
+	require.Equal(t, metadata[0].Rev, string(cacheValue.AdditionalInfo))
+}
+
+func TestLoadCommittedVersion(t *testing.T) {
+	cache := statedb.NewCache(32, []string{"lscc"})
+
+	env := newTestVDBEnvWithCache(t, cache)
+	defer env.Cleanup()
+	chainID := "testloadcommittedversion"
+	db, err := env.DBProvider.GetDBHandle(chainID)
+	require.NoError(t, err)
+
+	// scenario: state cache has (ns1, key1), (ns1, key2),
+	// and (ns2, key1) but misses (ns2, key2). The
+	// LoadCommittedVersions will fetch the first
+	// three keys from the state cache and the remaining one from
+	// the db. To ensure that, the db contains only
+	// the missing key (ns2, key2).
+
+	// store (ns1, key1), (ns1, key2), (ns2, key1) in the state cache
+	cacheValue := &statedb.CacheValue{
+		Value:          []byte("value1"),
+		Metadata:       []byte("meta1"),
+		VersionBytes:   version.NewHeight(1, 1).ToBytes(),
+		AdditionalInfo: []byte("rev1"),
+	}
+	require.NoError(t, cache.PutState(chainID, "ns1", "key1", cacheValue))
+
+	cacheValue = &statedb.CacheValue{
+		Value:          []byte("value2"),
+		Metadata:       []byte("meta2"),
+		VersionBytes:   version.NewHeight(1, 2).ToBytes(),
+		AdditionalInfo: []byte("rev2"),
+	}
+	require.NoError(t, cache.PutState(chainID, "ns1", "key2", cacheValue))
+
+	cacheValue = &statedb.CacheValue{
+		Value:          []byte("value3"),
+		Metadata:       []byte("meta3"),
+		VersionBytes:   version.NewHeight(1, 3).ToBytes(),
+		AdditionalInfo: []byte("rev3"),
+	}
+	require.NoError(t, cache.PutState(chainID, "ns2", "key1", cacheValue))
+
+	// store (ns2, key2) in the db
+	batch := statedb.NewUpdateBatch()
+	vv := &statedb.VersionedValue{Value: []byte("value4"), Metadata: []byte("meta4"), Version: version.NewHeight(1, 4)}
+	batch.PutValAndMetadata("ns2", "key2", vv.Value, vv.Metadata, vv.Version)
+	savePoint := version.NewHeight(2, 2)
+	db.ApplyUpdates(batch, savePoint)
+
+	// version cache should be empty
+	ver, ok := db.(*VersionedDB).GetCachedVersion("ns1", "key1")
+	require.Nil(t, ver)
+	require.False(t, ok)
+	ver, ok = db.(*VersionedDB).GetCachedVersion("ns1", "key2")
+	require.Nil(t, ver)
+	require.False(t, ok)
+	ver, ok = db.(*VersionedDB).GetCachedVersion("ns2", "key1")
+	require.Nil(t, ver)
+	require.False(t, ok)
+	ver, ok = db.(*VersionedDB).GetCachedVersion("ns2", "key2")
+	require.Nil(t, ver)
+	require.False(t, ok)
+
+	keys := []*statedb.CompositeKey{
+		{
+			Namespace: "ns1",
+			Key:       "key1",
+		},
+		{
+			Namespace: "ns1",
+			Key:       "key2",
+		},
+		{
+			Namespace: "ns2",
+			Key:       "key1",
+		},
+		{
+			Namespace: "ns2",
+			Key:       "key2",
+		},
+	}
+
+	require.NoError(t, db.(*VersionedDB).LoadCommittedVersions(keys))
+
+	ver, ok = db.(*VersionedDB).GetCachedVersion("ns1", "key1")
+	require.Equal(t, version.NewHeight(1, 1), ver)
+	require.True(t, ok)
+	ver, ok = db.(*VersionedDB).GetCachedVersion("ns1", "key2")
+	require.Equal(t, version.NewHeight(1, 2), ver)
+	require.True(t, ok)
+	ver, ok = db.(*VersionedDB).GetCachedVersion("ns2", "key1")
+	require.Equal(t, version.NewHeight(1, 3), ver)
+	require.True(t, ok)
+	ver, ok = db.(*VersionedDB).GetCachedVersion("ns2", "key2")
+	require.Equal(t, version.NewHeight(1, 4), ver)
+	require.True(t, ok)
 }

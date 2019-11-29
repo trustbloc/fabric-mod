@@ -8,6 +8,9 @@ package lockbasedtxmgr
 import (
 	"fmt"
 
+	"github.com/hyperledger/fabric-protos-go/ledger/queryresult"
+	"github.com/hyperledger/fabric-protos-go/ledger/rwset/kvrwset"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
 	commonledger "github.com/hyperledger/fabric/common/ledger"
 	ledger "github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
@@ -17,9 +20,6 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
 	"github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/hyperledger/fabric/extensions/collections/pvtdatahandler"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/ledger/queryresult"
-	"github.com/hyperledger/fabric/protos/ledger/rwset/kvrwset"
 	"github.com/pkg/errors"
 )
 
@@ -29,9 +29,9 @@ const (
 )
 
 type pvtDataHandler interface {
-	HandleGetPrivateData(txID, ns string, config *common.StaticCollectionConfig, key string) ([]byte, bool, error)
-	HandleGetPrivateDataMultipleKeys(txID, ns string, config *common.StaticCollectionConfig, keys []string) ([][]byte, bool, error)
-	HandleExecuteQueryOnPrivateData(txID, ns string, config *common.StaticCollectionConfig, query string) (commonledger.ResultsIterator, bool, error)
+	HandleGetPrivateData(txID, ns string, config *pb.StaticCollectionConfig, key string) ([]byte, bool, error)
+	HandleGetPrivateDataMultipleKeys(txID, ns string, config *pb.StaticCollectionConfig, keys []string) ([][]byte, bool, error)
+	HandleExecuteQueryOnPrivateData(txID, ns string, config *pb.StaticCollectionConfig, query string) (commonledger.ResultsIterator, bool, error)
 }
 
 type queryHelper struct {
@@ -41,11 +41,16 @@ type queryHelper struct {
 	itrs              []*resultsItr
 	err               error
 	doneInvoked       bool
+	hasher            ledger.Hasher
 	pvtDataHandler    pvtDataHandler
 }
 
-func newQueryHelper(txmgr *LockBasedTxMgr, rwsetBuilder *rwsetutil.RWSetBuilder, performCollCheck bool) *queryHelper {
-	helper := &queryHelper{txmgr: txmgr, rwsetBuilder: rwsetBuilder}
+func newQueryHelper(txmgr *LockBasedTxMgr, rwsetBuilder *rwsetutil.RWSetBuilder, performCollCheck bool, hasher ledger.Hasher) *queryHelper {
+	helper := &queryHelper{
+		txmgr:        txmgr,
+		rwsetBuilder: rwsetBuilder,
+		hasher:       hasher,
+	}
 	validator := newCollNameValidator(txmgr.ledgerid, txmgr.ccInfoProvider, &lockBasedQueryExecutor{helper: helper}, !performCollCheck)
 	helper.collNameValidator = validator
 	helper.pvtDataHandler = pvtdatahandler.New(txmgr.ledgerid, txmgr.collDataProvider)
@@ -99,6 +104,7 @@ func (h *queryHelper) getStateRangeScanIterator(namespace string, startKey strin
 		h.rwsetBuilder,
 		queryReadsHashingEnabled,
 		maxDegreeQueryReadsHashing,
+		h.hasher,
 	)
 	if err != nil {
 		return nil, err
@@ -120,6 +126,7 @@ func (h *queryHelper) getStateRangeScanIteratorWithMetadata(namespace string, st
 		h.rwsetBuilder,
 		queryReadsHashingEnabled,
 		maxDegreeQueryReadsHashing,
+		h.hasher,
 	)
 	if err != nil {
 		return nil, err
@@ -365,7 +372,7 @@ type resultsItr struct {
 }
 
 func newResultsItr(ns string, startKey string, endKey string, metadata map[string]interface{},
-	db statedb.VersionedDB, rwsetBuilder *rwsetutil.RWSetBuilder, enableHashing bool, maxDegree uint32) (*resultsItr, error) {
+	db statedb.VersionedDB, rwsetBuilder *rwsetutil.RWSetBuilder, enableHashing bool, maxDegree uint32, hasher ledger.Hasher) (*resultsItr, error) {
 	var err error
 	var dbItr statedb.ResultsIterator
 	if metadata == nil {
@@ -383,7 +390,7 @@ func newResultsItr(ns string, startKey string, endKey string, metadata map[strin
 		itr.endKey = endKey
 		// just set the StartKey... set the EndKey later below in the Next() method.
 		itr.rangeQueryInfo = &kvrwset.RangeQueryInfo{StartKey: startKey}
-		resultsHelper, err := rwsetutil.NewRangeQueryResultsHelper(enableHashing, maxDegree)
+		resultsHelper, err := rwsetutil.NewRangeQueryResultsHelper(enableHashing, maxDegree, hasher)
 		if err != nil {
 			return nil, err
 		}

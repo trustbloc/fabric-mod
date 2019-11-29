@@ -7,6 +7,10 @@ SPDX-License-Identifier: Apache-2.0
 package raft
 
 import (
+	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -18,6 +22,12 @@ import (
 	"time"
 
 	docker "github.com/fsouza/go-dockerclient"
+	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/msp"
+	"github.com/hyperledger/fabric/cmd/common/signer"
+	"github.com/hyperledger/fabric/common/configtx"
+	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/integration/nwo"
 	"github.com/hyperledger/fabric/integration/nwo/commands"
 	"github.com/hyperledger/fabric/protoutil"
@@ -32,13 +42,12 @@ import (
 
 var _ = Describe("EndToEnd Crash Fault Tolerance", func() {
 	var (
-		testDir   string
-		client    *docker.Client
-		network   *nwo.Network
-		chaincode nwo.Chaincode
-		peer      *nwo.Peer
+		testDir string
+		client  *docker.Client
+		network *nwo.Network
+		peer    *nwo.Peer
 
-		peerProc, ordererProc, o1Proc, o2Proc, o3Proc ifrit.Process
+		ordererProc, o1Proc, o2Proc, o3Proc ifrit.Process
 	)
 
 	BeforeEach(func() {
@@ -48,14 +57,6 @@ var _ = Describe("EndToEnd Crash Fault Tolerance", func() {
 
 		client, err = docker.NewClientFromEnv()
 		Expect(err).NotTo(HaveOccurred())
-
-		chaincode = nwo.Chaincode{
-			Name:    "mycc",
-			Version: "0.0",
-			Path:    "github.com/hyperledger/fabric/integration/chaincode/simple/cmd",
-			Ctor:    `{"Args":["init","a","100","b","200"]}`,
-			Policy:  `AND ('Org1MSP.member','Org2MSP.member')`,
-		}
 	})
 
 	AfterEach(func() {
@@ -70,29 +71,12 @@ var _ = Describe("EndToEnd Crash Fault Tolerance", func() {
 			ordererProc.Signal(syscall.SIGTERM)
 			Eventually(ordererProc.Wait(), network.EventuallyTimeout).Should(Receive())
 		}
-		if peerProc != nil {
-			peerProc.Signal(syscall.SIGTERM)
-			Eventually(peerProc.Wait(), network.EventuallyTimeout).Should(Receive())
-		}
+
 		if network != nil {
 			network.Cleanup()
 		}
 		os.RemoveAll(testDir)
 	})
-
-	fetchLatestBlock := func(targetOrderer *nwo.Orderer, blockFile string) {
-		c := commands.ChannelFetch{
-			ChannelID:  "testchannel",
-			Block:      "newest",
-			OutputFile: blockFile,
-		}
-		if targetOrderer != nil {
-			c.Orderer = network.OrdererAddress(targetOrderer, nwo.ListenPort)
-		}
-		sess, err := network.PeerAdminSession(peer, c)
-		Expect(err).NotTo(HaveOccurred())
-		Eventually(sess, network.EventuallyTimeout).Should(gexec.Exit(0))
-	}
 
 	When("orderer stops and restarts", func() {
 		It("keeps network up and running", func() {
@@ -100,8 +84,6 @@ var _ = Describe("EndToEnd Crash Fault Tolerance", func() {
 
 			o1, o2, o3 := network.Orderer("orderer1"), network.Orderer("orderer2"), network.Orderer("orderer3")
 			peer = network.Peer("Org1", "peer1")
-			blockFile1 := filepath.Join(testDir, "newest_orderer1_block.pb")
-			blockFile2 := filepath.Join(testDir, "newest_orderer2_block.pb")
 
 			network.GenerateConfigTree()
 			network.Bootstrap()
@@ -112,38 +94,50 @@ var _ = Describe("EndToEnd Crash Fault Tolerance", func() {
 				{Name: o3.ID(), Runner: network.OrdererRunner(o3)},
 			}
 			ordererGroup := grouper.NewParallel(syscall.SIGTERM, orderers)
-			peerGroup := network.PeerGroupRunner()
 
 			o1Proc = ifrit.Invoke(o1Runner)
 			ordererProc = ifrit.Invoke(ordererGroup)
-			Eventually(o1Proc.Ready()).Should(BeClosed())
-			Eventually(ordererProc.Ready()).Should(BeClosed())
-			peerProc = ifrit.Invoke(peerGroup)
-			Eventually(peerProc.Ready()).Should(BeClosed())
+			Eventually(o1Proc.Ready(), network.EventuallyTimeout).Should(BeClosed())
+			Eventually(ordererProc.Ready(), network.EventuallyTimeout).Should(BeClosed())
+
+			findLeader([]*ginkgomon.Runner{o1Runner})
 
 			By("performing operation with orderer1")
-			network.CreateAndJoinChannel(o1, "testchannel")
+			env := CreateBroadcastEnvelope(network, o1, network.SystemChannel.Name, []byte("foo"))
+			resp, err := nwo.Broadcast(network, o1, env)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.Status).To(Equal(common.Status_SUCCESS))
+
+			block := FetchBlock(network, o1, 1, network.SystemChannel.Name)
+			Expect(block).NotTo(BeNil())
 
 			By("killing orderer1")
 			o1Proc.Signal(syscall.SIGKILL)
 			Eventually(o1Proc.Wait(), network.EventuallyTimeout).Should(Receive(MatchError("exit status 137")))
 
-			By("performing operations with running orderer")
-			nwo.DeployChaincode(network, "testchannel", o2, chaincode)
+			By("broadcasting envelope to running orderer")
+			resp, err = nwo.Broadcast(network, o2, env)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.Status).To(Equal(common.Status_SUCCESS))
+
+			block = FetchBlock(network, o2, 2, network.SystemChannel.Name)
+			Expect(block).NotTo(BeNil())
 
 			By("restarting orderer1")
 			o1Runner = network.OrdererRunner(o1)
 			o1Proc = ifrit.Invoke(o1Runner)
-			Eventually(o1Proc.Ready()).Should(BeClosed())
+			Eventually(o1Proc.Ready(), network.EventuallyTimeout).Should(BeClosed())
+			findLeader([]*ginkgomon.Runner{o1Runner})
 
-			By("executing transaction with restarted orderer")
-			RunQueryInvokeQuery(network, o1, peer, "testchannel")
+			By("broadcasting envelope to restarted orderer")
+			resp, err = nwo.Broadcast(network, o1, env)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.Status).To(Equal(common.Status_SUCCESS))
 
-			fetchLatestBlock(o1, blockFile1)
-			fetchLatestBlock(o2, blockFile2)
-			b1 := nwo.UnmarshalBlockFromFile(blockFile1)
-			b2 := nwo.UnmarshalBlockFromFile(blockFile2)
-			Expect(protoutil.BlockHeaderBytes(b1.Header)).To(Equal(protoutil.BlockHeaderBytes(b2.Header)))
+			blko1 := FetchBlock(network, o1, 3, network.SystemChannel.Name)
+			blko2 := FetchBlock(network, o2, 3, network.SystemChannel.Name)
+
+			Expect(blko1.Header.DataHash).To(Equal(blko2.Header.DataHash))
 		})
 	})
 
@@ -157,10 +151,7 @@ var _ = Describe("EndToEnd Crash Fault Tolerance", func() {
 			// - assert that o1 can catch up with o2 using snapshot
 			network = nwo.New(nwo.MultiNodeEtcdRaft(), testDir, client, StartPort(), components)
 			o1, o2, o3 := network.Orderer("orderer1"), network.Orderer("orderer2"), network.Orderer("orderer3")
-
 			peer = network.Peer("Org1", "peer1")
-			blockFile1 := filepath.Join(testDir, "newest_orderer1_block.pb")
-			blockFile2 := filepath.Join(testDir, "newest_orderer2_block.pb")
 
 			network.GenerateConfigTree()
 			network.Bootstrap()
@@ -170,31 +161,35 @@ var _ = Describe("EndToEnd Crash Fault Tolerance", func() {
 				{Name: o3.ID(), Runner: network.OrdererRunner(o3)},
 			}
 			ordererGroup := grouper.NewParallel(syscall.SIGTERM, orderers)
-			peerGroup := network.PeerGroupRunner()
 
 			By("Starting 2/3 of cluster")
 			ordererProc = ifrit.Invoke(ordererGroup)
-			Eventually(ordererProc.Ready()).Should(BeClosed())
-			peerProc = ifrit.Invoke(peerGroup)
-			Eventually(peerProc.Ready()).Should(BeClosed())
+			Eventually(ordererProc.Ready(), network.EventuallyTimeout).Should(BeClosed())
 
-			By("Creating channel and submitting several transactions to take snapshot")
-			network.CreateAndJoinChannel(o2, "testchannel")
-			nwo.DeployChaincode(network, "testchannel", o2, chaincode)
+			By("Creating testchannel")
+			channelID := "testchannel"
+			network.CreateChannel(channelID, o2, peer)
 
-			for i := 1; i <= 6; i++ {
-				RunInvoke(network, o2, peer, "testchannel")
-				Eventually(func() int {
-					return RunQuery(network, o2, peer, "testchannel")
-				}, network.EventuallyTimeout).Should(Equal(100 - i*10))
-			}
-
+			By("Submitting several transactions to trigger snapshot")
 			o2SnapDir := path.Join(network.RootDir, "orderers", o2.ID(), "etcdraft", "snapshot")
-			Eventually(func() int {
-				files, err := ioutil.ReadDir(path.Join(o2SnapDir, "testchannel"))
+
+			env := CreateBroadcastEnvelope(network, o2, channelID, make([]byte, 2000))
+			for i := 1; i <= 4; i++ { // 4 < MaxSnapshotFiles(5), so that no snapshot is pruned
+				// Note that MaxMessageCount is 1 be default, so every tx results in a new block
+				resp, err := nwo.Broadcast(network, o2, env)
 				Expect(err).NotTo(HaveOccurred())
-				return len(files)
-			}).Should(Equal(5)) // snapshot interval is 1 KB, every block triggers snapshot
+				Expect(resp.Status).To(Equal(common.Status_SUCCESS))
+
+				// Assert that new snapshot file is created before broadcasting next tx,
+				// so that number of snapshots is deterministic. Otherwise, it is not
+				// guaranteed that every block triggers a snapshot file being created,
+				// due to the mechanism to prevent excessive snapshotting.
+				Eventually(func() int {
+					files, err := ioutil.ReadDir(path.Join(o2SnapDir, channelID))
+					Expect(err).NotTo(HaveOccurred())
+					return len(files)
+				}, network.EventuallyTimeout).Should(Equal(i)) // snapshot interval is 1 KB, every block triggers snapshot
+			}
 
 			By("Killing orderers so they don't have blocks prior to latest snapshot in the memory")
 			ordererProc.Signal(syscall.SIGKILL)
@@ -207,7 +202,7 @@ var _ = Describe("EndToEnd Crash Fault Tolerance", func() {
 			}
 			ordererGroup = grouper.NewParallel(syscall.SIGTERM, orderers)
 			ordererProc = ifrit.Invoke(ordererGroup)
-			Eventually(ordererProc.Ready()).Should(BeClosed())
+			Eventually(ordererProc.Ready(), network.EventuallyTimeout).Should(BeClosed())
 
 			o1SnapDir := path.Join(network.RootDir, "orderers", o1.ID(), "etcdraft", "snapshot")
 
@@ -220,22 +215,21 @@ var _ = Describe("EndToEnd Crash Fault Tolerance", func() {
 
 			By("Asserting that orderer1 receives and persists snapshot")
 			Eventually(func() int {
-				files, err := ioutil.ReadDir(path.Join(o1SnapDir, "testchannel"))
+				files, err := ioutil.ReadDir(path.Join(o1SnapDir, channelID))
 				Expect(err).NotTo(HaveOccurred())
 				return len(files)
 			}, network.EventuallyTimeout).Should(Equal(1))
 
 			By("Asserting cluster is still functional")
-			RunInvoke(network, o1, peer, "testchannel")
-			Eventually(func() int {
-				return RunQuery(network, o1, peer, "testchannel")
-			}, network.EventuallyTimeout).Should(Equal(30))
+			env = CreateBroadcastEnvelope(network, o1, channelID, make([]byte, 1000))
+			resp, err := nwo.Broadcast(network, o1, env)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.Status).To(Equal(common.Status_SUCCESS))
 
-			fetchLatestBlock(o1, blockFile1)
-			fetchLatestBlock(o2, blockFile2)
-			b1 := nwo.UnmarshalBlockFromFile(blockFile1)
-			b2 := nwo.UnmarshalBlockFromFile(blockFile2)
-			Expect(protoutil.BlockHeaderBytes(b1.Header)).To(Equal(protoutil.BlockHeaderBytes(b2.Header)))
+			blko1 := FetchBlock(network, o1, 5, channelID)
+			blko2 := FetchBlock(network, o2, 5, channelID)
+
+			Expect(blko1.Header.DataHash).To(Equal(blko2.Header.DataHash))
 		})
 	})
 
@@ -257,9 +251,9 @@ var _ = Describe("EndToEnd Crash Fault Tolerance", func() {
 			o2Proc = ifrit.Invoke(o2Runner)
 			o3Proc = ifrit.Invoke(o3Runner)
 
-			Eventually(o1Proc.Ready()).Should(BeClosed())
-			Eventually(o2Proc.Ready()).Should(BeClosed())
-			Eventually(o3Proc.Ready()).Should(BeClosed())
+			Eventually(o1Proc.Ready(), network.EventuallyTimeout).Should(BeClosed())
+			Eventually(o2Proc.Ready(), network.EventuallyTimeout).Should(BeClosed())
+			Eventually(o3Proc.Ready(), network.EventuallyTimeout).Should(BeClosed())
 
 			By("Waiting for them to elect a leader")
 			ordererProcesses := []ifrit.Process{o1Proc, o2Proc, o3Proc}
@@ -301,13 +295,9 @@ var _ = Describe("EndToEnd Crash Fault Tolerance", func() {
 			o2Proc = ifrit.Invoke(o2Runner)
 			o3Proc = ifrit.Invoke(o3Runner)
 
-			Eventually(o1Proc.Ready()).Should(BeClosed())
-			Eventually(o2Proc.Ready()).Should(BeClosed())
-			Eventually(o3Proc.Ready()).Should(BeClosed())
-
-			peerGroup := network.PeerGroupRunner()
-			peerProc = ifrit.Invoke(peerGroup)
-			Eventually(peerProc.Ready()).Should(BeClosed())
+			Eventually(o1Proc.Ready(), network.EventuallyTimeout).Should(BeClosed())
+			Eventually(o2Proc.Ready(), network.EventuallyTimeout).Should(BeClosed())
+			Eventually(o3Proc.Ready(), network.EventuallyTimeout).Should(BeClosed())
 
 			By("Waiting for them to elect a leader")
 			ordererProcesses := []ifrit.Process{o1Proc, o2Proc, o3Proc}
@@ -317,7 +307,7 @@ var _ = Describe("EndToEnd Crash Fault Tolerance", func() {
 			leader := orderers[leaderIndex]
 
 			followerIndices := func() []int {
-				f := []int{}
+				var f []int
 				for i := range ordererProcesses {
 					if leaderIndex != i {
 						f = append(f, i)
@@ -332,23 +322,249 @@ var _ = Describe("EndToEnd Crash Fault Tolerance", func() {
 			ordererProcesses[followerIndices[1]].Signal(syscall.SIGTERM)
 
 			By("Waiting for followers to die")
+			// This significantly slows test (~10s). However, reducing ElectionTimeout
+			// would introduce some flakes when disk write is exceptionally slow.
 			Eventually(ordererProcesses[followerIndices[0]].Wait(), network.EventuallyTimeout).Should(Receive())
 			Eventually(ordererProcesses[followerIndices[1]].Wait(), network.EventuallyTimeout).Should(Receive())
 
 			By("Waiting for leader to step down")
 			Eventually(oRunners[leaderIndex].Err(), time.Minute, time.Second).Should(gbytes.Say(fmt.Sprintf("%d stepped down to follower since quorum is not active", leaderID)))
 
-			By("Failing to perform operation on leader due to its resignation")
+			By("Submitting tx to leader")
 			// This should fail because current leader steps down
 			// and there is no leader at this point of time
-			sess, err := network.PeerAdminSession(peer, commands.ChannelCreate{
-				ChannelID:   "testchannel",
-				Orderer:     network.OrdererAddress(leader, nwo.ListenPort),
-				File:        network.CreateChannelTxPath("testchannel"),
-				OutputBlock: "/dev/null",
+			env := CreateBroadcastEnvelope(network, leader, network.SystemChannel.Name, []byte("foo"))
+			resp, err := nwo.Broadcast(network, leader, env)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.Status).To(Equal(common.Status_SERVICE_UNAVAILABLE))
+		})
+	})
+
+	When("orderer TLS certificates expire", func() {
+		It("is still possible to recover", func() {
+			network = nwo.New(nwo.MultiNodeEtcdRaft(), testDir, client, StartPort(), components)
+
+			o1, o2, o3 := network.Orderer("orderer1"), network.Orderer("orderer2"), network.Orderer("orderer3")
+			peer = network.Peer("Org1", "peer1")
+
+			network.GenerateConfigTree()
+			network.Bootstrap()
+
+			ordererDomain := network.Organization(o1.Organization).Domain
+			ordererTLSCAKeyPath := filepath.Join(network.RootDir, "crypto", "ordererOrganizations",
+				ordererDomain, "tlsca", "priv_sk")
+
+			ordererTLSCAKey, err := ioutil.ReadFile(ordererTLSCAKeyPath)
+			Expect(err).NotTo(HaveOccurred())
+
+			ordererTLSCACertPath := filepath.Join(network.RootDir, "crypto", "ordererOrganizations",
+				ordererDomain, "tlsca", fmt.Sprintf("tlsca.%s-cert.pem", ordererDomain))
+			ordererTLSCACert, err := ioutil.ReadFile(ordererTLSCACertPath)
+			Expect(err).NotTo(HaveOccurred())
+
+			serverTLSCerts := make(map[string][]byte)
+			for _, orderer := range []*nwo.Orderer{o1, o2, o3} {
+				tlsCertPath := filepath.Join(network.OrdererLocalTLSDir(orderer), "server.crt")
+				serverTLSCerts[tlsCertPath], err = ioutil.ReadFile(tlsCertPath)
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			By("Expiring orderer TLS certificates")
+			for filePath, certPEM := range serverTLSCerts {
+				expiredCert, earlyMadeCACert := expireCertificate(certPEM, ordererTLSCACert, ordererTLSCAKey)
+				err = ioutil.WriteFile(filePath, expiredCert, 600)
+				Expect(err).NotTo(HaveOccurred())
+
+				err = ioutil.WriteFile(ordererTLSCACertPath, earlyMadeCACert, 600)
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			By("Regenerating config")
+			sess, err := network.ConfigTxGen(commands.OutputBlock{
+				ChannelID:   network.SystemChannel.Name,
+				Profile:     network.SystemChannel.Profile,
+				ConfigPath:  network.RootDir,
+				OutputBlock: network.OutputBlockPath(network.SystemChannel.Name),
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(sess.Wait(network.EventuallyTimeout).ExitCode()).To(Equal(1))
+			Eventually(sess, network.EventuallyTimeout).Should(gexec.Exit(0))
+
+			By("Running the orderer nodes")
+			o1Runner := network.OrdererRunner(o1)
+			o2Runner := network.OrdererRunner(o2)
+			o3Runner := network.OrdererRunner(o3)
+
+			o1Proc = ifrit.Invoke(o1Runner)
+			o2Proc = ifrit.Invoke(o2Runner)
+			o3Proc = ifrit.Invoke(o3Runner)
+
+			Eventually(o1Proc.Ready(), network.EventuallyTimeout).Should(BeClosed())
+			Eventually(o2Proc.Ready(), network.EventuallyTimeout).Should(BeClosed())
+			Eventually(o3Proc.Ready(), network.EventuallyTimeout).Should(BeClosed())
+
+			By("Waiting for TLS handshakes to fail")
+			Eventually(o1Runner.Err(), network.EventuallyTimeout).Should(gbytes.Say("tls: bad certificate"))
+			Eventually(o2Runner.Err(), network.EventuallyTimeout).Should(gbytes.Say("tls: bad certificate"))
+			Eventually(o3Runner.Err(), network.EventuallyTimeout).Should(gbytes.Say("tls: bad certificate"))
+
+			By("Killing orderers")
+			o1Proc.Signal(syscall.SIGTERM)
+			o2Proc.Signal(syscall.SIGTERM)
+			o3Proc.Signal(syscall.SIGTERM)
+
+			By("Launching orderers again")
+			o1Runner = network.OrdererRunner(o1)
+			o2Runner = network.OrdererRunner(o2)
+			o3Runner = network.OrdererRunner(o3)
+
+			for i, runner := range []*ginkgomon.Runner{o1Runner, o2Runner, o3Runner} {
+				// Switch between the general port and the cluster listener port
+				runner.Command.Env = append(runner.Command.Env, "ORDERER_GENERAL_CLUSTER_TLSHANDSHAKETIMESHIFT=90s")
+				tlsCertPath := filepath.Join(network.OrdererLocalTLSDir(network.Orderers[i]), "server.crt")
+				tlsKeyPath := filepath.Join(network.OrdererLocalTLSDir(network.Orderers[i]), "server.key")
+				runner.Command.Env = append(runner.Command.Env, fmt.Sprintf("ORDERER_GENERAL_CLUSTER_SERVERCERTIFICATE=%s", tlsCertPath))
+				runner.Command.Env = append(runner.Command.Env, fmt.Sprintf("ORDERER_GENERAL_CLUSTER_SERVERPRIVATEKEY=%s", tlsKeyPath))
+				runner.Command.Env = append(runner.Command.Env, fmt.Sprintf("ORDERER_GENERAL_CLUSTER_ROOTCAS=%s", ordererTLSCACertPath))
+			}
+
+			o1Proc = ifrit.Invoke(o1Runner)
+			o2Proc = ifrit.Invoke(o2Runner)
+			o3Proc = ifrit.Invoke(o3Runner)
+
+			Eventually(o1Proc.Ready(), network.EventuallyTimeout).Should(BeClosed())
+			Eventually(o2Proc.Ready(), network.EventuallyTimeout).Should(BeClosed())
+			Eventually(o3Proc.Ready(), network.EventuallyTimeout).Should(BeClosed())
+
+			By("Waiting for a leader to be elected")
+			findLeader([]*ginkgomon.Runner{o1Runner, o2Runner, o3Runner})
+
+		})
+	})
+
+	When("admin certificate expires", func() {
+		It("is still possible to replace them", func() {
+			network = nwo.New(nwo.BasicEtcdRaft(), testDir, client, StartPort(), components)
+			network.GenerateConfigTree()
+			network.Bootstrap()
+
+			peer = network.Peer("Org1", "peer1")
+			orderer := network.Orderer("orderer")
+
+			ordererDomain := network.Organization(orderer.Organization).Domain
+			ordererCAKeyPath := filepath.Join(network.RootDir, "crypto", "ordererOrganizations", ordererDomain, "ca", "priv_sk")
+
+			ordererCAKey, err := ioutil.ReadFile(ordererCAKeyPath)
+			Expect(err).NotTo(HaveOccurred())
+
+			ordererCACertPath := filepath.Join(network.RootDir, "crypto", "ordererOrganizations", ordererDomain, "ca", fmt.Sprintf("ca.%s-cert.pem", ordererDomain))
+			ordererCACert, err := ioutil.ReadFile(ordererCACertPath)
+			Expect(err).NotTo(HaveOccurred())
+
+			adminCertPath := fmt.Sprintf("Admin@%s-cert.pem", ordererDomain)
+			adminCertPath = filepath.Join(network.OrdererUserMSPDir(orderer, "Admin"), "signcerts", adminCertPath)
+
+			originalAdminCert, err := ioutil.ReadFile(adminCertPath)
+			Expect(err).NotTo(HaveOccurred())
+
+			expiredAdminCert, earlyCACert := expireCertificate(originalAdminCert, ordererCACert, ordererCAKey)
+			err = ioutil.WriteFile(adminCertPath, expiredAdminCert, 600)
+			Expect(err).NotTo(HaveOccurred())
+
+			adminPath := filepath.Join(network.RootDir, "crypto", "ordererOrganizations",
+				ordererDomain, "msp", "admincerts", fmt.Sprintf("Admin@%s-cert.pem", ordererDomain))
+			err = ioutil.WriteFile(adminPath, expiredAdminCert, 600)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = ioutil.WriteFile(ordererCACertPath, earlyCACert, 600)
+			Expect(err).NotTo(HaveOccurred())
+
+			ordererCACertPath = filepath.Join(network.RootDir, "crypto", "ordererOrganizations",
+				ordererDomain, "msp", "cacerts", fmt.Sprintf("ca.%s-cert.pem", ordererDomain))
+			err = ioutil.WriteFile(ordererCACertPath, earlyCACert, 600)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Regenerating config")
+			sess, err := network.ConfigTxGen(commands.OutputBlock{
+				ChannelID:   network.SystemChannel.Name,
+				Profile:     network.SystemChannel.Profile,
+				ConfigPath:  network.RootDir,
+				OutputBlock: network.OutputBlockPath(network.SystemChannel.Name),
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(sess, network.EventuallyTimeout).Should(gexec.Exit(0))
+
+			runner := network.OrdererRunner(orderer)
+			runner.Command.Env = append(runner.Command.Env, "FABRIC_LOGGING_SPEC=debug")
+			ordererProc = ifrit.Invoke(runner)
+
+			By("Waiting for orderer to elect a leader")
+			findLeader([]*ginkgomon.Runner{runner})
+
+			By("Creating config update that adds another orderer admin")
+			bootBlockPath := filepath.Join(network.RootDir, fmt.Sprintf("%s_block.pb", network.SystemChannel.Name))
+			bootBlock, err := ioutil.ReadFile(bootBlockPath)
+			Expect(err).NotTo(HaveOccurred())
+
+			current := configFromBootstrapBlock(bootBlock)
+			updatedConfig := addAdminCertToConfig(current, originalAdminCert)
+
+			tempDir, err := ioutil.TempDir("", "adminExpirationTest")
+			Expect(err).NotTo(HaveOccurred())
+
+			configBlockFile := filepath.Join(tempDir, "update.pb")
+			defer os.RemoveAll(tempDir)
+			nwo.ComputeUpdateOrdererConfig(configBlockFile, network, network.SystemChannel.Name, current, updatedConfig, peer)
+
+			updateTransaction, err := ioutil.ReadFile(configBlockFile)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating config update")
+			channelCreateTxn := createConfigTx(updateTransaction, network.SystemChannel.Name, network, orderer, peer)
+
+			By("Updating channel config and failing")
+			p, err := nwo.Broadcast(network, orderer, channelCreateTxn)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(p.Status).To(Equal(common.Status_BAD_REQUEST))
+			Expect(p.Info).To(ContainSubstring("identity expired"))
+
+			By("Attempting to fetch a block from orderer and failing")
+			denv := CreateDeliverEnvelope(network, orderer, 0, network.SystemChannel.Name)
+			Expect(denv).NotTo(BeNil())
+
+			block, err := nwo.Deliver(network, orderer, denv)
+			Expect(denv).NotTo(BeNil())
+			Expect(block).To(BeNil())
+			Eventually(runner.Err(), time.Minute, time.Second).Should(gbytes.Say("client identity expired"))
+
+			By("Killing orderer")
+			ordererProc.Signal(syscall.SIGTERM)
+
+			By("Launching orderers again")
+			runner = network.OrdererRunner(orderer)
+			runner.Command.Env = append(runner.Command.Env, "ORDERER_GENERAL_AUTHENTICATION_NOEXPIRATIONCHECKS=true")
+			ordererProc = ifrit.Invoke(runner)
+
+			By("Waiting for orderer to launch again")
+			findLeader([]*ginkgomon.Runner{runner})
+
+			By("Updating channel config and succeeding")
+			p, err = nwo.Broadcast(network, orderer, channelCreateTxn)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(p.Status).To(Equal(common.Status_SUCCESS))
+
+			By("Fetching a block from the orderer and succeeding")
+			block = FetchBlock(network, orderer, 1, network.SystemChannel.Name)
+			Expect(block).NotTo(BeNil())
+
+			By("Restore the original admin cert")
+			err = ioutil.WriteFile(adminCertPath, originalAdminCert, 600)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Ensure we can fetch the block using our original un-expired admin cert")
+			ccb := func() uint64 {
+				return nwo.GetConfigBlock(network, peer, orderer, network.SystemChannel.Name).Header.Number
+			}
+			Eventually(ccb, network.EventuallyTimeout).Should(Equal(uint64(1)))
 		})
 	})
 })
@@ -396,4 +612,123 @@ func findLeader(ordererRunners []*ginkgomon.Runner) int {
 	}
 
 	return firstLeader
+}
+
+func expireCertificate(certPEM, caCertPEM, caKeyPEM []byte) (expiredcertPEM []byte, earlyMadeCACertPEM []byte) {
+	keyAsDER, _ := pem.Decode(caKeyPEM)
+	caKeyWithoutType, err := x509.ParsePKCS8PrivateKey(keyAsDER.Bytes)
+	Expect(err).NotTo(HaveOccurred())
+	caKey := caKeyWithoutType.(*ecdsa.PrivateKey)
+
+	caCertAsDER, _ := pem.Decode(caCertPEM)
+	caCert, err := x509.ParseCertificate(caCertAsDER.Bytes)
+	Expect(err).NotTo(HaveOccurred())
+
+	certAsDER, _ := pem.Decode(certPEM)
+	cert, err := x509.ParseCertificate(certAsDER.Bytes)
+	Expect(err).NotTo(HaveOccurred())
+
+	cert.Raw = nil
+	caCert.Raw = nil
+	// The certificate was made 1 hour ago
+	cert.NotBefore = time.Now().Add((-1) * time.Hour)
+	// As well as the CA certificate
+	caCert.NotBefore = time.Now().Add((-1) * time.Hour)
+	// The certificate expires now
+	cert.NotAfter = time.Now()
+
+	// The CA signs the certificate
+	certBytes, err := x509.CreateCertificate(rand.Reader, cert, caCert, cert.PublicKey, caKey)
+	Expect(err).NotTo(HaveOccurred())
+
+	// The CA signs its own certificate
+	caCertBytes, err := x509.CreateCertificate(rand.Reader, caCert, caCert, caCert.PublicKey, caKey)
+	Expect(err).NotTo(HaveOccurred())
+
+	expiredcertPEM = pem.EncodeToMemory(&pem.Block{Bytes: certBytes, Type: "CERTIFICATE"})
+	earlyMadeCACertPEM = pem.EncodeToMemory(&pem.Block{Bytes: caCertBytes, Type: "CERTIFICATE"})
+	return
+}
+
+func createConfigTx(txData []byte, channelName string, network *nwo.Network, orderer *nwo.Orderer, peer *nwo.Peer) *common.Envelope {
+	ctxEnv, err := protoutil.UnmarshalEnvelope(txData)
+	Expect(err).NotTo(HaveOccurred())
+
+	payload, err := protoutil.UnmarshalPayload(ctxEnv.Payload)
+	Expect(err).NotTo(HaveOccurred())
+
+	configUpdateEnv, err := configtx.UnmarshalConfigUpdateEnvelope(payload.Data)
+	Expect(err).NotTo(HaveOccurred())
+
+	conf := signer.Config{
+		MSPID:        network.Organization(orderer.Organization).MSPID,
+		IdentityPath: network.OrdererUserCert(orderer, "Admin"),
+		KeyPath:      network.OrdererUserKey(orderer, "Admin"),
+	}
+
+	s, err := signer.NewSigner(conf)
+	Expect(err).NotTo(HaveOccurred())
+
+	signConfigUpdate(conf, configUpdateEnv)
+
+	env, err := protoutil.CreateSignedEnvelope(common.HeaderType_CONFIG_UPDATE, channelName, s, configUpdateEnv, 0, 0)
+	Expect(err).NotTo(HaveOccurred())
+
+	return env
+}
+
+func signConfigUpdate(conf signer.Config, configUpdateEnv *common.ConfigUpdateEnvelope) *common.ConfigUpdateEnvelope {
+	s, err := signer.NewSigner(conf)
+	Expect(err).NotTo(HaveOccurred())
+
+	sigHeader, err := protoutil.NewSignatureHeader(s)
+	Expect(err).NotTo(HaveOccurred())
+
+	configSig := &common.ConfigSignature{
+		SignatureHeader: protoutil.MarshalOrPanic(sigHeader),
+	}
+
+	configSig.Signature, err = s.Sign(util.ConcatenateBytes(configSig.SignatureHeader, configUpdateEnv.ConfigUpdate))
+	Expect(err).NotTo(HaveOccurred())
+
+	configUpdateEnv.Signatures = append(configUpdateEnv.Signatures, configSig)
+	return configUpdateEnv
+}
+
+func addAdminCertToConfig(originalConfig *common.Config, additionalAdmin []byte) *common.Config {
+	updatedConfig := proto.Clone(originalConfig).(*common.Config)
+
+	rawMSPConfig := updatedConfig.ChannelGroup.Groups["Orderer"].Groups["OrdererOrg"].Values["MSP"]
+	mspConfig := &msp.MSPConfig{}
+	err := proto.Unmarshal(rawMSPConfig.Value, mspConfig)
+	Expect(err).NotTo(HaveOccurred())
+
+	fabricConfig := &msp.FabricMSPConfig{}
+	err = proto.Unmarshal(mspConfig.Config, fabricConfig)
+	Expect(err).NotTo(HaveOccurred())
+
+	fabricConfig.Admins = append(fabricConfig.Admins, additionalAdmin)
+	mspConfig.Config = protoutil.MarshalOrPanic(fabricConfig)
+
+	rawMSPConfig.Value = protoutil.MarshalOrPanic(mspConfig)
+	return updatedConfig
+}
+
+func configFromBootstrapBlock(bootstrapBlock []byte) *common.Config {
+	block := &common.Block{}
+	err := proto.Unmarshal(bootstrapBlock, block)
+	Expect(err).NotTo(HaveOccurred())
+
+	envelope, err := protoutil.GetEnvelopeFromBlock(block.Data.Data[0])
+	Expect(err).NotTo(HaveOccurred())
+
+	payload, err := protoutil.UnmarshalPayload(envelope.Payload)
+	Expect(err).NotTo(HaveOccurred())
+
+	configEnv := &common.ConfigEnvelope{}
+	err = proto.Unmarshal(payload.Data, configEnv)
+	Expect(err).NotTo(HaveOccurred())
+
+	return configEnv.Config
+
 }

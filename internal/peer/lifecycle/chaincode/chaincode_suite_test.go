@@ -11,10 +11,10 @@ import (
 	"os"
 	"testing"
 
+	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/internal/peer/common"
 	"github.com/hyperledger/fabric/internal/peer/lifecycle/chaincode"
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
-	pb "github.com/hyperledger/fabric/protos/peer"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -24,8 +24,8 @@ type writer interface {
 	chaincode.Writer
 }
 
-//go:generate counterfeiter -o mock/platform_registry.go -fake-name PlatformRegistry . platformRegistryIntf
-type platformRegistryIntf interface {
+//go:generate counterfeiter -o mock/platform_registry.go -fake-name PlatformRegistry . platformRegistry
+type platformRegistry interface {
 	chaincode.PlatformRegistry
 }
 

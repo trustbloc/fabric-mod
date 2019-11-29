@@ -16,13 +16,13 @@ import (
 	"testing"
 	"time"
 
+	proto "github.com/hyperledger/fabric-protos-go/gossip"
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/comm"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/protoext"
 	utilgossip "github.com/hyperledger/fabric/gossip/util"
-	proto "github.com/hyperledger/fabric/protos/gossip"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 )
@@ -160,7 +160,6 @@ type msgInspection func(t *testing.T, index int, m *receivedMsg)
 
 func TestAnchorPeer(t *testing.T) {
 	t.Parallel()
-	defer testWG.Done()
 	// Actors:
 	// OrgA: {
 	// 	p:   a real gossip instance
@@ -244,7 +243,7 @@ func TestAnchorPeer(t *testing.T) {
 			},
 		},
 	}
-	channel := common.ChainID("TEST")
+	channel := common.ChannelID("TEST")
 	endpoint := fmt.Sprintf("127.0.0.1:%d", port)
 	// Create the gossip instance (the peer that connects to anchor peers)
 	p := newGossipInstanceWithGRPCWithExternalEndpoint(0, port, grpc, cert, secDialOpt, cs, endpoint)
@@ -269,7 +268,6 @@ func TestAnchorPeer(t *testing.T) {
 
 func TestBootstrapPeerMisConfiguration(t *testing.T) {
 	t.Parallel()
-	defer testWG.Done()
 	// Scenario:
 	// The peer 'p' is a peer in orgA
 	// Peers bs1 and bs2 are bootstrap peers.

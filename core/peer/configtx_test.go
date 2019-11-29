@@ -7,72 +7,50 @@ SPDX-License-Identifier: Apache-2.0
 package peer
 
 import (
-	"fmt"
-	"math/rand"
+	"io/ioutil"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric/bccsp/sw"
 	"github.com/hyperledger/fabric/common/capabilities"
 	"github.com/hyperledger/fabric/common/channelconfig"
 	configtxtest "github.com/hyperledger/fabric/common/configtx/test"
 	"github.com/hyperledger/fabric/common/ledger/testutil"
 	"github.com/hyperledger/fabric/core/config/configtest"
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/ledger/customtx"
-	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
-	"github.com/hyperledger/fabric/extensions/mocks"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
-	"github.com/hyperledger/fabric/internal/configtxgen/configtxgentest"
 	"github.com/hyperledger/fabric/internal/configtxgen/encoder"
-	genesisconfig "github.com/hyperledger/fabric/internal/configtxgen/localconfig"
-	mspmgmt "github.com/hyperledger/fabric/msp/mgmt"
-	ordererconfig "github.com/hyperledger/fabric/orderer/common/localconfig"
-	"github.com/hyperledger/fabric/protos/common"
+	"github.com/hyperledger/fabric/internal/configtxgen/genesisconfig"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-var reset func(string)
-
-func TestMain(m *testing.M) {
-	//setup extension test environment
-	var destroy func()
-	_, reset, destroy = xtestutil.SetupExtTestEnv()
-
-	code := m.Run()
-
-	destroy()
-
-	os.Exit(code)
-}
-
-func resetExtTestEnv() {
-	reset("testchain1")
-	reset("testchain")
-}
-
 func TestConfigTxCreateLedger(t *testing.T) {
-	helper := &testHelper{t: t}
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
 
-	chainid := "testchain1"
-	cleanup, err := ledgermgmt.InitializeTestEnvWithInitializer(
-		&ledgermgmt.Initializer{
-			CustomTxProcessors: ConfigTxProcessors,
-			CollDataProvider:   &mocks.DataProvider{},
-		},
-	)
+	helper := newTestHelper(t)
+	channelID := "testchain1"
+	tempdir, err := ioutil.TempDir("", "peer-test")
+	require.NoError(t, err, "failed to create temporary directory")
+
+	ledgerMgr, err := constructLedgerMgrWithTestDefaults(tempdir)
 	if err != nil {
 		t.Fatalf("Failed to create test environment: %s", err)
 	}
 
-	defer cleanup()
+	defer func() {
+		ledgerMgr.Close()
+		os.RemoveAll(tempdir)
+	}()
 
 	chanConf := helper.sampleChannelConfig(1, true)
-	genesisTx := helper.constructGenesisTx(t, chainid, chanConf)
+	genesisTx := helper.constructGenesisTx(t, channelID, chanConf)
 	genesisBlock := helper.constructBlock(genesisTx, 0, nil)
-	ledger, err := ledgermgmt.CreateLedger(genesisBlock)
+	ledger, err := ledgerMgr.CreateLedger(channelID, genesisBlock)
 	assert.NoError(t, err)
 
 	retrievedchanConf, err := retrievePersistedChannelConfig(ledger)
@@ -80,39 +58,55 @@ func TestConfigTxCreateLedger(t *testing.T) {
 	assert.Equal(t, proto.CompactTextString(chanConf), proto.CompactTextString(retrievedchanConf))
 }
 
-func TestConfigTxUpdateChanConfig(t *testing.T) {
-	helper := &testHelper{t: t}
-	chainid := "testchain1"
+func TestConfigTxErrorScenarios(t *testing.T) {
+	configTxProcessor := &ConfigTxProcessor{}
+	// wrong tx type
+	configEnvWrongTxType := &common.ConfigEnvelope{}
+	txEnvelope, err := protoutil.CreateSignedEnvelope(common.HeaderType_PEER_ADMIN_OPERATION, "channelID", nil, configEnvWrongTxType, 0, 0)
+	require.NoError(t, err)
+	err = configTxProcessor.GenerateSimulationResults(txEnvelope, nil, false)
+	require.EqualError(t, err, "tx type [PEER_ADMIN_OPERATION] is not expected")
 
+	// empty channelConfig
+	txEnvelope, err = protoutil.CreateSignedEnvelope(common.HeaderType_CONFIG, "channelID", nil, &common.ConfigEnvelope{}, 0, 0)
+	require.NoError(t, err)
+	err = configTxProcessor.GenerateSimulationResults(txEnvelope, nil, false)
+	require.EqualError(t, err, "channel config found nil")
+}
+
+func TestConfigTxUpdateChanConfig(t *testing.T) {
 	_, _, destroy := xtestutil.SetupExtTestEnv()
 	defer destroy()
 
-	cleanup, err := ledgermgmt.InitializeTestEnvWithInitializer(
-		&ledgermgmt.Initializer{
-			CustomTxProcessors: ConfigTxProcessors,
-			CollDataProvider:   &mocks.DataProvider{},
-		},
-	)
+	helper := newTestHelper(t)
+	channelID := "testchain1"
+	tempdir, err := ioutil.TempDir("", "peer-test")
+	require.NoError(t, err, "failed to create temporary directory")
+
+	ledgerMgr, err := constructLedgerMgrWithTestDefaults(tempdir)
 	if err != nil {
 		t.Fatalf("Failed to create test environment: %s", err)
 	}
 
-	defer cleanup()
+	defer func() {
+		ledgerMgr.Close()
+		os.RemoveAll(tempdir)
+	}()
 
 	chanConf := helper.sampleChannelConfig(1, true)
-	genesisTx := helper.constructGenesisTx(t, chainid, chanConf)
+	genesisTx := helper.constructGenesisTx(t, channelID, chanConf)
 	genesisBlock := helper.constructBlock(genesisTx, 0, nil)
-	lgr, err := ledgermgmt.CreateLedger(genesisBlock)
+	lgr, err := ledgerMgr.CreateLedger(channelID, genesisBlock)
 	assert.NoError(t, err)
 
 	retrievedchanConf, err := retrievePersistedChannelConfig(lgr)
 	assert.NoError(t, err)
 	assert.Equal(t, proto.CompactTextString(chanConf), proto.CompactTextString(retrievedchanConf))
 
-	helper.mockCreateChain(t, chainid, lgr)
+	helper.mockCreateChain(t, channelID, lgr)
 	defer helper.clearMockChains()
 
-	bs := chains.list[chainid].cs.bundleSource
+	bs := helper.peer.channels[channelID].bundleSource
 	inMemoryChanConf := bs.ConfigtxValidator().ConfigProto()
 	assert.Equal(t, proto.CompactTextString(chanConf), proto.CompactTextString(inMemoryChanConf))
 
@@ -122,29 +116,32 @@ func TestConfigTxUpdateChanConfig(t *testing.T) {
 
 	lgr.Close()
 	helper.clearMockChains()
-	lgr, err = ledgermgmt.OpenLedger(chainid)
+	_, err = ledgerMgr.OpenLedger(channelID)
 	assert.NoError(t, err)
 }
 
 func TestGenesisBlockCreateLedger(t *testing.T) {
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	b, err := configtxtest.MakeGenesisBlock("testchain")
 	assert.NoError(t, err)
+	tempdir, err := ioutil.TempDir("", "peer-test")
+	require.NoError(t, err, "failed to create temporary directory")
 
 	resetExtTestEnv()
 
-	cleanup, err := ledgermgmt.InitializeTestEnvWithInitializer(
-		&ledgermgmt.Initializer{
-			CustomTxProcessors: ConfigTxProcessors,
-			CollDataProvider:   &mocks.DataProvider{},
-		},
-	)
+	ledgerMgr, err := constructLedgerMgrWithTestDefaults(tempdir)
 	if err != nil {
 		t.Fatalf("Failed to create test environment: %s", err)
 	}
 
-	defer cleanup()
+	defer func() {
+		ledgerMgr.Close()
+		os.RemoveAll(tempdir)
+	}()
 
-	lgr, err := ledgermgmt.CreateLedger(b)
+	lgr, err := ledgerMgr.CreateLedger("testchain", b)
 	assert.NoError(t, err)
 	chanConf, err := retrievePersistedChannelConfig(lgr)
 	assert.NoError(t, err)
@@ -152,29 +149,22 @@ func TestGenesisBlockCreateLedger(t *testing.T) {
 	t.Logf("chanConf = %s", chanConf)
 }
 
-func TestCustomTxProcessors(t *testing.T) {
-	cleanup, err := ledgermgmt.InitializeExistingTestEnvWithInitializer(&ledgermgmt.Initializer{
-		CustomTxProcessors: ConfigTxProcessors,
-		CollDataProvider:   &mocks.DataProvider{},
-	})
-	if err != nil {
-		t.Fatalf("Failed to create test environment: %s", err)
-	}
-
-	defer cleanup()
-
-	processor := customtx.GetProcessor(common.HeaderType_CONFIG)
-	assert.Equal(t, processor, configTxProcessor)
-	processor = customtx.GetProcessor(common.HeaderType_TOKEN_TRANSACTION)
-	assert.Equal(t, processor, tokenTxProcessor)
+type testHelper struct {
+	t    *testing.T
+	peer *Peer
 }
 
-type testHelper struct {
-	t *testing.T
+func newTestHelper(t *testing.T) *testHelper {
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
+	return &testHelper{
+		t:    t,
+		peer: &Peer{CryptoProvider: cryptoProvider},
+	}
 }
 
 func (h *testHelper) sampleChannelConfig(sequence uint64, enableV11Capability bool) *common.Config {
-	profile := configtxgentest.Load(genesisconfig.SampleDevModeSoloProfile)
+	profile := genesisconfig.Load(genesisconfig.SampleDevModeSoloProfile, configtest.GetDevConfigDir())
 	if enableV11Capability {
 		profile.Orderer.Capabilities = make(map[string]bool)
 		profile.Orderer.Capabilities[capabilities.ApplicationV1_1] = true
@@ -188,18 +178,12 @@ func (h *testHelper) sampleChannelConfig(sequence uint64, enableV11Capability bo
 	}
 }
 
-func (h *testHelper) constructConfigTx(t *testing.T, txType common.HeaderType, chainid string, config *common.Config) *common.Envelope {
-	env, err := protoutil.CreateSignedEnvelope(txType, chainid, nil, &common.ConfigEnvelope{Config: config}, 0, 0)
-	assert.NoError(t, err)
-	return env
-}
-
-func (h *testHelper) constructGenesisTx(t *testing.T, chainid string, chanConf *common.Config) *common.Envelope {
+func (h *testHelper) constructGenesisTx(t *testing.T, channelID string, chanConf *common.Config) *common.Envelope {
 	configEnvelop := &common.ConfigEnvelope{
 		Config:     chanConf,
-		LastUpdate: h.constructLastUpdateField(chainid),
+		LastUpdate: h.constructLastUpdateField(channelID),
 	}
-	txEnvelope, err := protoutil.CreateSignedEnvelope(common.HeaderType_CONFIG, chainid, nil, configEnvelop, 0, 0)
+	txEnvelope, err := protoutil.CreateSignedEnvelope(common.HeaderType_CONFIG, channelID, nil, configEnvelop, 0, 0)
 	assert.NoError(t, err)
 	return txEnvelope
 }
@@ -208,54 +192,50 @@ func (h *testHelper) constructBlock(txEnvelope *common.Envelope, blockNum uint64
 	return testutil.NewBlock([]*common.Envelope{txEnvelope}, blockNum, previousHash)
 }
 
-func (h *testHelper) constructLastUpdateField(chainid string) *common.Envelope {
+func (h *testHelper) constructLastUpdateField(channelID string) *common.Envelope {
 	configUpdate := protoutil.MarshalOrPanic(&common.ConfigUpdate{
-		ChannelId: chainid,
+		ChannelId: channelID,
 	})
-	envelopeForLastUpdateField, _ := protoutil.CreateSignedEnvelope(common.HeaderType_CONFIG_UPDATE, chainid, nil, &common.ConfigUpdateEnvelope{ConfigUpdate: configUpdate}, 0, 0)
+	envelopeForLastUpdateField, _ := protoutil.CreateSignedEnvelope(
+		common.HeaderType_CONFIG_UPDATE,
+		channelID,
+		nil,
+		&common.ConfigUpdateEnvelope{ConfigUpdate: configUpdate},
+		0,
+		0,
+	)
 	return envelopeForLastUpdateField
 }
 
-func (h *testHelper) mockCreateChain(t *testing.T, chainid string, ledger ledger.PeerLedger) {
-	chanBundle, err := h.constructChannelBundle(chainid, ledger)
+func (h *testHelper) mockCreateChain(t *testing.T, channelID string, ledger ledger.PeerLedger) {
+	chanBundle, err := h.constructChannelBundle(channelID, ledger)
 	assert.NoError(t, err)
-	chains.list[chainid] = &chain{
-		cs: &chainSupport{
-			bundleSource: channelconfig.NewBundleSource(chanBundle),
-			ledger:       ledger},
+	if h.peer.channels == nil {
+		h.peer.channels = map[string]*Channel{}
+	}
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
+	h.peer.channels[channelID] = &Channel{
+		bundleSource:   channelconfig.NewBundleSource(chanBundle),
+		ledger:         ledger,
+		cryptoProvider: cryptoProvider,
 	}
 }
 
 func (h *testHelper) clearMockChains() {
-	chains.list = make(map[string]*chain)
+	h.peer.channels = make(map[string]*Channel)
 }
 
-func (h *testHelper) constructChannelBundle(chainid string, ledger ledger.PeerLedger) (*channelconfig.Bundle, error) {
+func (h *testHelper) constructChannelBundle(channelID string, ledger ledger.PeerLedger) (*channelconfig.Bundle, error) {
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	if err != nil {
+		return nil, err
+	}
+
 	chanConf, err := retrievePersistedChannelConfig(ledger)
 	if err != nil {
 		return nil, err
 	}
 
-	return channelconfig.NewBundle(chainid, chanConf)
-}
-
-func (h *testHelper) initLocalMSP() {
-	rand.Seed(time.Now().UnixNano())
-	cleanup := configtest.SetDevFabricConfigPath(h.t)
-	defer cleanup()
-	conf, err := ordererconfig.Load()
-	if err != nil {
-		panic(fmt.Errorf("failed to load config: %s", err))
-	}
-
-	// Load local MSP
-	err = mspmgmt.LoadLocalMsp(conf.General.LocalMSPDir, conf.General.BCCSP, conf.General.LocalMSPID)
-	if err != nil {
-		panic(fmt.Errorf("Failed to initialize local MSP: %s", err))
-	}
-	msp := mspmgmt.GetLocalMSP()
-	_, err = msp.GetDefaultSigningIdentity()
-	if err != nil {
-		panic(fmt.Errorf("Failed to get default signer: %s", err))
-	}
+	return channelconfig.NewBundle(channelID, chanConf, cryptoProvider)
 }

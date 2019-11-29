@@ -9,7 +9,7 @@ package channelconfig
 import (
 	"testing"
 
-	cb "github.com/hyperledger/fabric/protos/common"
+	cb "github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
 )
@@ -85,7 +85,7 @@ func TestNonProtosStruct(t *testing.T) {
 }
 
 func TestUnexportedField(t *testing.T) {
-	_, err := NewStandardValues(&unexported{})
+	_, err := NewStandardValues(&unexported{msg: nil})
 	assert.Error(t, err, "Structure with unexported fields")
 }
 

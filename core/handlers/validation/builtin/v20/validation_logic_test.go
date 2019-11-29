@@ -12,23 +12,21 @@ import (
 	"os"
 	"testing"
 
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric/bccsp/sw"
 	"github.com/hyperledger/fabric/common/cauthdsl"
 	commonerrors "github.com/hyperledger/fabric/common/errors"
 	mc "github.com/hyperledger/fabric/common/mocks/config"
 	lm "github.com/hyperledger/fabric/common/mocks/ledger"
-	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/committer/txvalidator/v14"
 	mocks2 "github.com/hyperledger/fabric/core/committer/txvalidator/v14/mocks"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	validation "github.com/hyperledger/fabric/core/handlers/validation/api/capabilities"
 	"github.com/hyperledger/fabric/core/handlers/validation/builtin/v20/mocks"
-	corepeer "github.com/hyperledger/fabric/core/peer"
-	"github.com/hyperledger/fabric/core/policy"
 	"github.com/hyperledger/fabric/msp"
 	mspmgmt "github.com/hyperledger/fabric/msp/mgmt"
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -38,12 +36,12 @@ func createTx(endorsedByDuplicatedIdentity bool) (*common.Envelope, error) {
 	ccid := &peer.ChaincodeID{Name: "foo", Version: "v1"}
 	cis := &peer.ChaincodeInvocationSpec{ChaincodeSpec: &peer.ChaincodeSpec{ChaincodeId: ccid}}
 
-	prop, _, err := protoutil.CreateProposalFromCIS(common.HeaderType_ENDORSER_TRANSACTION, util.GetTestChainID(), cis, sid)
+	prop, _, err := protoutil.CreateProposalFromCIS(common.HeaderType_ENDORSER_TRANSACTION, "testchannelid", cis, sid)
 	if err != nil {
 		return nil, err
 	}
 
-	presp, err := protoutil.CreateProposalResponse(prop.Header, prop.Payload, &peer.Response{Status: 200}, []byte("res"), nil, ccid, nil, id)
+	presp, err := protoutil.CreateProposalResponse(prop.Header, prop.Payload, &peer.Response{Status: 200}, []byte("res"), nil, ccid, id)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +87,7 @@ func newCustomValidationInstance(qec txvalidator.QueryExecutorCreator, c validat
 	sf := &txvalidator.StateFetcherImpl{QueryExecutorCreator: qec}
 	is := &mocks.IdentityDeserializer{}
 	pe := &txvalidator.PolicyEvaluator{
-		IdentityDeserializer: mspmgmt.GetManagerForChain(util.GetTestChainID()),
+		IdentityDeserializer: mspmgmt.GetManagerForChain("testchannelid"),
 	}
 	v := New(c, sf, is, pe, mockCR)
 
@@ -111,7 +109,7 @@ func TestStateBasedValidationFailure(t *testing.T) {
 	sf := &txvalidator.StateFetcherImpl{QueryExecutorCreator: qec}
 	is := &mocks.IdentityDeserializer{}
 	pe := &txvalidator.PolicyEvaluator{
-		IdentityDeserializer: mspmgmt.GetManagerForChain(util.GetTestChainID()),
+		IdentityDeserializer: mspmgmt.GetManagerForChain("testchannelid"),
 	}
 	v := New(&mc.MockApplicationCapabilities{}, sf, is, pe, mockCR)
 	v.stateBasedValidator = sbvm
@@ -227,17 +225,9 @@ func TestToApplicationPolicyTranslator_Translate(t *testing.T) {
 var id msp.SigningIdentity
 var sid []byte
 var mspid string
-var chainId string = util.GetTestChainID()
+var channelID string = "testchannelid"
 
-type mockPolicyCheckerFactory struct {
-}
-
-func (c *mockPolicyCheckerFactory) NewPolicyChecker() policy.PolicyChecker {
-	return &mockPolicyChecker{}
-}
-
-type mockPolicyChecker struct {
-}
+type mockPolicyChecker struct{}
 
 func (c *mockPolicyChecker) CheckPolicy(channelID, policyName string, signedProp *peer.SignedProposal) error {
 	return nil
@@ -260,18 +250,17 @@ func TestMain(m *testing.M) {
 	defer os.RemoveAll(testDir)
 	ccprovider.SetChaincodesPath(testDir)
 
-	policy.RegisterPolicyCheckerFactory(&mockPolicyCheckerFactory{})
-
-	mspGetter := func(cid string) []string {
-		return []string{"SampleOrg"}
-	}
-
-	corepeer.MockSetMSPIDGetter(mspGetter)
-
 	// setup the MSP manager so that we can sign/verify
 	msptesttools.LoadMSPSetupForTesting()
 
-	id, err = mspmgmt.GetLocalMSP().GetDefaultSigningIdentity()
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	if err != nil {
+		fmt.Printf("Initialize cryptoProvider bccsp failed: %s", err)
+		os.Exit(-1)
+		return
+	}
+
+	id, err = mspmgmt.GetLocalMSP(cryptoProvider).GetDefaultSigningIdentity()
 	if err != nil {
 		fmt.Printf("GetSigningIdentity failed with err %s", err)
 		os.Exit(-1)
@@ -285,7 +274,7 @@ func TestMain(m *testing.M) {
 
 	// determine the MSP identifier for the first MSP in the default chain
 	var msp msp.MSP
-	mspMgr := mspmgmt.GetManagerForChain(chainId)
+	mspMgr := mspmgmt.GetManagerForChain(channelID)
 	msps, err := mspMgr.GetMSPs()
 	if err != nil {
 		fmt.Printf("Could not retrieve the MSPs for the chain manager, err %s", err)
@@ -306,7 +295,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// also set the MSP for the "test" chain
-	mspmgmt.XXXSetMSPManager("mycc", mspmgmt.GetManagerForChain(util.GetTestChainID()))
+	mspmgmt.XXXSetMSPManager("mycc", mspmgmt.GetManagerForChain("testchannelid"))
 
 	os.Exit(m.Run())
 }

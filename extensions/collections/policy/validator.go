@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package policy
 
 import (
-	"github.com/hyperledger/fabric/protos/common"
+	"github.com/hyperledger/fabric-protos-go/peer"
 )
 
 // Validator is a noop collection policy validator
@@ -20,11 +20,11 @@ func NewValidator() *Validator {
 }
 
 // Validator validates various collection config types
-func (v *Validator) Validate(collConfig *common.CollectionConfig) error {
+func (v *Validator) Validate(collConfig *peer.CollectionConfig) error {
 	return nil
 }
 
 // ValidateNewCollectionConfigsAgainstOld validates updated collection configs
-func (v *Validator) ValidateNewCollectionConfigsAgainstOld(newCollectionConfigs []*common.CollectionConfig, oldCollectionConfigs []*common.CollectionConfig) error {
+func (v *Validator) ValidateNewCollectionConfigsAgainstOld(newCollectionConfigs []*peer.CollectionConfig, oldCollectionConfigs []*peer.CollectionConfig) error {
 	return nil
 }

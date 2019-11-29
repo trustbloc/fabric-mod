@@ -8,19 +8,20 @@ package kvledger
 
 import (
 	"fmt"
-	"path/filepath"
 
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric/common/ledger/dataformat"
+	"github.com/hyperledger/fabric/common/ledger/util/leveldbhelper"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/confighistory"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/bookkeeping"
-	"github.com/hyperledger/fabric/core/ledger/kvledger/history/historydb"
-	"github.com/hyperledger/fabric/core/ledger/kvledger/history/historydb/historyleveldb"
-	"github.com/hyperledger/fabric/core/ledger/kvledger/idstore"
+	"github.com/hyperledger/fabric/core/ledger/kvledger/history"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/privacyenabledstate"
 	"github.com/hyperledger/fabric/core/ledger/ledgerstorage"
+	"github.com/hyperledger/fabric/core/ledger/pvtdatastorage"
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
+	storageapi "github.com/hyperledger/fabric/extensions/storage/api"
 	idstoreext "github.com/hyperledger/fabric/extensions/storage/idstore"
-	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 )
@@ -28,84 +29,206 @@ import (
 var (
 	// ErrLedgerIDExists is thrown by a CreateLedger call if a ledger with the given id already exists
 	ErrLedgerIDExists = errors.New("LedgerID already exists")
-	// ErrNonExistingLedgerID is thrown by a OpenLedger call if a ledger with the given id does not exist
+	// ErrNonExistingLedgerID is thrown by an OpenLedger call if a ledger with the given id does not exist
 	ErrNonExistingLedgerID = errors.New("LedgerID does not exist")
+	// ErrLedgerNotOpened is thrown by a CloseLedger call if a ledger with the given id has not been opened
+	ErrLedgerNotOpened = errors.New("ledger is not opened yet")
+	// ErrInactiveLedger is thrown by an OpenLedger call if a ledger with the given id is not active
+	ErrInactiveLedger = errors.New("Ledger is not active")
+
+	underConstructionLedgerKey = []byte("underConstructionLedgerKey")
+	// ledgerKeyPrefix is the prefix for each ledger key in idStore db
+	ledgerKeyPrefix = []byte{'l'}
+	// ledgerKeyStop is the end key when querying idStore db by ledger key
+	ledgerKeyStop = []byte{'l' + 1}
+	// metadataKeyPrefix is the prefix for each metadata key in idStore db
+	metadataKeyPrefix = []byte{'s'}
+	// metadataKeyStop is the end key when querying idStore db by metadata key
+	metadataKeyStop = []byte{'s' + 1}
+
+	// formatKey
+	formatKey = []byte("f")
 )
 
 // Provider implements interface ledger.PeerLedgerProvider
 type Provider struct {
-	idStore             idstore.IDStore
+	idStore             storageapi.IDStore
 	ledgerStoreProvider *ledgerstorage.Provider
 	vdbProvider         privacyenabledstate.DBProvider
-	historydbProvider   historydb.HistoryDBProvider
+	historydbProvider   *history.DBProvider
 	configHistoryMgr    confighistory.Mgr
 	stateListeners      []ledger.StateListener
 	bookkeepingProvider bookkeeping.Provider
 	initializer         *ledger.Initializer
 	collElgNotifier     *collElgNotifier
 	stats               *stats
+	fileLock            *leveldbhelper.FileLock
+	hasher              ledger.Hasher
 
 	collDataProvider storeapi.Provider
 }
 
 // NewProvider instantiates a new Provider.
-// This is not thread-safe and assumed to be synchronized be the caller
-func NewProvider(initializer *ledger.Initializer) (*Provider, error) {
-	p := &Provider{}
-	p.initializer = initializer
-	// initialize the ID store (inventory of chainIds/ledgerIds)
-	idStore := idstoreext.OpenIDStore(filepath.Join(p.initializer.Config.RootFSPath, "ledgerProvider"), p.initializer.Config)
-	p.idStore = idStore
-	// initialize ledger storage
-	ledgerStoreProvider := ledgerstorage.NewProvider(
-		p.initializer.Config.RootFSPath,
-		p.initializer.Config.PrivateData,
-		p.initializer.Config,
-	)
-	p.ledgerStoreProvider = ledgerStoreProvider
-	if initializer.Config.HistoryDB.Enabled {
-		// Initialize the history database (index for history of values by key)
-		historydbProvider := historyleveldb.NewHistoryDBProvider(
-			filepath.Join(p.initializer.Config.RootFSPath, "historyLeveldb"),
-		)
-		p.historydbProvider = historydbProvider
+// This is not thread-safe and assumed to be synchronized by the caller
+func NewProvider(initializer *ledger.Initializer) (pr *Provider, e error) {
+	p := &Provider{
+		initializer: initializer,
+		hasher:      initializer.Hasher,
 	}
-	// initialize config history for chaincode
-	configHistoryMgr := confighistory.NewMgr(
-		filepath.Join(p.initializer.Config.RootFSPath, "configHistory"),
-		initializer.DeployedChaincodeInfoProvider,
+
+	defer func() {
+		if e != nil {
+			p.Close()
+			if errFormatMismatch, ok := e.(*dataformat.ErrVersionMismatch); ok {
+				if errFormatMismatch.Version == dataformat.Version1x && errFormatMismatch.ExpectedVersion == dataformat.Version20 {
+					logger.Errorf("Please execute the 'peer node upgrade-dbs' command to upgrade the database format: %s", errFormatMismatch)
+				} else {
+					logger.Errorf("Please check the Fabric version matches the ledger data format: %s", errFormatMismatch)
+				}
+			}
+		}
+	}()
+
+	fileLockPath := fileLockPath(initializer.Config.RootFSPath)
+	fileLock := leveldbhelper.NewFileLock(fileLockPath)
+	if err := fileLock.Lock(); err != nil {
+		return nil, errors.Wrap(err, "as another peer node command is executing,"+
+			" wait for that command to complete its execution or terminate it before retrying")
+	}
+
+	p.fileLock = fileLock
+
+	if err := p.initLedgerStorageProvider(); err != nil {
+		return nil, err
+	}
+
+	if err := p.initHistoryDBProvider(); err != nil {
+		return nil, err
+	}
+
+	if err := p.initConfigHistoryManager(); err != nil {
+		return nil, err
+	}
+
+	p.initCollElgNotifier()
+
+	p.initStateListeners()
+
+	if err := p.initStateDBProvider(); err != nil {
+		return nil, err
+	}
+
+	if err := p.initLedgerIDInventory(); err != nil {
+		return nil, err
+	}
+
+	p.initLedgerStatistics()
+
+	p.recoverUnderConstructionLedger()
+
+	p.collDataProvider = initializer.CollDataProvider
+
+	return p, nil
+}
+
+func (p *Provider) initLedgerIDInventory() error {
+	idStore, err := idstoreext.OpenIDStore(LedgerProviderPath(p.initializer.Config.RootFSPath), p.initializer.Config)
+	if err != nil {
+		return err
+	}
+	p.idStore = idStore
+	return nil
+}
+
+func (p *Provider) initLedgerStorageProvider() error {
+	// initialize ledger storage
+	privateData := &pvtdatastorage.PrivateDataConfig{
+		PrivateDataConfig: p.initializer.Config.PrivateDataConfig,
+		StorePath:         PvtDataStorePath(p.initializer.Config.RootFSPath),
+	}
+
+	ledgerStoreProvider, err := ledgerstorage.NewProvider(
+		BlockStorePath(p.initializer.Config.RootFSPath),
+		privateData,
+		p.initializer.Config,
+		p.initializer.MetricsProvider,
 	)
+	if err != nil {
+		return err
+	}
+	p.ledgerStoreProvider = ledgerStoreProvider
+	return nil
+}
+
+func (p *Provider) initHistoryDBProvider() error {
+	if !p.initializer.Config.HistoryDBConfig.Enabled {
+		return nil
+	}
+	// Initialize the history database (index for history of values by key)
+	historydbProvider, err := history.NewDBProvider(
+		HistoryDBPath(p.initializer.Config.RootFSPath),
+	)
+	if err != nil {
+		return err
+	}
+	p.historydbProvider = historydbProvider
+	return nil
+}
+
+func (p *Provider) initConfigHistoryManager() error {
+	var err error
+	configHistoryMgr, err := confighistory.NewMgr(
+		ConfigHistoryDBPath(p.initializer.Config.RootFSPath),
+		p.initializer.DeployedChaincodeInfoProvider,
+	)
+	if err != nil {
+		return err
+	}
 	p.configHistoryMgr = configHistoryMgr
-	// initialize the collection eligibility notifier
+	return nil
+}
+
+func (p *Provider) initCollElgNotifier() {
 	collElgNotifier := &collElgNotifier{
-		initializer.DeployedChaincodeInfoProvider,
-		initializer.MembershipInfoProvider,
+		p.initializer.DeployedChaincodeInfoProvider,
+		p.initializer.MembershipInfoProvider,
 		make(map[string]collElgListener),
 	}
 	p.collElgNotifier = collElgNotifier
-	// initialize the state listeners
-	stateListeners := initializer.StateListeners
-	stateListeners = append(stateListeners, collElgNotifier)
-	stateListeners = append(stateListeners, configHistoryMgr)
-	p.stateListeners = stateListeners
+}
 
-	p.bookkeepingProvider = bookkeeping.NewProvider(
-		filepath.Join(p.initializer.Config.RootFSPath, "bookkeeper"),
-	)
+func (p *Provider) initStateListeners() {
+	stateListeners := p.initializer.StateListeners
+	stateListeners = append(stateListeners, p.collElgNotifier)
+	stateListeners = append(stateListeners, p.configHistoryMgr)
+	p.stateListeners = stateListeners
+}
+
+func (p *Provider) initStateDBProvider() error {
 	var err error
-	p.vdbProvider, err = privacyenabledstate.NewCommonStorageDBProvider(
-		p.bookkeepingProvider,
-		initializer.MetricsProvider,
-		initializer.HealthCheckRegistry,
-		initializer.Config.StateDB,
+	p.bookkeepingProvider, err = bookkeeping.NewProvider(
+		BookkeeperDBPath(p.initializer.Config.RootFSPath),
 	)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	p.stats = newStats(initializer.MetricsProvider)
-	p.recoverUnderConstructionLedger()
-	p.collDataProvider = initializer.CollDataProvider
-	return p, nil
+	stateDB := &privacyenabledstate.StateDBConfig{
+		StateDBConfig: p.initializer.Config.StateDBConfig,
+		LevelDBPath:   StateDBPath(p.initializer.Config.RootFSPath),
+	}
+	sysNamespaces := p.initializer.DeployedChaincodeInfoProvider.Namespaces()
+	p.vdbProvider, err = privacyenabledstate.NewCommonStorageDBProvider(
+		p.bookkeepingProvider,
+		p.initializer.MetricsProvider,
+		p.initializer.HealthCheckRegistry,
+		stateDB,
+		sysNamespaces,
+	)
+	return err
+}
+
+func (p *Provider) initLedgerStatistics() {
+	p.stats = newStats(p.initializer.MetricsProvider)
 }
 
 // Create implements the corresponding method from interface ledger.PeerLedgerProvider
@@ -135,9 +258,7 @@ func (p *Provider) Create(genesisBlock *common.Block) (ledger.PeerLedger, error)
 		panicOnErr(p.idStore.UnsetUnderConstructionFlag(), "Error while unsetting under construction flag")
 		return nil, err
 	}
-	if err := lgr.CommitWithPvtData(&ledger.BlockAndPvtData{
-		Block: genesisBlock,
-	}); err != nil {
+	if err := lgr.CommitLegacy(&ledger.BlockAndPvtData{Block: genesisBlock}, &ledger.CommitOptions{}); err != nil {
 		lgr.Close()
 		return nil, err
 	}
@@ -149,12 +270,15 @@ func (p *Provider) Create(genesisBlock *common.Block) (ledger.PeerLedger, error)
 func (p *Provider) Open(ledgerID string) (ledger.PeerLedger, error) {
 	logger.Debugf("Open() opening kvledger: %s", ledgerID)
 	// Check the ID store to ensure that the chainId/ledgerId exists
-	exists, err := p.idStore.LedgerIDExists(ledgerID)
+	active, exists, err := p.idStore.LedgerIDActive(ledgerID)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
 		return nil, ErrNonExistingLedgerID
+	}
+	if !active {
+		return nil, ErrInactiveLedger
 	}
 	return p.openInternal(ledgerID)
 }
@@ -174,7 +298,7 @@ func (p *Provider) openInternal(ledgerID string) (ledger.PeerLedger, error) {
 	}
 
 	// Get the history database (index for history of values by key) for a chain/ledger
-	var historyDB historydb.HistoryDB
+	var historyDB *history.DB
 	if p.historydbProvider != nil {
 		historyDB, err = p.historydbProvider.GetDBHandle(ledgerID)
 		if err != nil {
@@ -182,7 +306,7 @@ func (p *Provider) openInternal(ledgerID string) (ledger.PeerLedger, error) {
 		}
 	}
 
-	// Create a kvLedger for this chain/ledger, which encasulates the underlying data stores
+	// Create a kvLedger for this chain/ledger, which encapsulates the underlying data stores
 	// (id store, blockstore, state database, history database)
 	l, err := newKVLedger(
 		ledgerID,
@@ -195,6 +319,8 @@ func (p *Provider) openInternal(ledgerID string) (ledger.PeerLedger, error) {
 		p.initializer.DeployedChaincodeInfoProvider,
 		p.initializer.ChaincodeLifecycleEventProvider,
 		p.stats.ledgerStats(ledgerID),
+		p.initializer.CustomTxProcessors,
+		p.hasher,
 		p.collDataProvider,
 	)
 	if err != nil {
@@ -210,18 +336,31 @@ func (p *Provider) Exists(ledgerID string) (bool, error) {
 
 // List implements the corresponding method from interface ledger.PeerLedgerProvider
 func (p *Provider) List() ([]string, error) {
-	return p.idStore.GetAllLedgerIds()
+	return p.idStore.GetActiveLedgerIDs()
 }
 
 // Close implements the corresponding method from interface ledger.PeerLedgerProvider
 func (p *Provider) Close() {
-	p.idStore.Close()
-	p.ledgerStoreProvider.Close()
-	p.vdbProvider.Close()
-	p.bookkeepingProvider.Close()
-	p.configHistoryMgr.Close()
+	if p.idStore != nil {
+		p.idStore.Close()
+	}
+	if p.ledgerStoreProvider != nil {
+		p.ledgerStoreProvider.Close()
+	}
+	if p.vdbProvider != nil {
+		p.vdbProvider.Close()
+	}
+	if p.bookkeepingProvider != nil {
+		p.bookkeepingProvider.Close()
+	}
+	if p.configHistoryMgr != nil {
+		p.configHistoryMgr.Close()
+	}
 	if p.historydbProvider != nil {
 		p.historydbProvider.Close()
+	}
+	if p.fileLock != nil {
+		p.fileLock.Unlock()
 	}
 }
 

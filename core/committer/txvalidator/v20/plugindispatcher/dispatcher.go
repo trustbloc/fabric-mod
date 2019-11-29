@@ -10,14 +10,14 @@ import (
 	"fmt"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/peer"
 	commonerrors "github.com/hyperledger/fabric/common/errors"
 	"github.com/hyperledger/fabric/common/flogging"
 	validation "github.com/hyperledger/fabric/core/handlers/validation/api"
 	s "github.com/hyperledger/fabric/core/handlers/validation/api/state"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 )
@@ -27,7 +27,7 @@ import (
 type ChannelResources interface {
 	// GetMSPIDs returns the IDs for the application MSPs
 	// that have been defined in the channel
-	GetMSPIDs(cid string) []string
+	GetMSPIDs() []string
 }
 
 // LedgerResources provides access to ledger artefacts or
@@ -103,16 +103,16 @@ func (v *dispatcherImpl) Dispatch(seq int, payload *common.Payload, envBytes []b
 	chainID := v.chainID
 	logger.Debugf("[%s] Dispatch starts for bytes %p", chainID, envBytes)
 
-	// get header extensions so we have the chaincode ID
-	hdrExt, err := protoutil.GetChaincodeHeaderExtension(payload.Header)
-	if err != nil {
-		return err, peer.TxValidationCode_BAD_HEADER_EXTENSION
-	}
-
 	// get channel header
 	chdr, err := protoutil.UnmarshalChannelHeader(payload.Header.ChannelHeader)
 	if err != nil {
 		return err, peer.TxValidationCode_BAD_CHANNEL_HEADER
+	}
+
+	// get header extensions so we have the chaincode ID
+	hdrExt, err := protoutil.UnmarshalChaincodeHeaderExtension(chdr.Extension)
+	if err != nil {
+		return err, peer.TxValidationCode_BAD_HEADER_EXTENSION
 	}
 
 	/* obtain the list of namespaces we're writing to */
@@ -168,7 +168,16 @@ func (v *dispatcherImpl) Dispatch(seq int, payload *common.Payload, envBytes []b
 		}
 	}
 
+	namespaces := make(map[string]struct{})
 	for _, ns := range txRWSet.NsRwSets {
+		// check to make sure there is no duplicate namespace in txRWSet
+		if _, ok := namespaces[ns.NameSpace]; ok {
+			logger.Errorf("duplicate namespace '%s' in txRWSet", ns.NameSpace)
+			return errors.Errorf("duplicate namespace '%s' in txRWSet", ns.NameSpace),
+				peer.TxValidationCode_ILLEGAL_WRITESET
+		}
+		namespaces[ns.NameSpace] = struct{}{}
+
 		if v.txWritesToNamespace(ns) {
 			wrNamespace[ns.NameSpace] = true
 		}

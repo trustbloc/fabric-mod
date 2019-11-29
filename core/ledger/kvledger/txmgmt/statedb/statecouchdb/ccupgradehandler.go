@@ -16,7 +16,8 @@ const lsccKeyPrefix = "%s~"
 func getCCUpgradeHandler(vdb *VersionedDB) api.ChaincodeUpgradeHandler {
 	return func(txMetadata api.TxMetadata, chaincodeName string) error {
 		logger.Debugf("Clearing lscc state cache for chaincode [%s]", chaincodeName)
-		vdb.lsccStateCache.evictEntry(chaincodeName)
+		// TODO: evictEntry is no longer implemented
+		//vdb.cache.evictEntry(chaincodeName)
 		return nil
 	}
 }

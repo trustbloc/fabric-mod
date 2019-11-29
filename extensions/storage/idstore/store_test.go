@@ -23,5 +23,8 @@ func TestOpenIDStore(t *testing.T) {
 	require.NoError(t, err)
 	viper.Set("peer.fileSystemPath", tempDir)
 	defer os.RemoveAll(tempDir)
-	require.NotEmpty(t, OpenIDStore(tempDir, testutil.TestLedgerConf()))
+
+	s, err := OpenIDStore(tempDir, testutil.TestLedgerConf())
+	require.NoError(t, err)
+	require.NotEmpty(t, s)
 }

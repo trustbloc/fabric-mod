@@ -10,8 +10,10 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/cauthdsl"
-	"github.com/hyperledger/fabric/common/mocks/ledger"
+	tmocks "github.com/hyperledger/fabric/core/committer/txvalidator/mocks"
 	"github.com/hyperledger/fabric/core/committer/txvalidator/plugin"
 	"github.com/hyperledger/fabric/core/committer/txvalidator/v20/plugindispatcher"
 	"github.com/hyperledger/fabric/core/committer/txvalidator/v20/plugindispatcher/mocks"
@@ -19,8 +21,6 @@ import (
 	validation "github.com/hyperledger/fabric/core/handlers/validation/api"
 	"github.com/hyperledger/fabric/msp"
 	. "github.com/hyperledger/fabric/msp/mocks"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -30,12 +30,12 @@ func TestValidateWithPlugin(t *testing.T) {
 	pm := make(plugin.MapBasedMapper)
 	qec := &mocks.QueryExecutorCreator{}
 	deserializer := &mocks.IdentityDeserializer{}
-	capabilites := &mocks.Capabilities{}
+	capabilities := &mocks.Capabilities{}
 
 	mcpmg := &mocks.ChannelPolicyManagerGetter{}
-	mcpmg.On("Manager", "").Return(nil, true)
+	mcpmg.On("Manager", "").Return(&mocks.PolicyManager{})
 
-	v := plugindispatcher.NewPluginValidator(pm, qec, deserializer, capabilites, mcpmg, nil)
+	v := plugindispatcher.NewPluginValidator(pm, qec, deserializer, capabilities, mcpmg, nil)
 	ctx := &plugindispatcher.Context{
 		Namespace:  "mycc",
 		PluginName: "vscc",
@@ -73,31 +73,31 @@ func TestValidateWithPlugin(t *testing.T) {
 
 func TestSamplePlugin(t *testing.T) {
 	pm := make(plugin.MapBasedMapper)
+
+	qe := &tmocks.QueryExecutor{}
+	state := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	qe.On("GetState", "lscc", "mycc").Return(state, nil)
+	qe.On("GetStateMultipleKeys", "lscc", []string{"mycc"}).Return([][]byte{state}, nil)
+	qe.On("Done").Return(nil, nil)
+
 	qec := &mocks.QueryExecutorCreator{}
+	qec.On("NewQueryExecutor").Return(qe, nil)
 
-	qec.On("NewQueryExecutor").Return(&ledger.MockQueryExecutor{
-		State: map[string]map[string][]byte{
-			"lscc": {
-				"mycc": []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
-			},
-		},
-	}, nil)
-
-	deserializer := &mocks.IdentityDeserializer{}
 	identity := &MockIdentity{}
 	identity.On("GetIdentifier").Return(&msp.IdentityIdentifier{
 		Mspid: "SampleOrg",
 		Id:    "foo",
 	})
+	deserializer := &mocks.IdentityDeserializer{}
 	deserializer.On("DeserializeIdentity", []byte{7, 8, 9}).Return(identity, nil)
-	capabilites := &mocks.Capabilities{}
-	capabilites.On("PrivateChannelData").Return(true)
+	capabilities := &mocks.Capabilities{}
+	capabilities.On("PrivateChannelData").Return(true)
 	factory := &mocks.PluginFactory{}
 	factory.On("New").Return(testdata.NewSampleValidationPlugin(t))
 	pm["vscc"] = factory
 
 	mcpmg := &mocks.ChannelPolicyManagerGetter{}
-	mcpmg.On("Manager", "mychannel").Return(nil, true)
+	mcpmg.On("Manager", "mychannel").Return(&mocks.PolicyManager{})
 
 	transaction := testdata.MarshaledSignedData{
 		Data:      []byte{1, 2, 3},
@@ -107,7 +107,7 @@ func TestSamplePlugin(t *testing.T) {
 
 	txnData, _ := proto.Marshal(&transaction)
 
-	v := plugindispatcher.NewPluginValidator(pm, qec, deserializer, capabilites, mcpmg, nil)
+	v := plugindispatcher.NewPluginValidator(pm, qec, deserializer, capabilities, mcpmg, nil)
 	acceptAllPolicyBytes, _ := proto.Marshal(&peer.ApplicationPolicy{Type: &peer.ApplicationPolicy_SignaturePolicy{SignaturePolicy: cauthdsl.AcceptAllPolicy}})
 	ctx := &plugindispatcher.Context{
 		Namespace:  "mycc",

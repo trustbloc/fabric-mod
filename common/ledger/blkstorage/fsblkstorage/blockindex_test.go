@@ -10,13 +10,16 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	"github.com/hyperledger/fabric/common/ledger/testutil"
+	commonledgerutil "github.com/hyperledger/fabric/common/ledger/util"
+	"github.com/hyperledger/fabric/common/metrics/disabled"
 	"github.com/hyperledger/fabric/core/ledger/util"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type noopIndex struct {
@@ -47,6 +50,10 @@ func (i *noopIndex) getBlockLocByTxID(txID string) (*fileLocPointer, error) {
 
 func (i *noopIndex) getTxValidationCodeByTxID(txID string) (peer.TxValidationCode, error) {
 	return peer.TxValidationCode(-1), nil
+}
+
+func (i *noopIndex) isAttributeIndexed(attribute blkstorage.IndexableAttr) bool {
+	return true
 }
 
 func TestBlockIndexSync(t *testing.T) {
@@ -109,29 +116,6 @@ func testBlockIndexSync(t *testing.T, numBlocks int, numBlocksToIndex int, syncB
 	})
 }
 
-func TestBlockIndexSelectiveIndexingWrongConfig(t *testing.T) {
-	testBlockIndexSelectiveIndexingWrongConfig(t, []blkstorage.IndexableAttr{blkstorage.IndexableAttrBlockTxID})
-	testBlockIndexSelectiveIndexingWrongConfig(t, []blkstorage.IndexableAttr{blkstorage.IndexableAttrTxValidationCode})
-	testBlockIndexSelectiveIndexingWrongConfig(t, []blkstorage.IndexableAttr{blkstorage.IndexableAttrBlockTxID, blkstorage.IndexableAttrBlockNum})
-	testBlockIndexSelectiveIndexingWrongConfig(t, []blkstorage.IndexableAttr{blkstorage.IndexableAttrTxValidationCode, blkstorage.IndexableAttrBlockNumTranNum})
-
-}
-
-func testBlockIndexSelectiveIndexingWrongConfig(t *testing.T, indexItems []blkstorage.IndexableAttr) {
-	var testName string
-	for _, s := range indexItems {
-		testName = testName + string(s)
-	}
-	t.Run(testName, func(t *testing.T) {
-		env := newTestEnvSelectiveIndexing(t, NewConf(testPath(), 0), indexItems)
-		defer env.Cleanup()
-
-		assert.Panics(t, func() {
-			env.provider.OpenBlockStore("test-ledger")
-		}, "A panic is expected when index is opened with wrong configs")
-	})
-}
-
 func TestBlockIndexSelectiveIndexing(t *testing.T) {
 	testBlockIndexSelectiveIndexing(t, []blkstorage.IndexableAttr{})
 	testBlockIndexSelectiveIndexing(t, []blkstorage.IndexableAttr{blkstorage.IndexableAttrBlockHash})
@@ -140,8 +124,6 @@ func TestBlockIndexSelectiveIndexing(t *testing.T) {
 	testBlockIndexSelectiveIndexing(t, []blkstorage.IndexableAttr{blkstorage.IndexableAttrBlockNumTranNum})
 	testBlockIndexSelectiveIndexing(t, []blkstorage.IndexableAttr{blkstorage.IndexableAttrBlockHash, blkstorage.IndexableAttrBlockNum})
 	testBlockIndexSelectiveIndexing(t, []blkstorage.IndexableAttr{blkstorage.IndexableAttrTxID, blkstorage.IndexableAttrBlockNumTranNum})
-	testBlockIndexSelectiveIndexing(t, []blkstorage.IndexableAttr{blkstorage.IndexableAttrTxID, blkstorage.IndexableAttrBlockTxID})
-	testBlockIndexSelectiveIndexing(t, []blkstorage.IndexableAttr{blkstorage.IndexableAttrTxID, blkstorage.IndexableAttrTxValidationCode})
 }
 
 func testBlockIndexSelectiveIndexing(t *testing.T, indexItems []blkstorage.IndexableAttr) {
@@ -150,7 +132,7 @@ func testBlockIndexSelectiveIndexing(t *testing.T, indexItems []blkstorage.Index
 		testName = testName + string(s)
 	}
 	t.Run(testName, func(t *testing.T) {
-		env := newTestEnvSelectiveIndexing(t, NewConf(testPath(), 0), indexItems)
+		env := newTestEnvSelectiveIndexing(t, NewConf(testPath(), 0), indexItems, &disabled.Provider{})
 		defer env.Cleanup()
 		blkfileMgrWrapper := newTestBlockfileWrapper(env, "testledger")
 		defer blkfileMgrWrapper.close()
@@ -180,7 +162,7 @@ func testBlockIndexSelectiveIndexing(t *testing.T, indexItems []blkstorage.Index
 		}
 
 		// test 'retrieveTransactionByID'
-		txid, err := extractTxID(blocks[0].Data.Data[0])
+		txid, err := protoutil.GetOrComputeTxIDFromEnvelope(blocks[0].Data.Data[0])
 		assert.NoError(t, err)
 		txEnvelope, err := blockfileMgr.retrieveTransactionByID(txid)
 		if containsAttr(indexItems, blkstorage.IndexableAttrTxID) {
@@ -206,10 +188,10 @@ func testBlockIndexSelectiveIndexing(t *testing.T, indexItems []blkstorage.Index
 		}
 
 		// test 'retrieveBlockByTxID'
-		txid, err = extractTxID(blocks[0].Data.Data[0])
+		txid, err = protoutil.GetOrComputeTxIDFromEnvelope(blocks[0].Data.Data[0])
 		assert.NoError(t, err)
 		block, err = blockfileMgr.retrieveBlockByTxID(txid)
-		if containsAttr(indexItems, blkstorage.IndexableAttrBlockTxID) {
+		if containsAttr(indexItems, blkstorage.IndexableAttrTxID) {
 			assert.NoError(t, err, "Error while retrieving block by txID")
 			assert.Equal(t, block, blocks[0])
 		} else {
@@ -220,12 +202,12 @@ func testBlockIndexSelectiveIndexing(t *testing.T, indexItems []blkstorage.Index
 			flags := util.TxValidationFlags(block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER])
 
 			for idx, d := range block.Data.Data {
-				txid, err = extractTxID(d)
+				txid, err = protoutil.GetOrComputeTxIDFromEnvelope(d)
 				assert.NoError(t, err)
 
 				reason, err := blockfileMgr.retrieveTxValidationCodeByTxID(txid)
 
-				if containsAttr(indexItems, blkstorage.IndexableAttrTxValidationCode) {
+				if containsAttr(indexItems, blkstorage.IndexableAttrTxID) {
 					assert.NoError(t, err, "Error while retrieving tx validation code by txID")
 
 					reasonFromFlags := flags.Flag(idx)
@@ -246,4 +228,44 @@ func containsAttr(indexItems []blkstorage.IndexableAttr, attr blkstorage.Indexab
 		}
 	}
 	return false
+}
+
+func TestTxIDKeyEncoding(t *testing.T) {
+	testcases := []struct {
+		txid   string
+		blkNum uint64
+		txNum  uint64
+	}{
+		{"txid1", 0, 0},
+		{"", 1, 1},
+		{"", 0, 0},
+		{"txid1", 100, 100},
+	}
+	for i, testcase := range testcases {
+		t.Run(fmt.Sprintf(" %d", i),
+			func(t *testing.T) {
+				verifyTxIDKeyDecodable(t,
+					constructTxIDKey(testcase.txid, testcase.blkNum, testcase.txNum),
+					testcase.txid, testcase.blkNum, testcase.txNum,
+				)
+			})
+	}
+}
+
+func verifyTxIDKeyDecodable(t *testing.T, txIDKey []byte, expectedTxID string, expectedBlkNum, expectedTxNum uint64) {
+	length, lengthBytes, err := commonledgerutil.DecodeOrderPreservingVarUint64(txIDKey[1:])
+	require.NoError(t, err)
+	firstIndexTxID := 1 + lengthBytes
+	firstIndexBlkNum := firstIndexTxID + int(length)
+	require.Equal(t, []byte(expectedTxID), txIDKey[firstIndexTxID:firstIndexBlkNum])
+
+	blkNum, n, err := commonledgerutil.DecodeOrderPreservingVarUint64(txIDKey[firstIndexBlkNum:])
+	require.NoError(t, err)
+	require.Equal(t, expectedBlkNum, blkNum)
+
+	firstIndexTxNum := firstIndexBlkNum + n
+	txNum, n, err := commonledgerutil.DecodeOrderPreservingVarUint64(txIDKey[firstIndexTxNum:])
+	require.NoError(t, err)
+	require.Equal(t, expectedTxNum, txNum)
+	require.Len(t, txIDKey, firstIndexTxNum+n)
 }

@@ -9,12 +9,12 @@ package mock
 import (
 	"time"
 
+	proto "github.com/hyperledger/fabric-protos-go/gossip"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/comm"
 	"github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/protoext"
 	"github.com/hyperledger/fabric/gossip/util"
-	proto "github.com/hyperledger/fabric/protos/gossip"
 )
 
 // Mock which aims to simulate socket
@@ -135,12 +135,16 @@ func (mock *commMock) start() {
 	}
 }
 
+func (mock *commMock) IdentitySwitch() <-chan common.PKIidType {
+	panic("implement me")
+}
+
 // GetPKIid returns this instance's PKI id
 func (mock *commMock) GetPKIid() common.PKIidType {
 	return common.PKIidType(mock.id)
 }
 
-// Send sends a message to remote peers
+// Send sends a message to remote peers asynchronously
 func (mock *commMock) Send(msg *protoext.SignedGossipMessage, peers ...*comm.RemotePeer) {
 	for _, peer := range peers {
 		logger.Debug("Sending message to peer ", peer.Endpoint, "from ", mock.id)

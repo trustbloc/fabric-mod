@@ -14,14 +14,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/ledger/rwset"
+	"github.com/hyperledger/fabric-protos-go/ledger/rwset/kvrwset"
+	protosmsp "github.com/hyperledger/fabric-protos-go/msp"
+	"github.com/hyperledger/fabric-protos-go/peer"
+	protospeer "github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric/bccsp/sw"
 	"github.com/hyperledger/fabric/common/cauthdsl"
 	commonerrors "github.com/hyperledger/fabric/common/errors"
-	"github.com/hyperledger/fabric/common/ledger/testutil"
-	mockconfig "github.com/hyperledger/fabric/common/mocks/config"
 	"github.com/hyperledger/fabric/common/semaphore"
-	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/committer/txvalidator"
+	tmocks "github.com/hyperledger/fabric/core/committer/txvalidator/mocks"
 	txvalidatorplugin "github.com/hyperledger/fabric/core/committer/txvalidator/plugin"
 	txvalidatorv20 "github.com/hyperledger/fabric/core/committer/txvalidator/v20"
 	txvalidatormocks "github.com/hyperledger/fabric/core/committer/txvalidator/v20/mocks"
@@ -38,11 +42,6 @@ import (
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/msp/mgmt"
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
-	"github.com/hyperledger/fabric/protos/common"
-	protosmsp "github.com/hyperledger/fabric/protos/msp"
-	"github.com/hyperledger/fabric/protos/peer"
-	protospeer "github.com/hyperledger/fabric/protos/peer"
-	"github.com/hyperledger/fabric/protos/token"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -53,25 +52,14 @@ func signedByAnyMember(ids []string) []byte {
 	return protoutil.MarshalOrPanic(&protospeer.ApplicationPolicy{Type: &protospeer.ApplicationPolicy_SignaturePolicy{SignaturePolicy: p}})
 }
 
-func v20Capabilities() *mockconfig.MockApplicationCapabilities {
-	return &mockconfig.MockApplicationCapabilities{
-		V1_2ValidationRv:      true,
-		V1_3ValidationRv:      true,
-		PrivateChannelDataRv:  true,
-		KeyLevelEndorsementRv: true,
-		V2_0ValidationRv:      true,
-	}
-}
-
-func fabTokenCapabilities() *mockconfig.MockApplicationCapabilities {
-	return &mockconfig.MockApplicationCapabilities{
-		V1_2ValidationRv:      true,
-		V1_3ValidationRv:      true,
-		PrivateChannelDataRv:  true,
-		KeyLevelEndorsementRv: true,
-		V2_0ValidationRv:      true,
-		FabTokenRv:            true,
-	}
+func v20Capabilities() *tmocks.ApplicationCapabilities {
+	ac := &tmocks.ApplicationCapabilities{}
+	ac.On("V1_2Validation").Return(true)
+	ac.On("V1_3Validation").Return(true)
+	ac.On("V2_0Validation").Return(true)
+	ac.On("PrivateChannelData").Return(true)
+	ac.On("KeyLevelEndorsement").Return(true)
+	return ac
 }
 
 func createRWset(t *testing.T, ccnames ...string) []byte {
@@ -92,7 +80,7 @@ func getProposalWithType(ccID string, pType common.HeaderType) (*peer.Proposal, 
 			Input:       &peer.ChaincodeInput{Args: [][]byte{[]byte("func")}},
 			Type:        peer.ChaincodeSpec_GOLANG}}
 
-	proposal, _, err := protoutil.CreateProposalFromCIS(pType, util.GetTestChainID(), cis, signerSerialized)
+	proposal, _, err := protoutil.CreateProposalFromCIS(pType, "testchannelid", cis, signerSerialized)
 	return proposal, err
 }
 
@@ -106,7 +94,7 @@ func getEnvWithType(ccID string, event []byte, res []byte, pType common.HeaderTy
 	response := &peer.Response{Status: 200}
 
 	// endorse it to get a proposal response
-	presp, err := protoutil.CreateProposalResponse(prop.Header, prop.Payload, response, res, event, &peer.ChaincodeID{Name: ccID, Version: ccVersion}, nil, signer)
+	presp, err := protoutil.CreateProposalResponse(prop.Header, prop.Payload, response, res, event, &peer.ChaincodeID{Name: ccID, Version: ccVersion}, signer)
 	assert.NoError(t, err)
 
 	// assemble a transaction from that proposal and endorsement
@@ -139,7 +127,7 @@ func getEnvWithSigner(ccID string, event []byte, res []byte, sig msp.SigningIden
 	response := &peer.Response{Status: 200}
 
 	// endorse it to get a proposal response
-	presp, err := protoutil.CreateProposalResponse(prop.Header, prop.Payload, response, res, event, &peer.ChaincodeID{Name: ccID, Version: ccVersion}, nil, sig)
+	presp, err := protoutil.CreateProposalResponse(prop.Header, prop.Payload, response, res, event, &peer.ChaincodeID{Name: ccID, Version: ccVersion}, sig)
 	assert.NoError(t, err)
 
 	// assemble a transaction from that proposal and endorsement
@@ -147,58 +135,6 @@ func getEnvWithSigner(ccID string, event []byte, res []byte, sig msp.SigningIden
 	assert.NoError(t, err)
 
 	return tx
-}
-
-func getTokenTx(t *testing.T) *common.Envelope {
-	transactionData := &token.TokenTransaction{
-		Action: &token.TokenTransaction_TokenAction{
-			TokenAction: &token.TokenAction{
-				Data: &token.TokenAction_Issue{
-					Issue: &token.Issue{
-						Outputs: []*token.Token{
-							{Owner: &token.TokenOwner{Raw: []byte("owner-1")}, Type: "TOK1", Quantity: ToHex(111)},
-							{Owner: &token.TokenOwner{Raw: []byte("owner-2")}, Type: "TOK2", Quantity: ToHex(222)},
-						},
-					},
-				},
-			},
-		},
-	}
-	tdBytes, err := proto.Marshal(transactionData)
-	assert.NoError(t, err)
-
-	signerBytes, err := signer.Serialize()
-	assert.NoError(t, err)
-	nonce := []byte{0, 1, 2, 3, 4}
-	txID, err := protoutil.ComputeTxID(nonce, signerBytes)
-	assert.NoError(t, err)
-
-	hdr := &common.Header{
-		SignatureHeader: protoutil.MarshalOrPanic(
-			&common.SignatureHeader{
-				Creator: signerBytes,
-				Nonce:   nonce,
-			},
-		),
-		ChannelHeader: protoutil.MarshalOrPanic(
-			&common.ChannelHeader{
-				Type: int32(common.HeaderType_TOKEN_TRANSACTION),
-				TxId: txID,
-			},
-		),
-	}
-
-	// create the payload
-	payl := &common.Payload{Header: hdr, Data: tdBytes}
-	paylBytes, err := protoutil.GetBytesPayload(payl)
-	assert.NoError(t, err)
-
-	// sign the payload
-	sig, err := signer.Sign(paylBytes)
-	assert.NoError(t, err)
-
-	// here's the envelope
-	return &common.Envelope{Payload: paylBytes, Signature: sig}
 }
 
 func assertInvalid(block *common.Block, t *testing.T, code peer.TxValidationCode) {
@@ -238,19 +174,21 @@ func setupValidatorWithMspMgr(mspmgr msp.MSPManager, mockID *supportmocks.Identi
 	mockLedger.On("NewQueryExecutor").Return(mockQE, nil)
 
 	mockCpmg := &plugindispatchermocks.ChannelPolicyManagerGetter{}
-	mockCpmg.On("Manager", mock.Anything).Return(nil, true)
+	mockCpmg.On("Manager", mock.Anything).Return(&txvalidatormocks.PolicyManager{})
 
 	mockCR := &txvalidatormocks.CollectionResources{}
 
+	cryptoProvider, _ := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
 	v := txvalidatorv20.NewTxValidator(
 		"",
 		semaphore.New(10),
 		&mocktxvalidator.Support{ACVal: v20Capabilities(), MSPManagerVal: mspmgr},
 		mockLedger,
-		&lscc.LifeCycleSysCC{},
+		&lscc.SCC{BCCSP: cryptoProvider},
 		mockCR,
 		pm,
 		mockCpmg,
+		cryptoProvider,
 	)
 
 	return v, mockQE, mockID, mockCR
@@ -308,6 +246,56 @@ func TestInvokeOK(t *testing.T) {
 	err := v.Validate(b)
 	assert.NoError(t, err)
 	assertValid(b, t)
+}
+
+func TestInvokeNOKDuplicateNs(t *testing.T) {
+	ccID := "mycc"
+
+	v, mockQE, _, _ := setupValidator()
+
+	mockQE.On("GetState", "lscc", ccID).Return(protoutil.MarshalOrPanic(&ccp.ChaincodeData{
+		Name:    ccID,
+		Version: ccVersion,
+		Vscc:    "vscc",
+		Policy:  signedByAnyMember([]string{"SampleOrg"}),
+	}), nil)
+	mockQE.On("GetStateMetadata", ccID, "key").Return(nil, nil)
+
+	// note that this read-write set has two read-write sets for the same namespace and key
+	txrws := &rwset.TxReadWriteSet{
+		DataModel: rwset.TxReadWriteSet_KV,
+		NsRwset: []*rwset.NsReadWriteSet{
+			{
+				Namespace: "mycc",
+				Rwset: protoutil.MarshalOrPanic(&kvrwset.KVRWSet{
+					Writes: []*kvrwset.KVWrite{
+						{
+							Key:   "foo",
+							Value: []byte("bar1"),
+						},
+					},
+				}),
+			},
+			{
+				Namespace: "mycc",
+				Rwset: protoutil.MarshalOrPanic(&kvrwset.KVRWSet{
+					Writes: []*kvrwset.KVWrite{
+						{
+							Key:   "foo",
+							Value: []byte("bar2"),
+						},
+					},
+				}),
+			},
+		},
+	}
+
+	tx := getEnv(ccID, nil, protoutil.MarshalOrPanic(txrws), t)
+	b := &common.Block{Data: &common.BlockData{Data: [][]byte{protoutil.MarshalOrPanic(tx)}}, Header: &common.BlockHeader{Number: 2}}
+
+	err := v.Validate(b)
+	assert.NoError(t, err)
+	assertInvalid(b, t, peer.TxValidationCode_ILLEGAL_WRITESET)
 }
 
 func TestInvokeNoRWSet(t *testing.T) {
@@ -949,60 +937,6 @@ func TestValidateTxWithStateBasedEndorsement(t *testing.T) {
 	assertInvalid(b, t, peer.TxValidationCode_ENDORSEMENT_POLICY_FAILURE)
 }
 
-func TestTokenValidTransaction(t *testing.T) {
-	v, _, _, _ := setupValidator()
-	v.ChannelResources.(*mocktxvalidator.Support).ACVal = fabTokenCapabilities()
-
-	tx := getTokenTx(t)
-	b := &common.Block{Data: &common.BlockData{Data: [][]byte{protoutil.MarshalOrPanic(tx)}}, Header: &common.BlockHeader{Number: 1}}
-
-	err := v.Validate(b)
-	assert.NoError(t, err)
-	assertValid(b, t)
-}
-
-func TestTokenCapabilityNotEnabled(t *testing.T) {
-	v, _, _, _ := setupValidator()
-
-	tx := getTokenTx(t)
-	b := &common.Block{Data: &common.BlockData{Data: [][]byte{protoutil.MarshalOrPanic(tx)}}, Header: &common.BlockHeader{Number: 1}}
-
-	err := v.Validate(b)
-
-	assertion := assert.New(t)
-	// We expect no validation error because we simply mark the tx as invalid
-	assertion.NoError(err)
-
-	// We expect the tx to be invalid because of a duplicate txid
-	txsfltr := ledgerutils.TxValidationFlags(b.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER])
-	assertion.True(txsfltr.IsInvalid(0))
-	assertion.True(txsfltr.Flag(0) == peer.TxValidationCode_UNKNOWN_TX_TYPE)
-}
-
-func TestTokenDuplicateTxId(t *testing.T) {
-	v, _, _, _ := setupValidator()
-	v.ChannelResources.(*mocktxvalidator.Support).ACVal = fabTokenCapabilities()
-
-	mockLedger := &txvalidatormocks.LedgerResources{}
-	v.LedgerResources = mockLedger
-	mockLedger.On("GetTransactionByID", mock.Anything).Return(&peer.ProcessedTransaction{}, nil)
-
-	tx := getTokenTx(t)
-
-	b := testutil.NewBlock([]*common.Envelope{tx}, 0, nil)
-
-	err := v.Validate(b)
-
-	assertion := assert.New(t)
-	// We expect no validation error because we simply mark the tx as invalid
-	assertion.NoError(err)
-
-	// We expect the tx to be invalid because of a duplicate txid
-	txsfltr := ledgerutils.TxValidationFlags(b.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER])
-	assertion.True(txsfltr.IsInvalid(0))
-	assertion.True(txsfltr.Flag(0) == peer.TxValidationCode_DUPLICATE_TXID)
-}
-
 func TestDynamicCapabilitiesAndMSP(t *testing.T) {
 	ccID := "mycc"
 
@@ -1148,17 +1082,21 @@ func TestValidationInvalidEndorsing(t *testing.T) {
 	mockLedger.On("NewQueryExecutor").Return(mockQE, nil)
 
 	mockCpmg := &plugindispatchermocks.ChannelPolicyManagerGetter{}
-	mockCpmg.On("Manager", mock.Anything).Return(nil, true)
+	mockCpmg.On("Manager", mock.Anything).Return(&txvalidatormocks.PolicyManager{})
+
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
 
 	v := txvalidatorv20.NewTxValidator(
 		"",
 		semaphore.New(10),
 		&mocktxvalidator.Support{ACVal: v20Capabilities(), MSPManagerVal: mspmgr},
 		mockLedger,
-		&lscc.LifeCycleSysCC{},
+		&lscc.SCC{BCCSP: cryptoProvider},
 		&txvalidatormocks.CollectionResources{},
 		pm,
 		mockCpmg,
+		cryptoProvider,
 	)
 
 	tx := getEnv(ccID, nil, createRWset(t, ccID), t)
@@ -1180,7 +1118,7 @@ func TestValidationInvalidEndorsing(t *testing.T) {
 	}
 
 	// Keep default callback
-	err := v.Validate(b)
+	err = v.Validate(b)
 	// Restore default callback
 	assert.NoError(t, err)
 	assertInvalid(b, t, peer.TxValidationCode_ENDORSEMENT_POLICY_FAILURE)
@@ -1219,17 +1157,20 @@ func TestValidationPluginExecutionError(t *testing.T) {
 	mockLedger.On("NewQueryExecutor").Return(mockQE, nil)
 
 	mockCpmg := &plugindispatchermocks.ChannelPolicyManagerGetter{}
-	mockCpmg.On("Manager", mock.Anything).Return(nil, true)
+	mockCpmg.On("Manager", mock.Anything).Return(&txvalidatormocks.PolicyManager{})
 
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
 	v := txvalidatorv20.NewTxValidator(
 		"",
 		semaphore.New(10),
 		&mocktxvalidator.Support{ACVal: v20Capabilities(), MSPManagerVal: mspmgr},
 		mockLedger,
-		&lscc.LifeCycleSysCC{},
+		&lscc.SCC{BCCSP: cryptoProvider},
 		&txvalidatormocks.CollectionResources{},
 		pm,
 		mockCpmg,
+		cryptoProvider,
 	)
 
 	tx := getEnv(ccID, nil, createRWset(t, ccID), t)
@@ -1238,7 +1179,7 @@ func TestValidationPluginExecutionError(t *testing.T) {
 		Header: &common.BlockHeader{},
 	}
 
-	err := v.Validate(b)
+	err = v.Validate(b)
 	executionErr := err.(*commonerrors.VSCCExecutionFailureError)
 	assert.Contains(t, executionErr.Error(), "I/O error")
 }
@@ -1269,17 +1210,20 @@ func TestValidationPluginNotFound(t *testing.T) {
 	mockLedger.On("NewQueryExecutor").Return(mockQE, nil)
 
 	mockCpmg := &plugindispatchermocks.ChannelPolicyManagerGetter{}
-	mockCpmg.On("Manager", mock.Anything).Return(nil, true)
+	mockCpmg.On("Manager", mock.Anything).Return(&txvalidatormocks.PolicyManager{})
 
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
 	v := txvalidatorv20.NewTxValidator(
 		"",
 		semaphore.New(10),
 		&mocktxvalidator.Support{ACVal: v20Capabilities(), MSPManagerVal: mspmgr},
 		mockLedger,
-		&lscc.LifeCycleSysCC{},
+		&lscc.SCC{BCCSP: cryptoProvider},
 		&txvalidatormocks.CollectionResources{},
 		pm,
 		mockCpmg,
+		cryptoProvider,
 	)
 
 	tx := getEnv(ccID, nil, createRWset(t, ccID), t)
@@ -1288,7 +1232,7 @@ func TestValidationPluginNotFound(t *testing.T) {
 		Header: &common.BlockHeader{},
 	}
 
-	err := v.Validate(b)
+	err = v.Validate(b)
 	executionErr := err.(*commonerrors.VSCCExecutionFailureError)
 	assert.Contains(t, executionErr.Error(), "plugin with name vscc wasn't found")
 }
@@ -1301,7 +1245,14 @@ func TestMain(m *testing.M) {
 	msptesttools.LoadMSPSetupForTesting()
 
 	var err error
-	signer, err = mgmt.GetLocalMSP().GetDefaultSigningIdentity()
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	if err != nil {
+		fmt.Printf("Initialize cryptoProvider bccsp failed: %s", err)
+		os.Exit(-1)
+		return
+	}
+
+	signer, err = mgmt.GetLocalMSP(cryptoProvider).GetDefaultSigningIdentity()
 	if err != nil {
 		fmt.Println("Could not get signer")
 		os.Exit(-1)

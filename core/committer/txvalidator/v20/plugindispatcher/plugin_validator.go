@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/hyperledger/fabric-protos-go/common"
 	ledger2 "github.com/hyperledger/fabric/common/ledger"
 	"github.com/hyperledger/fabric/common/policies"
 	txvalidatorplugin "github.com/hyperledger/fabric/core/committer/txvalidator/plugin"
@@ -21,7 +22,6 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/policy"
 	"github.com/hyperledger/fabric/msp"
-	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 )
@@ -103,6 +103,12 @@ type IdentityDeserializer interface {
 // ChannelPolicyManagerGetter is the local interface that used to generate mocks for foreign interface.
 type ChannelPolicyManagerGetter interface {
 	policies.ChannelPolicyManagerGetter
+}
+
+//go:generate mockery -dir . -name PolicyManager -case underscore -output mocks/
+
+type PolicyManager interface {
+	policies.Manager
 }
 
 // NewPluginValidator creates a new PluginValidator.

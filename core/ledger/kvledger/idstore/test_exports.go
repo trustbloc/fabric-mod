@@ -21,7 +21,7 @@ import (
 // StoreEnv provides the  store env for testing
 type StoreEnv struct {
 	t         testing.TB
-	TestStore IDStore
+	TestStore *IDStore
 }
 
 // NewTestStoreEnv construct a StoreEnv for testing
@@ -30,7 +30,8 @@ func NewTestStoreEnv(t *testing.T) *StoreEnv {
 	require.NoError(t, err)
 	viper.Set("peer.fileSystemPath", tempDir)
 	removeStorePath(t)
-	testStore := OpenIDStore(tempDir)
+	testStore, err := OpenIDStore(tempDir)
+	require.NoError(t, err)
 	return &StoreEnv{t, testStore}
 }
 

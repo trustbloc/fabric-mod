@@ -11,8 +11,8 @@ import (
 
 	"github.com/hyperledger/fabric/common/channelconfig"
 	commonledger "github.com/hyperledger/fabric/common/ledger"
+	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/core/chaincode"
-	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/common/privdata"
 	"github.com/hyperledger/fabric/core/container/ccintf"
 	"github.com/hyperledger/fabric/core/ledger"
@@ -50,9 +50,9 @@ type certGenerator interface {
 	chaincode.CertGenerator
 }
 
-//go:generate counterfeiter -o mock/processor.go --fake-name Processor . processor
-type processor interface {
-	chaincode.Processor
+//go:generate counterfeiter -o mock/container_router.go --fake-name ContainerRouter . containerRouter
+type containerRouter interface {
+	chaincode.ContainerRouter
 }
 
 //go:generate counterfeiter -o mock/invoker.go --fake-name Invoker . invoker
@@ -60,19 +60,9 @@ type invoker interface {
 	chaincode.Invoker
 }
 
-//go:generate counterfeiter -o mock/package_provider.go --fake-name PackageProvider . packageProvider
-type packageProvider interface {
-	chaincode.PackageProvider
-}
-
-//go:generate counterfeiter -o mock/lifecycle.go --fake-name Lifecycle . lifecycle
-type lifecycle interface {
+//go:generate counterfeiter -o mock/lifecycle.go --fake-name Lifecycle . lifecycle_
+type lifecycle_ interface {
 	chaincode.Lifecycle
-}
-
-//go:generate counterfeiter -o mock/chaincode_definition.go --fake-name ChaincodeDefinition . chaincodeDefinition
-type chaincodeDefinition interface {
-	ccprovider.ChaincodeDefinition
 }
 
 //go:generate counterfeiter -o mock/chaincode_stream.go --fake-name ChaincodeStream . chaincodeStream
@@ -85,24 +75,9 @@ type transactionRegistry interface {
 	chaincode.TransactionRegistry
 }
 
-//go:generate counterfeiter -o mock/system_chaincode_provider.go --fake-name SystemCCProvider . systemCCProvider
-type systemCCProvider interface {
-	chaincode.SystemCCProvider
-}
-
 //go:generate counterfeiter -o mock/acl_provider.go --fake-name ACLProvider . aclProvider
 type aclProvider interface {
 	chaincode.ACLProvider
-}
-
-//go:generate counterfeiter -o mock/chaincode_definition_getter.go --fake-name ChaincodeDefinitionGetter . chaincodeDefinitionGetter
-type chaincodeDefinitionGetter interface {
-	chaincode.ChaincodeDefinitionGetter
-}
-
-//go:generate counterfeiter -o mock/instantiation_policy_checker.go --fake-name InstantiationPolicyChecker . instantiationPolicyChecker
-type instantiationPolicyChecker interface {
-	chaincode.InstantiationPolicyChecker
 }
 
 //go:generate counterfeiter -o mock/ledger_getter.go --fake-name LedgerGetter . ledgerGetter
@@ -160,4 +135,14 @@ type applicationCapabilities interface {
 //go:generate counterfeiter -o mock/application_config.go --fake-name ApplicationConfig . applicationConfig
 type applicationConfig interface {
 	channelconfig.Application
+}
+
+//go:generate counterfeiter -o mock/policy_manager.go -fake-name PolicyManager . policyManager
+type policyManager interface {
+	policies.Manager
+}
+
+//go:generate counterfeiter -o mock/policy.go -fake-name Policy . policy
+type policy interface {
+	policies.Policy
 }

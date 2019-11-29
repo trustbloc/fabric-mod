@@ -13,7 +13,7 @@ import (
 	"math/big"
 
 	"github.com/golang/protobuf/proto"
-	cb "github.com/hyperledger/fabric/protos/common"
+	cb "github.com/hyperledger/fabric-protos-go/common"
 	"github.com/pkg/errors"
 )
 
@@ -23,6 +23,7 @@ func NewBlock(seqNum uint64, previousHash []byte) *cb.Block {
 	block.Header = &cb.BlockHeader{}
 	block.Header.Number = seqNum
 	block.Header.PreviousHash = previousHash
+	block.Header.DataHash = []byte{}
 	block.Data = &cb.BlockData{}
 
 	var metadataContents [][]byte
@@ -69,7 +70,7 @@ func BlockDataHash(b *cb.BlockData) []byte {
 // GetChainIDFromBlockBytes returns chain ID given byte array which represents
 // the block
 func GetChainIDFromBlockBytes(bytes []byte) (string, error) {
-	block, err := GetBlockFromBlockBytes(bytes)
+	block, err := UnmarshalBlock(bytes)
 	if err != nil {
 		return "", err
 	}
@@ -87,7 +88,7 @@ func GetChainIDFromBlock(block *cb.Block) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	payload, err := GetPayload(envelope)
+	payload, err := UnmarshalPayload(envelope.Payload)
 	if err != nil {
 		return "", err
 	}
@@ -123,6 +124,35 @@ func GetMetadataFromBlockOrPanic(block *cb.Block, index cb.BlockMetadataIndex) *
 	return md
 }
 
+// GetConsenterMetadataFromBlock attempts to retrieve consenter metadata from the value
+// stored in block metadata at index SIGNATURES (first field). If no consenter metadata
+// is found there, it falls back to index ORDERER (third field).
+func GetConsenterMetadataFromBlock(block *cb.Block) (*cb.Metadata, error) {
+	m, err := GetMetadataFromBlock(block, cb.BlockMetadataIndex_SIGNATURES)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to retrieve metadata at index: %d", cb.BlockMetadataIndex_SIGNATURES)
+	}
+
+	// TODO FAB-15864 Remove this fallback when we can stop supporting upgrade from pre-1.4.1 orderer
+	if len(m.Value) == 0 {
+		return GetMetadataFromBlock(block, cb.BlockMetadataIndex_ORDERER)
+	}
+
+	obm := &cb.OrdererBlockMetadata{}
+	err = proto.Unmarshal(m.Value, obm)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to unmarshal orderer block metadata")
+	}
+
+	res := &cb.Metadata{}
+	err = proto.Unmarshal(obm.ConsenterMetadata, res)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to unmarshal consenter metadata")
+	}
+
+	return res, nil
+}
+
 // GetLastConfigIndexFromBlock retrieves the index of the last config block as
 // encoded in the block metadata
 func GetLastConfigIndexFromBlock(block *cb.Block) (uint64, error) {
@@ -148,16 +178,6 @@ func GetLastConfigIndexFromBlockOrPanic(block *cb.Block) uint64 {
 	return index
 }
 
-// GetBlockFromBlockBytes marshals the bytes into Block
-func GetBlockFromBlockBytes(blockBytes []byte) (*cb.Block, error) {
-	block := &cb.Block{}
-	err := proto.Unmarshal(blockBytes, block)
-	if err != nil {
-		return block, errors.Wrap(err, "error unmarshaling block")
-	}
-	return block, nil
-}
-
 // CopyBlockMetadata copies metadata from one block into another
 func CopyBlockMetadata(src *cb.Block, dst *cb.Block) {
 	dst.Metadata = src.Metadata
@@ -169,9 +189,9 @@ func CopyBlockMetadata(src *cb.Block, dst *cb.Block) {
 // InitBlockMetadata initializes metadata structure
 func InitBlockMetadata(block *cb.Block) {
 	if block.Metadata == nil {
-		block.Metadata = &cb.BlockMetadata{Metadata: [][]byte{{}, {}, {}}}
-	} else if len(block.Metadata.Metadata) < int(cb.BlockMetadataIndex_TRANSACTIONS_FILTER+1) {
-		for i := int(len(block.Metadata.Metadata)); i <= int(cb.BlockMetadataIndex_TRANSACTIONS_FILTER); i++ {
+		block.Metadata = &cb.BlockMetadata{Metadata: [][]byte{{}, {}, {}, {}, {}}}
+	} else if len(block.Metadata.Metadata) < int(cb.BlockMetadataIndex_COMMIT_HASH+1) {
+		for i := int(len(block.Metadata.Metadata)); i <= int(cb.BlockMetadataIndex_COMMIT_HASH); i++ {
 			block.Metadata.Metadata = append(block.Metadata.Metadata, []byte{})
 		}
 	}

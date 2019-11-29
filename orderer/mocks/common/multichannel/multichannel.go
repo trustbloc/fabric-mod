@@ -7,12 +7,11 @@ SPDX-License-Identifier: Apache-2.0
 package multichannel
 
 import (
+	cb "github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/common/channelconfig"
-	mockconfig "github.com/hyperledger/fabric/common/mocks/config"
 	"github.com/hyperledger/fabric/orderer/common/blockcutter"
 	"github.com/hyperledger/fabric/orderer/common/msgprocessor"
 	mockblockcutter "github.com/hyperledger/fabric/orderer/mocks/common/blockcutter"
-	cb "github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protoutil"
 )
 
@@ -20,10 +19,10 @@ import (
 // Whenever a block is written, it writes to the Batches channel to allow for synchronization
 type ConsenterSupport struct {
 	// SharedConfigVal is the value returned by SharedConfig()
-	SharedConfigVal *mockconfig.Orderer
+	SharedConfigVal channelconfig.Orderer
 
-	// SharedConfigVal is the value returned by ChannelConfig()
-	ChannelConfigVal *mockconfig.Channel
+	// ChannelConfigVal is the value returned by ChannelConfig()
+	ChannelConfigVal channelconfig.Channel
 
 	// BlockCutterVal is the value returned by BlockCutter()
 	BlockCutterVal *mockblockcutter.Receiver
@@ -34,8 +33,8 @@ type ConsenterSupport struct {
 	// Blocks is the channel where WriteBlock writes the most recently created block,
 	Blocks chan *cb.Block
 
-	// ChainIDVal is the value returned by ChainID()
-	ChainIDVal string
+	// ChannelIDVal is the value returned by ChannelID()
+	ChannelIDVal string
 
 	// HeightVal is the value returned by Height()
 	HeightVal uint64
@@ -116,9 +115,9 @@ func (mcs *ConsenterSupport) WriteConfigBlock(block *cb.Block, encodedMetadataVa
 	mcs.WriteBlock(block, encodedMetadataValue)
 }
 
-// ChainID returns the chain ID this specific consenter instance is associated with
-func (mcs *ConsenterSupport) ChainID() string {
-	return mcs.ChainIDVal
+// ChannelID returns the channel ID this specific consenter instance is associated with
+func (mcs *ConsenterSupport) ChannelID() string {
+	return mcs.ChannelIDVal
 }
 
 // Height returns the number of blocks of the chain this specific consenter instance is associated with
@@ -177,8 +176,4 @@ func (mcs *ConsenterSupport) Append(block *cb.Block) error {
 	mcs.HeightVal++
 	mcs.Blocks <- block
 	return nil
-}
-
-func (mcs *ConsenterSupport) DetectConsensusMigration() bool {
-	return false
 }

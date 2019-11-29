@@ -11,12 +11,12 @@ import (
 	"sync"
 	"time"
 
+	proto "github.com/hyperledger/fabric-protos-go/gossip"
 	"github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/discovery"
 	"github.com/hyperledger/fabric/gossip/metrics"
 	"github.com/hyperledger/fabric/gossip/protoext"
 	"github.com/hyperledger/fabric/gossip/util"
-	proto "github.com/hyperledger/fabric/protos/gossip"
 )
 
 type msgImpl struct {
@@ -45,7 +45,7 @@ func (pi *peerImpl) ID() peerID {
 
 type gossip interface {
 	// PeersOfChannel returns the NetworkMembers considered alive in a channel
-	PeersOfChannel(channel common.ChainID) []discovery.NetworkMember
+	PeersOfChannel(channel common.ChannelID) []discovery.NetworkMember
 
 	// Accept returns a dedicated read-only channel for messages sent by other nodes that match a certain predicate.
 	// If passThrough is false, the messages are processed by the gossip layer beforehand.
@@ -67,7 +67,7 @@ type adapterImpl struct {
 	incTime uint64
 	seqNum  uint64
 
-	channel common.ChainID
+	channel common.ChannelID
 
 	logger util.Logger
 
@@ -77,7 +77,7 @@ type adapterImpl struct {
 }
 
 // NewAdapter creates new leader election adapter
-func NewAdapter(gossip gossip, pkiid common.PKIidType, channel common.ChainID,
+func NewAdapter(gossip gossip, pkiid common.PKIidType, channel common.ChannelID,
 	metrics *metrics.ElectionMetrics) LeaderElectionAdapter {
 	return &adapterImpl{
 		gossip:    gossip,

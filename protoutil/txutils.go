@@ -11,9 +11,8 @@ import (
 	"crypto/sha256"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/internal/pkg/identity"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/peer"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/pkg/errors"
 )
 
@@ -21,7 +20,7 @@ import (
 func GetPayloads(txActions *peer.TransactionAction) (*peer.ChaincodeActionPayload, *peer.ChaincodeAction, error) {
 	// TODO: pass in the tx type (in what follows we're assuming the
 	// type is ENDORSER_TRANSACTION)
-	ccPayload, err := GetChaincodeActionPayload(txActions.Payload)
+	ccPayload, err := UnmarshalChaincodeActionPayload(txActions.Payload)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -29,7 +28,7 @@ func GetPayloads(txActions *peer.TransactionAction) (*peer.ChaincodeActionPayloa
 	if ccPayload.Action == nil || ccPayload.Action.ProposalResponsePayload == nil {
 		return nil, nil, errors.New("no payload in ChaincodeActionPayload")
 	}
-	pRespPayload, err := GetProposalResponsePayload(ccPayload.Action.ProposalResponsePayload)
+	pRespPayload, err := UnmarshalProposalResponsePayload(ccPayload.Action.ProposalResponsePayload)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -38,7 +37,7 @@ func GetPayloads(txActions *peer.TransactionAction) (*peer.ChaincodeActionPayloa
 		return nil, nil, errors.New("response payload is missing extension")
 	}
 
-	respPayload, err := GetChaincodeAction(pRespPayload.Extension)
+	respPayload, err := UnmarshalChaincodeAction(pRespPayload.Extension)
 	if err != nil {
 		return ccPayload, nil, err
 	}
@@ -62,7 +61,7 @@ func GetEnvelopeFromBlock(data []byte) (*common.Envelope, error) {
 func CreateSignedEnvelope(
 	txType common.HeaderType,
 	channelID string,
-	signer identity.SignerSerializer,
+	signer Signer,
 	dataMsg proto.Message,
 	msgVersion int32,
 	epoch uint64,
@@ -76,7 +75,7 @@ func CreateSignedEnvelope(
 func CreateSignedEnvelopeWithTLSBinding(
 	txType common.HeaderType,
 	channelID string,
-	signer identity.SignerSerializer,
+	signer Signer,
 	dataMsg proto.Message,
 	msgVersion int32,
 	epoch uint64,
@@ -142,13 +141,13 @@ func CreateSignedTx(
 	}
 
 	// the original header
-	hdr, err := GetHeader(proposal.Header)
+	hdr, err := UnmarshalHeader(proposal.Header)
 	if err != nil {
 		return nil, err
 	}
 
 	// the original payload
-	pPayl, err := GetChaincodeProposalPayload(proposal.Payload)
+	pPayl, err := UnmarshalChaincodeProposalPayload(proposal.Payload)
 	if err != nil {
 		return nil, err
 	}
@@ -160,33 +159,28 @@ func CreateSignedTx(
 		return nil, err
 	}
 
-	shdr, err := GetSignatureHeader(hdr.SignatureHeader)
+	shdr, err := UnmarshalSignatureHeader(hdr.SignatureHeader)
 	if err != nil {
 		return nil, err
 	}
 
-	if bytes.Compare(signerBytes, shdr.Creator) != 0 {
+	if !bytes.Equal(signerBytes, shdr.Creator) {
 		return nil, errors.New("signer must be the same as the one referenced in the header")
-	}
-
-	// get header extensions so we have the visibility field
-	hdrExt, err := GetChaincodeHeaderExtension(hdr)
-	if err != nil {
-		return nil, err
 	}
 
 	// ensure that all actions are bitwise equal and that they are successful
 	var a1 []byte
 	for n, r := range resps {
+		if r.Response.Status < 200 || r.Response.Status >= 400 {
+			return nil, errors.Errorf("proposal response was not successful, error code %d, msg %s", r.Response.Status, r.Response.Message)
+		}
+
 		if n == 0 {
 			a1 = r.Payload
-			if r.Response.Status < 200 || r.Response.Status >= 400 {
-				return nil, errors.Errorf("proposal response was not successful, error code %d, msg %s", r.Response.Status, r.Response.Message)
-			}
 			continue
 		}
 
-		if bytes.Compare(a1, r.Payload) != 0 {
+		if !bytes.Equal(a1, r.Payload) {
 			return nil, errors.New("ProposalResponsePayloads do not match")
 		}
 	}
@@ -201,7 +195,7 @@ func CreateSignedTx(
 	cea := &peer.ChaincodeEndorsedAction{ProposalResponsePayload: resps[0].Payload, Endorsements: endorsements}
 
 	// obtain the bytes of the proposal payload that will go to the transaction
-	propPayloadBytes, err := GetBytesProposalPayloadForTx(pPayl, hdrExt.PayloadVisibility)
+	propPayloadBytes, err := GetBytesProposalPayloadForTx(pPayl)
 	if err != nil {
 		return nil, err
 	}
@@ -250,17 +244,16 @@ func CreateProposalResponse(
 	results []byte,
 	events []byte,
 	ccid *peer.ChaincodeID,
-	visibility []byte,
-	signingEndorser identity.SignerSerializer,
+	signingEndorser Signer,
 ) (*peer.ProposalResponse, error) {
-	hdr, err := GetHeader(hdrbytes)
+	hdr, err := UnmarshalHeader(hdrbytes)
 	if err != nil {
 		return nil, err
 	}
 
 	// obtain the proposal hash given proposal header, payload and the
 	// requested visibility
-	pHashBytes, err := GetProposalHash1(hdr, payl, visibility)
+	pHashBytes, err := GetProposalHash1(hdr, payl)
 	if err != nil {
 		return nil, errors.WithMessage(err, "error computing proposal hash")
 	}
@@ -310,22 +303,21 @@ func CreateProposalResponseFailure(
 	response *peer.Response,
 	results []byte,
 	events []byte,
-	ccid *peer.ChaincodeID,
-	visibility []byte,
+	chaincodeName string,
 ) (*peer.ProposalResponse, error) {
-	hdr, err := GetHeader(hdrbytes)
+	hdr, err := UnmarshalHeader(hdrbytes)
 	if err != nil {
 		return nil, err
 	}
 
 	// obtain the proposal hash given proposal header, payload and the requested visibility
-	pHashBytes, err := GetProposalHash1(hdr, payl, visibility)
+	pHashBytes, err := GetProposalHash1(hdr, payl)
 	if err != nil {
 		return nil, errors.WithMessage(err, "error computing proposal hash")
 	}
 
 	// get the bytes of the proposal response payload
-	prpBytes, err := GetBytesProposalResponsePayload(pHashBytes, response, results, events, ccid)
+	prpBytes, err := GetBytesProposalResponsePayload(pHashBytes, response, results, events, &peer.ChaincodeID{Name: chaincodeName})
 	if err != nil {
 		return nil, err
 	}
@@ -341,13 +333,13 @@ func CreateProposalResponseFailure(
 
 // GetSignedProposal returns a signed proposal given a Proposal message and a
 // signing identity
-func GetSignedProposal(prop *peer.Proposal, signer identity.SignerSerializer) (*peer.SignedProposal, error) {
+func GetSignedProposal(prop *peer.Proposal, signer Signer) (*peer.SignedProposal, error) {
 	// check for nil argument
 	if prop == nil || signer == nil {
 		return nil, errors.New("nil arguments")
 	}
 
-	propBytes, err := GetBytesProposal(prop)
+	propBytes, err := proto.Marshal(prop)
 	if err != nil {
 		return nil, err
 	}
@@ -363,21 +355,21 @@ func GetSignedProposal(prop *peer.Proposal, signer identity.SignerSerializer) (*
 // MockSignedEndorserProposalOrPanic creates a SignedProposal with the
 // passed arguments
 func MockSignedEndorserProposalOrPanic(
-	chainID string,
+	channelID string,
 	cs *peer.ChaincodeSpec,
 	creator,
 	signature []byte,
 ) (*peer.SignedProposal, *peer.Proposal) {
 	prop, _, err := CreateChaincodeProposal(
 		common.HeaderType_ENDORSER_TRANSACTION,
-		chainID,
+		channelID,
 		&peer.ChaincodeInvocationSpec{ChaincodeSpec: cs},
 		creator)
 	if err != nil {
 		panic(err)
 	}
 
-	propBytes, err := GetBytesProposal(prop)
+	propBytes, err := proto.Marshal(prop)
 	if err != nil {
 		panic(err)
 	}
@@ -386,9 +378,9 @@ func MockSignedEndorserProposalOrPanic(
 }
 
 func MockSignedEndorserProposal2OrPanic(
-	chainID string,
+	channelID string,
 	cs *peer.ChaincodeSpec,
-	signer identity.SignerSerializer,
+	signer Signer,
 ) (*peer.SignedProposal, *peer.Proposal) {
 	serializedSigner, err := signer.Serialize()
 	if err != nil {
@@ -397,7 +389,7 @@ func MockSignedEndorserProposal2OrPanic(
 
 	prop, _, err := CreateChaincodeProposal(
 		common.HeaderType_ENDORSER_TRANSACTION,
-		chainID,
+		channelID,
 		&peer.ChaincodeInvocationSpec{ChaincodeSpec: &peer.ChaincodeSpec{}},
 		serializedSigner)
 	if err != nil {
@@ -416,28 +408,18 @@ func MockSignedEndorserProposal2OrPanic(
 // its serialized version according to the visibility field
 func GetBytesProposalPayloadForTx(
 	payload *peer.ChaincodeProposalPayload,
-	visibility []byte,
 ) ([]byte, error) {
 	// check for nil argument
 	if payload == nil {
 		return nil, errors.New("nil arguments")
 	}
 
-	// strip the transient bytes off the payload - this needs to be done no
-	// matter the visibility mode
+	// strip the transient bytes off the payload
 	cppNoTransient := &peer.ChaincodeProposalPayload{Input: payload.Input, TransientMap: nil}
 	cppBytes, err := GetBytesChaincodeProposalPayload(cppNoTransient)
 	if err != nil {
 		return nil, err
 	}
-
-	// currently the fabric only supports full visibility: this means that
-	// there are no restrictions on which parts of the proposal payload will
-	// be visible in the final transaction; this default approach requires
-	// no additional instructions in the PayloadVisibility field; however
-	// the fabric may be extended to encode more elaborate visibility
-	// mechanisms that shall be encoded in this field (and handled
-	// appropriately by the peer)
 
 	return cppBytes, nil
 }
@@ -467,7 +449,7 @@ func GetProposalHash2(header *common.Header, ccPropPayl []byte) ([]byte, error) 
 
 // GetProposalHash1 gets the proposal hash bytes after sanitizing the
 // chaincode proposal payload according to the rules of visibility
-func GetProposalHash1(header *common.Header, ccPropPayl []byte, visibility []byte) ([]byte, error) {
+func GetProposalHash1(header *common.Header, ccPropPayl []byte) ([]byte, error) {
 	// check for nil argument
 	if header == nil ||
 		header.ChannelHeader == nil ||
@@ -477,12 +459,12 @@ func GetProposalHash1(header *common.Header, ccPropPayl []byte, visibility []byt
 	}
 
 	// unmarshal the chaincode proposal payload
-	cpp, err := GetChaincodeProposalPayload(ccPropPayl)
+	cpp, err := UnmarshalChaincodeProposalPayload(ccPropPayl)
 	if err != nil {
 		return nil, err
 	}
 
-	ppBytes, err := GetBytesProposalPayloadForTx(cpp, visibility)
+	ppBytes, err := GetBytesProposalPayloadForTx(cpp)
 	if err != nil {
 		return nil, err
 	}
@@ -495,4 +477,40 @@ func GetProposalHash1(header *common.Header, ccPropPayl []byte, visibility []byt
 	// hash of the part of the chaincode proposal payload that will go to the tx
 	hash2.Write(ppBytes)
 	return hash2.Sum(nil), nil
+}
+
+// GetOrComputeTxIDFromEnvelope gets the txID present in a given transaction
+// envelope. If the txID is empty, it constructs the txID from nonce and
+// creator fields in the envelope.
+func GetOrComputeTxIDFromEnvelope(txEnvelopBytes []byte) (string, error) {
+	txEnvelope, err := UnmarshalEnvelope(txEnvelopBytes)
+	if err != nil {
+		return "", errors.WithMessage(err, "error getting txID from envelope")
+	}
+
+	txPayload, err := UnmarshalPayload(txEnvelope.Payload)
+	if err != nil {
+		return "", errors.WithMessage(err, "error getting txID from payload")
+	}
+
+	if txPayload.Header == nil {
+		return "", errors.New("error getting txID from header: payload header is nil")
+	}
+
+	chdr, err := UnmarshalChannelHeader(txPayload.Header.ChannelHeader)
+	if err != nil {
+		return "", errors.WithMessage(err, "error getting txID from channel header")
+	}
+
+	if chdr.TxId != "" {
+		return chdr.TxId, nil
+	}
+
+	sighdr, err := UnmarshalSignatureHeader(txPayload.Header.SignatureHeader)
+	if err != nil {
+		return "", errors.WithMessage(err, "error getting nonce and creator for computing txID")
+	}
+
+	txid := ComputeTxID(sighdr.Nonce, sighdr.Creator)
+	return txid, nil
 }

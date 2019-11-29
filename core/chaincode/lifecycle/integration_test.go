@@ -7,15 +7,15 @@ SPDX-License-Identifier: Apache-2.0
 package lifecycle_test
 
 import (
+	"github.com/hyperledger/fabric-chaincode-go/shim"
+	"github.com/hyperledger/fabric-protos-go/ledger/queryresult"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
+	lb "github.com/hyperledger/fabric-protos-go/peer/lifecycle"
 	"github.com/hyperledger/fabric/common/channelconfig"
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/chaincode/lifecycle"
 	"github.com/hyperledger/fabric/core/chaincode/lifecycle/mock"
-	"github.com/hyperledger/fabric/core/chaincode/shim"
 	"github.com/hyperledger/fabric/core/dispatcher"
-	cb "github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/ledger/queryresult"
-	lb "github.com/hyperledger/fabric/protos/peer/lifecycle"
 	"github.com/hyperledger/fabric/protoutil"
 
 	. "github.com/onsi/ginkgo"
@@ -30,13 +30,17 @@ var _ = Describe("Integration", func() {
 		ef        *lifecycle.ExternalFunctions
 		scc       *lifecycle.SCC
 
-		fakeChannelConfigSource *mock.ChannelConfigSource
-		fakeChannelConfig       *mock.ChannelConfig
-		fakeApplicationConfig   *mock.ApplicationConfig
-		fakeCapabilities        *mock.ApplicationCapabilities
-		fakeOrgConfig           *mock.ApplicationOrgConfig
-		fakeStub                *mock.ChaincodeStub
-		fakeACLProvider         *mock.ACLProvider
+		fakeChannelConfigSource    *mock.ChannelConfigSource
+		fakeChannelConfig          *mock.ChannelConfig
+		fakeApplicationConfig      *mock.ApplicationConfig
+		fakeCapabilities           *mock.ApplicationCapabilities
+		fakeOrgConfig              *mock.ApplicationOrgConfig
+		fakeStub                   *mock.ChaincodeStub
+		fakeACLProvider            *mock.ACLProvider
+		fakeMSPManager             *mock.MSPManager
+		fakeQueryExecutorProvider  *mock.QueryExecutorProvider
+		fakeQueryExecutor          *mock.SimpleQueryExecutor
+		fakeDeployedCCInfoProvider *mock.LegacyDeployedCCInfoProvider
 
 		fakeOrgKVStore    map[string][]byte
 		fakePublicKVStore map[string][]byte
@@ -64,6 +68,13 @@ var _ = Describe("Integration", func() {
 		fakeOrgConfig = &mock.ApplicationOrgConfig{}
 		fakeOrgConfig.MSPIDReturns("fake-mspid")
 
+		fakeMSPManager = &mock.MSPManager{}
+		fakeChannelConfig.MSPManagerReturns(fakeMSPManager)
+		fakeQueryExecutorProvider = &mock.QueryExecutorProvider{}
+		fakeQueryExecutor = &mock.SimpleQueryExecutor{}
+		fakeQueryExecutorProvider.TxQueryExecutorReturns(fakeQueryExecutor)
+		fakeDeployedCCInfoProvider = &mock.LegacyDeployedCCInfoProvider{}
+
 		fakeApplicationConfig.OrganizationsReturns(map[string]channelconfig.ApplicationOrg{
 			"fakeOrg": fakeOrgConfig,
 		})
@@ -72,10 +83,12 @@ var _ = Describe("Integration", func() {
 			Dispatcher: &dispatcher.Dispatcher{
 				Protobuf: &dispatcher.ProtobufImpl{},
 			},
-			Functions:           ef,
-			OrgMSPID:            "fake-mspid",
-			ChannelConfigSource: fakeChannelConfigSource,
-			ACLProvider:         fakeACLProvider,
+			Functions:              ef,
+			OrgMSPID:               "fake-mspid",
+			ChannelConfigSource:    fakeChannelConfigSource,
+			ACLProvider:            fakeACLProvider,
+			QueryExecutorProvider:  fakeQueryExecutorProvider,
+			DeployedCCInfoProvider: fakeDeployedCCInfoProvider,
 		}
 
 		fakePublicKVStore = map[string][]byte{}
@@ -164,18 +177,16 @@ var _ = Describe("Integration", func() {
 
 			// Get channel definitions
 			fakeStub.GetArgsReturns([][]byte{
-				[]byte("QueryNamespaceDefinitions"),
-				protoutil.MarshalOrPanic(&lb.QueryNamespaceDefinitionsArgs{}),
+				[]byte("QueryChaincodeDefinitions"),
+				protoutil.MarshalOrPanic(&lb.QueryChaincodeDefinitionsArgs{}),
 			})
 			response = scc.Invoke(fakeStub)
 			Expect(response.Status).To(Equal(int32(200)))
-			namespaceResult := &lb.QueryNamespaceDefinitionsResult{}
-			err := proto.Unmarshal(response.Payload, namespaceResult)
+			definitionsResult := &lb.QueryChaincodeDefinitionsResult{}
+			err := proto.Unmarshal(response.Payload, definitionsResult)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(len(namespaceResult.Namespaces)).To(Equal(1))
-			namespace, ok := namespaceResult.Namespaces["cc-name"]
-			Expect(ok).To(BeTrue())
-			Expect(namespace.Type).To(Equal("Chaincode"))
+			Expect(len(definitionsResult.ChaincodeDefinitions)).To(Equal(1))
+			Expect(definitionsResult.ChaincodeDefinitions[0].Name).To(Equal("cc-name"))
 
 			// Get chaincode definition details
 			fakeStub.GetArgsReturns([][]byte{
@@ -195,7 +206,10 @@ var _ = Describe("Integration", func() {
 				EndorsementPlugin:   "builtin",
 				ValidationPlugin:    "builtin",
 				ValidationParameter: []byte("validation-parameter"),
-				Collections:         &cb.CollectionConfigPackage{},
+				Collections:         &pb.CollectionConfigPackage{},
+				Approvals: map[string]bool{
+					"fake-mspid": true,
+				},
 			})).To(BeTrue())
 		})
 	})

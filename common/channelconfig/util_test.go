@@ -12,12 +12,13 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
+	cb "github.com/hyperledger/fabric-protos-go/common"
+	mspprotos "github.com/hyperledger/fabric-protos-go/msp"
+	ab "github.com/hyperledger/fabric-protos-go/orderer"
+	"github.com/hyperledger/fabric-protos-go/orderer/etcdraft"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric/bccsp/sw"
 	"github.com/hyperledger/fabric/common/capabilities"
-	cb "github.com/hyperledger/fabric/protos/common"
-	mspprotos "github.com/hyperledger/fabric/protos/msp"
-	ab "github.com/hyperledger/fabric/protos/orderer"
-	"github.com/hyperledger/fabric/protos/orderer/etcdraft"
-	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -281,15 +282,18 @@ func createCfgBlockWithUnsupportedCapabilities(t *testing.T) *cb.Block {
 }
 
 func TestValidateCapabilities(t *testing.T) {
+	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
+	assert.NoError(t, err)
 
 	// Test config block with valid capabilities requirement
 	cfgBlock := createCfgBlockWithSupportedCapabilities(t)
-	assert.Nil(t, ValidateCapabilities(cfgBlock), "Should return Nil with matched capabilities checking")
+	err = ValidateCapabilities(cfgBlock, cryptoProvider)
+	assert.NoError(t, err)
 
 	// Test config block with invalid capabilities requirement
 	cfgBlock = createCfgBlockWithUnsupportedCapabilities(t)
-	assert.NotNil(t, ValidateCapabilities(cfgBlock), "Should return Error with mismatched capabilities checking")
-
+	err = ValidateCapabilities(cfgBlock, cryptoProvider)
+	assert.EqualError(t, err, "Channel capability INCOMPATIBLE_CAPABILITIES is required but not supported")
 }
 
 func TestMarshalEtcdRaftMetadata(t *testing.T) {
@@ -317,9 +321,11 @@ func TestMarshalEtcdRaftMetadata(t *testing.T) {
 	}
 	packed, err := MarshalEtcdRaftMetadata(md)
 	require.Nil(t, err, "marshalling should succeed")
+	assert.NotNil(t, packed)
 
 	packed, err = MarshalEtcdRaftMetadata(md)
 	require.Nil(t, err, "marshalling should succeed a second time because we did not mutate ourselves")
+	assert.NotNil(t, packed)
 
 	unpacked := &etcdraft.ConfigMetadata{}
 	require.Nil(t, proto.Unmarshal(packed, unpacked), "unmarshalling should succeed")

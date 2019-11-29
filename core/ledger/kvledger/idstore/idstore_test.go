@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/protos/common"
+	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -56,14 +56,14 @@ func TestLedgerID(t *testing.T) {
 	req.Error(store.CreateLedgerID(ledgerID, block))
 
 	// get ledger ids
-	ledgerIDs, err := store.GetAllLedgerIds()
+	ledgerIDs, err := store.GetActiveLedgerIDs()
 	req.NoError(err)
 	req.Equal(2, len(ledgerIDs))
 	req.Contains(ledgerIDs, ledgerID)
 	req.Contains(ledgerIDs, ledgerID1)
 
 	// get ledger id value
-	ledgerIdValue, err := store.GetLedgeIDValue(ledgerID)
+	ledgerIdValue, err := store.db.Get(store.EncodeLedgerKey(ledgerID, ledgerKeyPrefix))
 	req.NoError(err)
 	gb := &common.Block{}
 	req.NoError(proto.Unmarshal(ledgerIdValue, gb))

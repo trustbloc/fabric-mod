@@ -10,12 +10,12 @@ import (
 	"math/rand"
 	"testing"
 
-	cb "github.com/hyperledger/fabric/protos/common"
+	cb "github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
 )
 
-// TestValidConfigID checks that the constraints on chain IDs are enforced properly
+// TestValidConfigID checks that the constraints on channel IDs are enforced properly
 func TestValidConfigID(t *testing.T) {
 	acceptMsg := "Should have accepted valid config ID"
 	rejectMsg := "Should have rejected invalid config ID"
@@ -27,7 +27,7 @@ func TestValidConfigID(t *testing.T) {
 	})
 
 	t.Run("LongerThanMaxAllowed", func(t *testing.T) {
-		if err := validateConfigID(randomAlphaString(maxLength + 1)); err == nil {
+		if err := validateConfigID(randomAlphaString(MaxLength + 1)); err == nil {
 			t.Fatal(rejectMsg)
 		}
 	})
@@ -53,43 +53,43 @@ func TestValidConfigID(t *testing.T) {
 	})
 }
 
-// TestValidChannelID checks that the constraints on chain IDs are enforced properly
+// TestValidChannelID checks that the constraints on channel IDs are enforced properly
 func TestValidChannelID(t *testing.T) {
 	acceptMsg := "Should have accepted valid channel ID"
 	rejectMsg := "Should have rejected invalid channel ID"
 
 	t.Run("ZeroLength", func(t *testing.T) {
-		if err := validateChannelID(""); err == nil {
+		if err := ValidateChannelID(""); err == nil {
 			t.Fatal(rejectMsg)
 		}
 	})
 
 	t.Run("LongerThanMaxAllowed", func(t *testing.T) {
-		if err := validateChannelID(randomLowerAlphaString(maxLength + 1)); err == nil {
+		if err := ValidateChannelID(randomLowerAlphaString(MaxLength + 1)); err == nil {
 			t.Fatal(rejectMsg)
 		}
 	})
 
 	t.Run("ContainsIllegalCharacter", func(t *testing.T) {
-		if err := validateChannelID("foo_bar"); err == nil {
+		if err := ValidateChannelID("foo_bar"); err == nil {
 			t.Fatal(rejectMsg)
 		}
 	})
 
 	t.Run("StartsWithNumber", func(t *testing.T) {
-		if err := validateChannelID("8foo"); err == nil {
+		if err := ValidateChannelID("8foo"); err == nil {
 			t.Fatal(rejectMsg)
 		}
 	})
 
 	t.Run("StartsWithDot", func(t *testing.T) {
-		if err := validateChannelID(".foo"); err == nil {
+		if err := ValidateChannelID(".foo"); err == nil {
 			t.Fatal(rejectMsg)
 		}
 	})
 
 	t.Run("ValidName", func(t *testing.T) {
-		if err := validateChannelID("f-oo.bar"); err != nil {
+		if err := ValidateChannelID("f-oo.bar"); err != nil {
 			t.Fatal(acceptMsg)
 		}
 	})

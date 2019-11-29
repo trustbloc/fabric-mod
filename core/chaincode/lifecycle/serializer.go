@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"reflect"
 
+	lb "github.com/hyperledger/fabric-protos-go/peer/lifecycle"
 	"github.com/hyperledger/fabric/common/util"
-	lb "github.com/hyperledger/fabric/protos/peer/lifecycle"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/pkg/errors"
@@ -35,6 +35,7 @@ type ReadableState interface {
 
 type OpaqueState interface {
 	GetStateHash(key string) (value []byte, err error)
+	CollectionName() string
 }
 
 type RangeableState interface {

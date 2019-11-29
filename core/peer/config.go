@@ -34,6 +34,14 @@ import (
 	"github.com/spf13/viper"
 )
 
+// ExternalBuilder represents the configuration structure of
+// a chaincode external builder
+type ExternalBuilder struct {
+	EnvironmentWhitelist []string `yaml:"environmentWhitelist"`
+	Name                 string   `yaml:"name"`
+	Path                 string   `yaml:"path"`
+}
+
 // Config is the struct that defines the Peer configurations.
 type Config struct {
 	// LocalMSPID is the identifier of the local MSP.
@@ -64,6 +72,10 @@ type Config struct {
 	// transaction validation in parallel. If omitted, it defaults to number of
 	// hardware threads on the machine.
 	ValidatorPoolSize int
+
+	// ----- Peer Delivery Client Keepalive -----
+	// DeliveryClient Keepalive settings for communication with ordering nodes.
+	DeliverClientKeepaliveOptions comm.KeepaliveOptions
 
 	// ----- Profile -----
 	// TODO: create separate sub-struct for Profile config.
@@ -118,16 +130,10 @@ type Config struct {
 	// server time and client's time as specified in a client request message.
 	AuthenticationTimeWindow time.Duration
 
-	// ----- AdminService -----
-	// The admin service is used for adminstrative operations such as control over logger
-	// levels, etc. Only peer administrators can use the service.
-	// TODO: create separate sub-struct for AdminService config.
-
-	// AdminListenAddress provides a interface and port for admin server to listen on.
-	// Default to peer listen address.
-	AdminListenAddress string
-
-	// VMEndpoint sets the endpoint of the vm management systems.
+	// Endpoint of the vm management system. For docker can be one of the following in general
+	// unix:///var/run/docker.sock
+	// http://localhost:2375
+	// https://localhost:2376
 	VMEndpoint string
 
 	// ----- vm.docker.tls -----
@@ -136,9 +142,15 @@ type Config struct {
 	// VMDockerTLSEnabled enables/disables TLS for dockers.
 	VMDockerTLSEnabled   bool
 	VMDockerAttachStdout bool
+	// VMNetworkMode sets the networking mode for the container.
+	VMNetworkMode string
 
 	// ChaincodePull enables/disables force pulling of the base docker image.
 	ChaincodePull bool
+	// ExternalBuilders represents the builders and launchers for
+	// chaincode. The external builder detection processing will iterate over the
+	// builders in the order specified below.
+	ExternalBuilders []ExternalBuilder
 
 	// ----- Operations config -----
 	// TODO: create separate sub-struct for Operations config.
@@ -202,6 +214,9 @@ func (c *Config) load() error {
 	if err != nil {
 		return err
 	}
+
+	configDir := filepath.Dir(viper.ConfigFileUsed())
+
 	c.PeerAddress = preeAddress
 	c.PeerID = viper.GetString("peer.id")
 	c.LocalMSPID = viper.GetString("peer.localMspId")
@@ -226,25 +241,54 @@ func (c *Config) load() error {
 	c.DiscoveryAuthCachePurgeRetentionRatio = viper.GetFloat64("peer.discovery.authCachePurgeRetentionRatio")
 	c.ChaincodeListenAddress = viper.GetString("peer.chaincodeListenAddress")
 	c.ChaincodeAddress = viper.GetString("peer.chaincodeAddress")
-	c.AdminListenAddress = viper.GetString("peer.adminService.listenAddress")
 
 	c.ValidatorPoolSize = viper.GetInt("peer.validatorPoolSize")
 	if c.ValidatorPoolSize <= 0 {
 		c.ValidatorPoolSize = runtime.NumCPU()
 	}
 
+	c.DeliverClientKeepaliveOptions = comm.DefaultKeepaliveOptions
+	if viper.IsSet("peer.keepalive.deliveryClient.interval") {
+		c.DeliverClientKeepaliveOptions.ClientInterval = viper.GetDuration("peer.keepalive.deliveryClient.interval")
+	}
+	if viper.IsSet("peer.keepalive.deliveryClient.timeout") {
+		c.DeliverClientKeepaliveOptions.ClientTimeout = viper.GetDuration("peer.keepalive.deliveryClient.timeout")
+	}
+
 	c.VMEndpoint = viper.GetString("vm.endpoint")
 	c.VMDockerTLSEnabled = viper.GetBool("vm.docker.tls.enabled")
 	c.VMDockerAttachStdout = viper.GetBool("vm.docker.attachStdout")
 
+	c.VMNetworkMode = viper.GetString("vm.docker.hostConfig.NetworkMode")
+	if c.VMNetworkMode == "" {
+		c.VMNetworkMode = "host"
+	}
+
 	c.ChaincodePull = viper.GetBool("chaincode.pull")
+	var externalBuilders []ExternalBuilder
+	err = viper.UnmarshalKey("chaincode.externalBuilders", &externalBuilders)
+	if err != nil {
+		return err
+	}
+	for _, builder := range externalBuilders {
+		if builder.Path == "" {
+			return fmt.Errorf("invalid external builder configuration, path attribute missing in one or more builders")
+		}
+		if builder.Name == "" {
+			return fmt.Errorf("external builder at path %s has no name attribute", builder.Path)
+		}
+	}
+	c.ExternalBuilders = externalBuilders
 
 	c.OperationsListenAddress = viper.GetString("operations.listenAddress")
 	c.OperationsTLSEnabled = viper.GetBool("operations.tls.enabled")
-	c.OperationsTLSCertFile = viper.GetString("operations.tls.cert.file")
-	c.OperationsTLSKeyFile = viper.GetString("operations.tls.key.file")
+	c.OperationsTLSCertFile = config.GetPath("operations.tls.cert.file")
+	c.OperationsTLSKeyFile = config.GetPath("operations.tls.key.file")
 	c.OperationsTLSClientAuthRequired = viper.GetBool("operations.tls.clientAuthRequired")
-	c.OperationsTLSClientRootCAs = viper.GetStringSlice("operations.tls.clientRootCAs.files")
+
+	for _, rca := range viper.GetStringSlice("operations.tls.clientRootCAs.files") {
+		c.OperationsTLSClientRootCAs = append(c.OperationsTLSClientRootCAs, config.TranslatePath(configDir, rca))
+	}
 
 	c.MetricsProvider = viper.GetString("metrics.provider")
 	c.StatsdNetwork = viper.GetString("metrics.statsd.network")
@@ -270,9 +314,9 @@ func getLocalAddress() (string, error) {
 		return "", errors.Errorf("peer.address isn't in host:port format: %s", peerAddress)
 	}
 
-	localIP, err := GetLocalIP()
+	localIP, err := comm.GetLocalIP()
 	if err != nil {
-		peerLogger.Errorf("Local ip address not auto-detectable: %s", err)
+		peerLogger.Errorf("local IP address not auto-detectable: %s", err)
 		return "", err
 	}
 	autoDetectedIPAndPort := net.JoinHostPort(localIP, port)
@@ -295,11 +339,13 @@ func getLocalAddress() (string, error) {
 
 // GetServerConfig returns the gRPC server configuration for the peer
 func GetServerConfig() (comm.ServerConfig, error) {
-	secureOptions := &comm.SecureOptions{
-		UseTLS: viper.GetBool("peer.tls.enabled"),
+	serverConfig := comm.ServerConfig{
+		ConnectionTimeout: viper.GetDuration("peer.connectiontimeout"),
+		SecOpts: comm.SecureOptions{
+			UseTLS: viper.GetBool("peer.tls.enabled"),
+		},
 	}
-	serverConfig := comm.ServerConfig{SecOpts: secureOptions}
-	if secureOptions.UseTLS {
+	if serverConfig.SecOpts.UseTLS {
 		// get the certs from the file system
 		serverKey, err := ioutil.ReadFile(config.GetPath("peer.tls.key.file"))
 		if err != nil {
@@ -309,10 +355,10 @@ func GetServerConfig() (comm.ServerConfig, error) {
 		if err != nil {
 			return serverConfig, fmt.Errorf("error loading TLS certificate (%s)", err)
 		}
-		secureOptions.Certificate = serverCert
-		secureOptions.Key = serverKey
-		secureOptions.RequireClientCert = viper.GetBool("peer.tls.clientAuthRequired")
-		if secureOptions.RequireClientCert {
+		serverConfig.SecOpts.Certificate = serverCert
+		serverConfig.SecOpts.Key = serverKey
+		serverConfig.SecOpts.RequireClientCert = viper.GetBool("peer.tls.clientAuthRequired")
+		if serverConfig.SecOpts.RequireClientCert {
 			var clientRoots [][]byte
 			for _, file := range viper.GetStringSlice("peer.tls.clientRootCAs.files") {
 				clientRoot, err := ioutil.ReadFile(
@@ -323,7 +369,7 @@ func GetServerConfig() (comm.ServerConfig, error) {
 				}
 				clientRoots = append(clientRoots, clientRoot)
 			}
-			secureOptions.ClientRootCAs = clientRoots
+			serverConfig.SecOpts.ClientRootCAs = clientRoots
 		}
 		// check for root cert
 		if config.GetPath("peer.tls.rootcert.file") != "" {
@@ -331,7 +377,7 @@ func GetServerConfig() (comm.ServerConfig, error) {
 			if err != nil {
 				return serverConfig, fmt.Errorf("error loading TLS root certificate (%s)", err)
 			}
-			secureOptions.ServerRootCAs = [][]byte{rootCert}
+			serverConfig.SecOpts.ServerRootCAs = [][]byte{rootCert}
 		}
 	}
 	// get the default keepalive options

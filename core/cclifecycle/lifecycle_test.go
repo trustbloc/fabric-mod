@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/chaincode"
 	"github.com/hyperledger/fabric/common/flogging/floggingtest"
 	"github.com/hyperledger/fabric/core/cclifecycle"
@@ -22,7 +23,6 @@ import (
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/common/privdata"
 	"github.com/hyperledger/fabric/core/ledger/cceventmgmt"
-	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protoutil"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
@@ -252,7 +252,7 @@ func TestHandleChaincodeDeployFailures(t *testing.T) {
 	lsnr.AssertNumberOfCalls(t, "HandleMetadataUpdate", 2)
 	sub.HandleChaincodeDeploy(&cceventmgmt.ChaincodeDefinition{Name: "cc1", Version: "1.0", Hash: []byte{42}}, nil)
 	sub.ChaincodeDeployDone(true)
-	assertLogged(t, recorder, "Query for channel mychannel for Name=cc1, Version=1.0, Hash=[]byte{0x2a} failed with error failed accessing DB")
+	assertLogged(t, recorder, "Query for channel mychannel for Name=cc1, Version=1.0, Hash=2a failed with error failed accessing DB")
 	lsnr.AssertNumberOfCalls(t, "HandleMetadataUpdate", 2)
 
 	// Scenario IV: A channel subscription is made successfully, and obtaining a new query succeeds at subscription initialization,
@@ -265,7 +265,7 @@ func TestHandleChaincodeDeployFailures(t *testing.T) {
 	sub.HandleChaincodeDeploy(&cceventmgmt.ChaincodeDefinition{Name: "cc1", Version: "1.1", Hash: []byte{42}}, nil)
 	sub.ChaincodeDeployDone(false)
 	lsnr.AssertNumberOfCalls(t, "HandleMetadataUpdate", 3)
-	assertLogged(t, recorder, "Chaincode deploy for updates [Name=cc1, Version=1.1, Hash=[]byte{0x2a}] failed")
+	assertLogged(t, recorder, "Chaincode deploy for updates [Name=cc1, Version=1.1, Hash=2a] failed")
 }
 
 func TestMultipleUpdates(t *testing.T) {
@@ -446,14 +446,14 @@ func TestMetadata(t *testing.T) {
 	// and go straight into the stateDB.
 	queryCreator.On("NewQuery").Return(query, nil).Once()
 	query.On("GetState", "lscc", "cc1").Return(cc1Bytes, nil).Once()
-	query.On("GetState", "lscc", privdata.BuildCollectionKVSKey("cc1")).Return(protoutil.MarshalOrPanic(&common.CollectionConfigPackage{}), nil).Once()
+	query.On("GetState", "lscc", privdata.BuildCollectionKVSKey("cc1")).Return(protoutil.MarshalOrPanic(&peer.CollectionConfigPackage{}), nil).Once()
 	md = m.Metadata("mychannel", "cc1", true)
 	assert.Equal(t, &chaincode.Metadata{
 		Name:              "cc1",
 		Version:           "1.0",
 		Id:                []byte{42},
 		Policy:            []byte{1, 2, 3, 4, 5},
-		CollectionsConfig: &common.CollectionConfigPackage{},
+		CollectionsConfig: &peer.CollectionConfigPackage{},
 	}, md)
 	assertLogged(t, recorder, "Retrieved collection config for cc1 from cc1~collection")
 

@@ -16,16 +16,16 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/discovery"
+	"github.com/hyperledger/fabric-protos-go/msp"
 	"github.com/hyperledger/fabric/common/channelconfig"
 	"github.com/hyperledger/fabric/common/configtx"
 	"github.com/hyperledger/fabric/common/configtx/test"
 	"github.com/hyperledger/fabric/discovery/support/config"
 	"github.com/hyperledger/fabric/discovery/support/mocks"
 	"github.com/hyperledger/fabric/internal/configtxgen/encoder"
-	genesisconfig "github.com/hyperledger/fabric/internal/configtxgen/localconfig"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/discovery"
-	"github.com/hyperledger/fabric/protos/msp"
+	"github.com/hyperledger/fabric/internal/configtxgen/genesisconfig"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/onsi/gomega/gexec"
 	"github.com/stretchr/testify/assert"
@@ -74,7 +74,7 @@ func TestMSPIDMapping(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.Remove(cryptogen)
 
-	idemixgen, err := gexec.Build("github.com/hyperledger/fabric/common/tools/idemixgen")
+	idemixgen, err := gexec.Build("github.com/hyperledger/fabric/cmd/idemixgen")
 	assert.NoError(t, err)
 	defer os.Remove(idemixgen)
 
@@ -291,25 +291,6 @@ func TestValidateConfigEnvelope(t *testing.T) {
 			},
 			containsError: "field Config.ChannelGroup.Values is nil",
 		},
-		{
-			name: "no OrdererAddressesKey in ChannelGroup Values",
-			ce: &common.ConfigEnvelope{
-				Config: &common.Config{
-					ChannelGroup: &common.ConfigGroup{
-						Values: map[string]*common.ConfigValue{},
-						Groups: map[string]*common.ConfigGroup{
-							channelconfig.ApplicationGroupKey: {
-								Groups: map[string]*common.ConfigGroup{},
-							},
-							channelconfig.OrdererGroupKey: {
-								Groups: map[string]*common.ConfigGroup{},
-							},
-						},
-					},
-				},
-			},
-			containsError: "field Config.ChannelGroup.Values is empty",
-		},
 	}
 
 	for _, test := range tests {
@@ -341,7 +322,7 @@ func TestOrdererEndpoints(t *testing.T) {
 		}, res.Orderers)
 	})
 
-	t.Run("Per org endpoints", func(t *testing.T) {
+	t.Run("Per org endpoints alongside global endpoints", func(t *testing.T) {
 		block, err := test.MakeGenesisBlock("mychannel")
 		assert.NoError(t, err)
 
@@ -361,6 +342,42 @@ func TestOrdererEndpoints(t *testing.T) {
 			"aBadOrg":    {},
 		}, res.Orderers)
 	})
+
+	t.Run("Per org endpoints without global endpoints", func(t *testing.T) {
+		block, err := test.MakeGenesisBlock("mychannel")
+		assert.NoError(t, err)
+
+		fakeBlockGetter := &mocks.ConfigBlockGetter{}
+		cs := config.NewDiscoverySupport(fakeBlockGetter)
+
+		fakeBlockGetter.GetCurrConfigBlockReturnsOnCall(0, block)
+
+		removeGlobalEndpoints(t, block)
+		injectAdditionalEndpointPair(t, block, "perOrgEndpoint:7050", "SampleOrg")
+		injectAdditionalEndpointPair(t, block, "endpointWithoutAPortName", "aBadOrg")
+
+		res, err := cs.Config("test")
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]*discovery.Endpoints{
+			"SampleOrg": {Endpoint: []*discovery.Endpoint{{Host: "perOrgEndpoint", Port: 7050}}},
+			"aBadOrg":   {},
+		}, res.Orderers)
+	})
+}
+
+func removeGlobalEndpoints(t *testing.T, block *common.Block) {
+	// Unwrap the layers until we reach the orderer addresses
+	env, err := protoutil.ExtractEnvelope(block, 0)
+	assert.NoError(t, err)
+	payload := protoutil.UnmarshalPayloadOrPanic(env.Payload)
+	confEnv, err := configtx.UnmarshalConfigEnvelope(payload.Data)
+	assert.NoError(t, err)
+	// Remove the orderer addresses
+	delete(confEnv.Config.ChannelGroup.Values, channelconfig.OrdererAddressesKey)
+	// And put it back into the block
+	payload.Data = protoutil.MarshalOrPanic(confEnv)
+	env.Payload = protoutil.MarshalOrPanic(payload)
+	block.Data.Data[0] = protoutil.MarshalOrPanic(env)
 }
 
 func injectGlobalOrdererEndpoint(t *testing.T, block *common.Block, endpoint string) {
@@ -368,7 +385,7 @@ func injectGlobalOrdererEndpoint(t *testing.T, block *common.Block, endpoint str
 	// Unwrap the layers until we reach the orderer addresses
 	env, err := protoutil.ExtractEnvelope(block, 0)
 	assert.NoError(t, err)
-	payload, err := protoutil.ExtractPayload(env)
+	payload, err := protoutil.UnmarshalPayload(env.Payload)
 	assert.NoError(t, err)
 	confEnv, err := configtx.UnmarshalConfigEnvelope(payload.Data)
 	assert.NoError(t, err)
@@ -392,7 +409,7 @@ func injectAdditionalEndpointPair(t *testing.T, block *common.Block, endpoint st
 	// Unwrap the layers until we reach the orderer addresses
 	env, err := protoutil.ExtractEnvelope(block, 0)
 	assert.NoError(t, err)
-	payload, err := protoutil.ExtractPayload(env)
+	payload, err := protoutil.UnmarshalPayload(env.Payload)
 	assert.NoError(t, err)
 	confEnv, err := configtx.UnmarshalConfigEnvelope(payload.Data)
 	assert.NoError(t, err)

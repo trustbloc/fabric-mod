@@ -12,26 +12,27 @@ import (
 	"fmt"
 	"time"
 
-	mockpolicies "github.com/hyperledger/fabric/common/mocks/policies"
+	mspproto "github.com/hyperledger/fabric-protos-go/msp"
 	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/msp"
-	mspproto "github.com/hyperledger/fabric/protos/msp"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/mock"
 )
 
 type ChannelPolicyManagerGetter struct{}
 
-func (c *ChannelPolicyManagerGetter) Manager(channelID string) (policies.Manager, bool) {
-	return &mockpolicies.Manager{Policy: &mockpolicies.Policy{Err: nil}}, false
+func (c *ChannelPolicyManagerGetter) Manager(channelID string) policies.Manager {
+	policyMgr := &PolicyManager{}
+	policyMgr.GetPolicyReturns(nil, true)
+	return policyMgr
 }
 
 type ChannelPolicyManagerGetterWithManager struct {
 	Managers map[string]policies.Manager
 }
 
-func (c *ChannelPolicyManagerGetterWithManager) Manager(channelID string) (policies.Manager, bool) {
-	return c.Managers[channelID], true
+func (c *ChannelPolicyManagerGetterWithManager) Manager(channelID string) policies.Manager {
+	return c.Managers[channelID]
 }
 
 type ChannelPolicyManager struct {
@@ -50,8 +51,8 @@ type Policy struct {
 	Deserializer msp.IdentityDeserializer
 }
 
-// Evaluate takes a set of SignedData and evaluates whether this set of signatures satisfies the policy
-func (m *Policy) Evaluate(signatureSet []*protoutil.SignedData) error {
+// EvaluateSignedData takes a set of SignedData and evaluates whether this set of signatures satisfies the policy
+func (m *Policy) EvaluateSignedData(signatureSet []*protoutil.SignedData) error {
 	fmt.Printf("Evaluate [%s], [% x], [% x]\n", string(signatureSet[0].Identity), string(signatureSet[0].Data), string(signatureSet[0].Signature))
 	identity, err := m.Deserializer.DeserializeIdentity(signatureSet[0].Identity)
 	if err != nil {
@@ -59,6 +60,12 @@ func (m *Policy) Evaluate(signatureSet []*protoutil.SignedData) error {
 	}
 
 	return identity.Verify(signatureSet[0].Data, signatureSet[0].Signature)
+}
+
+// EvaluateIdentities takes an array of identities and evaluates whether
+// they satisfy the policy
+func (m *Policy) EvaluateIdentities(identities []msp.Identity) error {
+	panic("Implement me")
 }
 
 type DeserializersManager struct {

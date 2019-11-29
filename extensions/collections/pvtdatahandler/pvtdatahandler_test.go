@@ -9,16 +9,16 @@ package pvtdatahandler
 import (
 	"testing"
 
-	"github.com/hyperledger/fabric/protos/common"
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestHandler_HandleGetPrivateData(t *testing.T) {
 	h := New("testchannel", nil)
 
-	config := &common.StaticCollectionConfig{
+	config := &peer.StaticCollectionConfig{
 		Name: "coll1",
-		Type: common.CollectionType_COL_TRANSIENT,
+		Type: peer.CollectionType_COL_TRANSIENT,
 	}
 
 	value, handled, err := h.HandleGetPrivateData("tx1", "ns1", config, "key1")
@@ -30,9 +30,9 @@ func TestHandler_HandleGetPrivateData(t *testing.T) {
 func TestHandler_HandleGetPrivateDataMultipleKeys(t *testing.T) {
 	h := New("testchannel", nil)
 
-	config := &common.StaticCollectionConfig{
+	config := &peer.StaticCollectionConfig{
 		Name: "coll1",
-		Type: common.CollectionType_COL_TRANSIENT,
+		Type: peer.CollectionType_COL_TRANSIENT,
 	}
 
 	value, handled, err := h.HandleGetPrivateDataMultipleKeys("tx1", "ns1", config, []string{"key1", "key2"})
@@ -44,9 +44,9 @@ func TestHandler_HandleGetPrivateDataMultipleKeys(t *testing.T) {
 func TestHandler_HandleExecuteQueryOnPrivateData(t *testing.T) {
 	h := New("testchannel", nil)
 
-	config := &common.StaticCollectionConfig{
+	config := &peer.StaticCollectionConfig{
 		Name: "coll1",
-		Type: common.CollectionType_COL_TRANSIENT,
+		Type: peer.CollectionType_COL_TRANSIENT,
 	}
 
 	value, handled, err := h.HandleExecuteQueryOnPrivateData("tx1", "ns1", config, "some query")

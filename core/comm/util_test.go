@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/core/comm"
 	"github.com/hyperledger/fabric/core/comm/testpb"
-	"github.com/hyperledger/fabric/protos/common"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
@@ -146,6 +146,12 @@ func TestBindingInspector(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestGetLocalIP(t *testing.T) {
+	ip, err := comm.GetLocalIP()
+	assert.NoError(t, err)
+	t.Log(ip)
+}
+
 type inspectingServer struct {
 	addr string
 	*comm.GRPCServer
@@ -165,7 +171,7 @@ func (is *inspectingServer) inspect(envelope *common.Envelope) error {
 func newInspectingServer(listener net.Listener, inspector comm.BindingInspector) *inspectingServer {
 	srv, err := comm.NewGRPCServerFromListener(listener, comm.ServerConfig{
 		ConnectionTimeout: 250 * time.Millisecond,
-		SecOpts: &comm.SecureOptions{
+		SecOpts: comm.SecureOptions{
 			UseTLS:      true,
 			Certificate: []byte(selfSignedCertPEM),
 			Key:         []byte(selfSignedKeyPEM),

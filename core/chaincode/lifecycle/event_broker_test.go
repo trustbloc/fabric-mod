@@ -7,12 +7,17 @@ SPDX-License-Identifier: Apache-2.0
 package lifecycle_test
 
 import (
+	"archive/tar"
+	"bytes"
+	"io"
+
+	lb "github.com/hyperledger/fabric-protos-go/peer/lifecycle"
 	"github.com/hyperledger/fabric/core/chaincode/lifecycle"
 	"github.com/hyperledger/fabric/core/chaincode/lifecycle/mock"
 	"github.com/hyperledger/fabric/core/chaincode/persistence"
-	ccpersistence "github.com/hyperledger/fabric/core/chaincode/persistence/intf"
+	"github.com/hyperledger/fabric/core/container/externalbuilder"
+	"github.com/hyperledger/fabric/core/ledger"
 	ledgermock "github.com/hyperledger/fabric/core/ledger/mock"
-	lb "github.com/hyperledger/fabric/protos/peer/lifecycle"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
@@ -26,17 +31,21 @@ var _ = Describe("EventBroker", func() {
 		eventBroker        *lifecycle.EventBroker
 		cachedChaincodeDef *lifecycle.CachedChaincodeDefinition
 		localChaincode     *lifecycle.LocalChaincode
+		ebMetadata         *externalbuilder.MetadataProvider
 	)
 
 	BeforeEach(func() {
 		fakeListener = &ledgermock.ChaincodeLifecycleEventListener{}
 		chaincodeStore = &mock.ChaincodeStore{}
 		pkgParser = &mock.PackageParser{}
-		eventBroker = lifecycle.NewEventBroker(chaincodeStore, pkgParser)
+		ebMetadata = &externalbuilder.MetadataProvider{
+			DurablePath: "testdata",
+		}
+		eventBroker = lifecycle.NewEventBroker(chaincodeStore, pkgParser, ebMetadata)
 		cachedChaincodeDef = &lifecycle.CachedChaincodeDefinition{}
 		localChaincode = &lifecycle.LocalChaincode{
 			Info: &lifecycle.ChaincodeInstallInfo{
-				PackageID: ccpersistence.PackageID("PackageID"),
+				PackageID: "PackageID",
 			},
 			References: make(map[string]map[string]*lifecycle.CachedChaincodeDefinition),
 		}
@@ -138,20 +147,56 @@ var _ = Describe("EventBroker", func() {
 			}
 		})
 
-		By("invoking ProcessInstallEvent function")
-		It("invokes listener", func() {
+		It("invokes listener when ProcessInstallEvent is called", func() {
 			eventBroker.ProcessInstallEvent(localChaincode)
 			Expect(fakeListener.HandleChaincodeDeployCallCount()).To(Equal(1))
+			def, md := fakeListener.HandleChaincodeDeployArgsForCall(0)
+			Expect(def).To(Equal(&ledger.ChaincodeDefinition{
+				Name:    "chaincode-1",
+				Hash:    []byte("PackageID"),
+				Version: "version-1",
+			}))
+			Expect(md).To(Equal([]byte("db-artifacts")))
+
 			Expect(fakeListener.ChaincodeDeployDoneCallCount()).To(Equal(1))
 		})
 
-		By("invoking ProcessApproveOrDefineEvent function")
-		It("invokes listener", func() {
+		It("invokes listener when ProcessApproveOrDefineEvent is called", func() {
 			eventBroker.ProcessApproveOrDefineEvent("channel-1", "chaincode-1", cachedChaincodeDef)
 			Expect(fakeListener.HandleChaincodeDeployCallCount()).To(Equal(1))
 			Expect(fakeListener.ChaincodeDeployDoneCallCount()).To(Equal(0))
 			eventBroker.ApproveOrDefineCommitted("channel-1")
 			Expect(fakeListener.ChaincodeDeployDoneCallCount()).To(Equal(1))
+		})
+
+		When("the metadata is defined by the external builders", func() {
+			BeforeEach(func() {
+				localChaincode.Info.PackageID = "external-built-cc"
+			})
+
+			It("does not invoke listener", func() {
+				eventBroker.ProcessInstallEvent(localChaincode)
+				Expect(fakeListener.HandleChaincodeDeployCallCount()).To(Equal(1))
+				def, md := fakeListener.HandleChaincodeDeployArgsForCall(0)
+				Expect(def).To(Equal(&ledger.ChaincodeDefinition{
+					Name:    "chaincode-1",
+					Hash:    []byte("external-built-cc"),
+					Version: "version-1",
+				}))
+
+				mdContents := map[string]struct{}{}
+				tr := tar.NewReader(bytes.NewBuffer(md))
+				for {
+					hdr, err := tr.Next()
+					if err == io.EOF {
+						break
+					}
+					Expect(err).NotTo(HaveOccurred())
+					mdContents[hdr.Name] = struct{}{}
+				}
+				Expect(mdContents).To(HaveKey("META-INF/"))
+				Expect(mdContents).To(HaveKey("META-INF/index.json"))
+			})
 		})
 
 		Context("when chaincode store returns error", func() {

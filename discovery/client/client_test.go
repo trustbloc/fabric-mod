@@ -19,6 +19,11 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-protos-go/common"
+	"github.com/hyperledger/fabric-protos-go/discovery"
+	"github.com/hyperledger/fabric-protos-go/gossip"
+	"github.com/hyperledger/fabric-protos-go/msp"
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/cauthdsl"
 	"github.com/hyperledger/fabric/common/chaincode"
 	"github.com/hyperledger/fabric/common/policies"
@@ -30,10 +35,6 @@ import (
 	gossipcommon "github.com/hyperledger/fabric/gossip/common"
 	gdisc "github.com/hyperledger/fabric/gossip/discovery"
 	"github.com/hyperledger/fabric/gossip/protoext"
-	"github.com/hyperledger/fabric/protos/common"
-	"github.com/hyperledger/fabric/protos/discovery"
-	"github.com/hyperledger/fabric/protos/gossip"
-	"github.com/hyperledger/fabric/protos/msp"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -281,7 +282,7 @@ func createGRPCServer(t *testing.T) *comm.GRPCServer {
 	serverCert := loadFileOrPanic(filepath.Join("testdata", "server", "cert.pem"))
 	serverKey := loadFileOrPanic(filepath.Join("testdata", "server", "key.pem"))
 	s, err := comm.NewGRPCServer("localhost:0", comm.ServerConfig{
-		SecOpts: &comm.SecureOptions{
+		SecOpts: comm.SecureOptions{
 			UseTLS:      true,
 			Certificate: serverCert,
 			Key:         serverKey,
@@ -824,9 +825,9 @@ func (pf *policyFetcher) PolicyByChaincode(channel string, cc string) policies.I
 }
 
 type endorsementAnalyzer interface {
-	PeersForEndorsement(chainID gossipcommon.ChainID, interest *discovery.ChaincodeInterest) (*discovery.EndorsementDescriptor, error)
+	PeersForEndorsement(chainID gossipcommon.ChannelID, interest *discovery.ChaincodeInterest) (*discovery.EndorsementDescriptor, error)
 
-	PeersAuthorizedByCriteria(chainID gossipcommon.ChainID, interest *discovery.ChaincodeInterest) (gdisc.Members, error)
+	PeersAuthorizedByCriteria(chainID gossipcommon.ChannelID, interest *discovery.ChaincodeInterest) (gdisc.Members, error)
 }
 
 type inquireablePolicy struct {
@@ -948,7 +949,7 @@ func (*mockSupport) ChannelExists(channel string) bool {
 	return true
 }
 
-func (ms *mockSupport) PeersOfChannel(gossipcommon.ChainID) gdisc.Members {
+func (ms *mockSupport) PeersOfChannel(gossipcommon.ChannelID) gdisc.Members {
 	return ms.Called().Get(0).(gdisc.Members)
 }
 
@@ -956,11 +957,11 @@ func (ms *mockSupport) Peers() gdisc.Members {
 	return ms.Called().Get(0).(gdisc.Members)
 }
 
-func (ms *mockSupport) PeersForEndorsement(channel gossipcommon.ChainID, interest *discovery.ChaincodeInterest) (*discovery.EndorsementDescriptor, error) {
+func (ms *mockSupport) PeersForEndorsement(channel gossipcommon.ChannelID, interest *discovery.ChaincodeInterest) (*discovery.EndorsementDescriptor, error) {
 	return ms.endorsementAnalyzer.PeersForEndorsement(channel, interest)
 }
 
-func (ms *mockSupport) PeersAuthorizedByCriteria(channel gossipcommon.ChainID, interest *discovery.ChaincodeInterest) (gdisc.Members, error) {
+func (ms *mockSupport) PeersAuthorizedByCriteria(channel gossipcommon.ChannelID, interest *discovery.ChaincodeInterest) (gdisc.Members, error) {
 	return ms.endorsementAnalyzer.PeersAuthorizedByCriteria(channel, interest)
 }
 
@@ -1038,15 +1039,15 @@ func interest(ccNames ...string) *discovery.ChaincodeInterest {
 	return interest
 }
 
-func buildCollectionConfig(col2principals map[string][]*msp.MSPPrincipal) *common.CollectionConfigPackage {
-	collections := &common.CollectionConfigPackage{}
+func buildCollectionConfig(col2principals map[string][]*msp.MSPPrincipal) *peer.CollectionConfigPackage {
+	collections := &peer.CollectionConfigPackage{}
 	for col, principals := range col2principals {
-		collections.Config = append(collections.Config, &common.CollectionConfig{
-			Payload: &common.CollectionConfig_StaticCollectionConfig{
-				StaticCollectionConfig: &common.StaticCollectionConfig{
+		collections.Config = append(collections.Config, &peer.CollectionConfig{
+			Payload: &peer.CollectionConfig_StaticCollectionConfig{
+				StaticCollectionConfig: &peer.StaticCollectionConfig{
 					Name: col,
-					MemberOrgsPolicy: &common.CollectionPolicyConfig{
-						Payload: &common.CollectionPolicyConfig_SignaturePolicy{
+					MemberOrgsPolicy: &peer.CollectionPolicyConfig{
+						Payload: &peer.CollectionPolicyConfig_SignaturePolicy{
 							SignaturePolicy: &common.SignaturePolicyEnvelope{
 								Identities: principals,
 							},

@@ -12,6 +12,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/pkg/errors"
@@ -68,11 +69,7 @@ func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig)
 	//set up our server options
 	var serverOpts []grpc.ServerOption
 
-	//check SecOpts
-	var secureConfig SecureOptions
-	if serverConfig.SecOpts != nil {
-		secureConfig = *serverConfig.SecOpts
-	}
+	secureConfig := serverConfig.SecOpts
 	if secureConfig.UseTLS {
 		//both key and cert are required
 		if secureConfig.Key != nil && secureConfig.Certificate != nil {
@@ -97,6 +94,13 @@ func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig)
 				GetCertificate:         getCert,
 				SessionTicketsDisabled: true,
 				CipherSuites:           secureConfig.CipherSuites,
+			}
+
+			if serverConfig.SecOpts.TimeShift > 0 {
+				timeShift := serverConfig.SecOpts.TimeShift
+				grpcServer.tlsConfig.Time = func() time.Time {
+					return time.Now().Add((-1) * timeShift)
+				}
 			}
 			grpcServer.tlsConfig.ClientAuth = tls.RequestClientCert
 			//check if client authentication is required
@@ -149,9 +153,8 @@ func NewGRPCServerFromListener(listener net.Listener, serverConfig ServerConfig)
 		)
 	}
 
-	if serverConfig.MetricsProvider != nil {
-		sh := NewServerStatsHandler(serverConfig.MetricsProvider)
-		serverOpts = append(serverOpts, grpc.StatsHandler(sh))
+	if serverConfig.ServerStatsHandler != nil {
+		serverOpts = append(serverOpts, grpc.StatsHandler(serverConfig.ServerStatsHandler))
 	}
 
 	grpcServer.server = grpc.NewServer(serverOpts...)
@@ -261,52 +264,6 @@ func (gServer *GRPCServer) appendClientRootCA(clientRoot []byte) error {
 	return nil
 }
 
-// RemoveClientRootCAs removes PEM-encoded X509 certificate authorities from
-// the list of authorities used to verify client certificates
-func (gServer *GRPCServer) RemoveClientRootCAs(clientRoots [][]byte) error {
-	gServer.lock.Lock()
-	defer gServer.lock.Unlock()
-	//remove from internal map
-	for _, clientRoot := range clientRoots {
-		err := gServer.removeClientRootCA(clientRoot)
-		if err != nil {
-			return err
-		}
-	}
-
-	//create a new CertPool and populate with current clientRootCAs
-	certPool := x509.NewCertPool()
-	for _, clientRoot := range gServer.clientRootCAs {
-		certPool.AddCert(clientRoot)
-	}
-
-	//replace the current ClientCAs pool
-	gServer.tlsConfig.ClientCAs = certPool
-	return nil
-}
-
-// internal function to remove a PEM-encoded clientRootCA
-func (gServer *GRPCServer) removeClientRootCA(clientRoot []byte) error {
-
-	certs, subjects, err := pemToX509Certs(clientRoot)
-	if err != nil {
-		return errors.WithMessage(err, "failed to remove client root certificate(s)")
-	}
-
-	if len(certs) < 1 {
-		return errors.New("No client root certificates found")
-	}
-
-	for i, subject := range subjects {
-		//remove it from our clientRootCAs map using subject as key
-		//check to see if we have match
-		if certs[i].Equal(gServer.clientRootCAs[subject]) {
-			delete(gServer.clientRootCAs, subject)
-		}
-	}
-	return nil
-}
-
 // SetClientRootCAs sets the list of authorities used to verify client
 // certificates based on a list of PEM-encoded X509 certificate authorities
 func (gServer *GRPCServer) SetClientRootCAs(clientRoots [][]byte) error {
@@ -320,11 +277,9 @@ func (gServer *GRPCServer) SetClientRootCAs(clientRoots [][]byte) error {
 		if err != nil {
 			return errors.WithMessage(err, "failed to set client root certificate(s)")
 		}
-		if len(certs) >= 1 {
-			for i, cert := range certs {
-				//add it to our clientRootCAs map using subject as key
-				clientRootCAs[subjects[i]] = cert
-			}
+
+		for i, cert := range certs {
+			clientRootCAs[subjects[i]] = cert
 		}
 	}
 
@@ -333,9 +288,8 @@ func (gServer *GRPCServer) SetClientRootCAs(clientRoots [][]byte) error {
 	for _, clientRoot := range clientRootCAs {
 		certPool.AddCert(clientRoot)
 	}
-	//replace the internal map
+
 	gServer.clientRootCAs = clientRootCAs
-	//replace the current ClientCAs pool
 	gServer.tlsConfig.ClientCAs = certPool
 	return nil
 }

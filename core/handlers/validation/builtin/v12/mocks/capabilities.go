@@ -37,20 +37,6 @@ func (_m *Capabilities) CollectionUpgrade() bool {
 	return r0
 }
 
-// FabToken provides a mock function with given fields:
-func (_m *Capabilities) FabToken() bool {
-	ret := _m.Called()
-
-	var r0 bool
-	if rf, ok := ret.Get(0).(func() bool); ok {
-		r0 = rf()
-	} else {
-		r0 = ret.Get(0).(bool)
-	}
-
-	return r0
-}
-
 // ForbidDuplicateTXIdInBlock provides a mock function with given fields:
 func (_m *Capabilities) ForbidDuplicateTXIdInBlock() bool {
 	ret := _m.Called()
@@ -95,6 +81,20 @@ func (_m *Capabilities) MetadataLifecycle() bool {
 
 // PrivateChannelData provides a mock function with given fields:
 func (_m *Capabilities) PrivateChannelData() bool {
+	ret := _m.Called()
+
+	var r0 bool
+	if rf, ok := ret.Get(0).(func() bool); ok {
+		r0 = rf()
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+
+	return r0
+}
+
+// StorePvtDataOfInvalidTx provides a mock function with given fields:
+func (_m *Capabilities) StorePvtDataOfInvalidTx() bool {
 	ret := _m.Called()
 
 	var r0 bool

@@ -9,7 +9,7 @@ package store
 import (
 	"time"
 
-	proto "github.com/hyperledger/fabric/protos/transientstore"
+	proto "github.com/hyperledger/fabric-protos-go/transientstore"
 )
 
 // ExpiringValue is holds the value and expiration time.

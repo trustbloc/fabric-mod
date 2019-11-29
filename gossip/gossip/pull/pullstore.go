@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hyperledger/fabric-protos-go/gossip"
+	proto "github.com/hyperledger/fabric-protos-go/gossip"
 	"github.com/hyperledger/fabric/gossip/comm"
 	"github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/discovery"
 	"github.com/hyperledger/fabric/gossip/gossip/algo"
 	"github.com/hyperledger/fabric/gossip/protoext"
 	"github.com/hyperledger/fabric/gossip/util"
-	"github.com/hyperledger/fabric/protos/gossip"
-	proto "github.com/hyperledger/fabric/protos/gossip"
 	"github.com/pkg/errors"
 	"go.uber.org/zap/zapcore"
 )
@@ -53,7 +53,7 @@ type MembershipService interface {
 type Config struct {
 	ID                string
 	PullInterval      time.Duration // Duration between pull invocations
-	Channel           common.ChainID
+	Channel           common.ChannelID
 	PeerCountToSelect int // Number of peers to initiate pull with
 	Tag               proto.GossipMessage_Tag
 	MsgType           proto.PullMsgType

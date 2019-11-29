@@ -189,8 +189,11 @@ func ConstructMetadataDBName(dbName string) string {
 	return dbName + "_"
 }
 
-// ConstructNamespaceDBName truncates db name to couchdb allowed length to
-// construct the namespaceDBName
+// ConstructNamespaceDBName truncates db name to couchdb allowed length to construct the final namespaceDBName
+// The passed namespace will be in one of the following formats:
+// <chaincode>                 - for namespaces containing regular public data
+// <chaincode>$$p<collection>  - for namespaces containing private data collections
+// <chaincode>$$h<collection>  - for namespaces containing hashes of private data collections
 func ConstructNamespaceDBName(chainName, namespace string) string {
 	// replace upper-case in namespace with a escape sequence '$' and the respective lower-case letter
 	escapedNamespace := escapeUpperCase(namespace)
@@ -201,10 +204,10 @@ func ConstructNamespaceDBName(chainName, namespace string) string {
 	// <first 50 chars (i.e., namespaceNameAllowedLength) chars of namespace> +
 	// (<SHA256 hash of [chainName_namespace]>)
 	//
-	// For namespaceDBName of form 'chainName_namespace$$collection', on length limit violation, the truncated
+	// For namespaceDBName of form 'chainName_namespace$$[hp]collection', on length limit violation, the truncated
 	// namespaceDBName would contain <first 50 chars (i.e., chainNameAllowedLength) of chainName> + "_" +
 	// <first 50 chars (i.e., namespaceNameAllowedLength) of namespace> + "$$" + <first 50 chars
-	// (i.e., collectionNameAllowedLength) of collection> + (<SHA256 hash of [chainName_namespace$$pcollection]>)
+	// (i.e., collectionNameAllowedLength) of [hp]collection> + (<SHA256 hash of [chainName_namespace$$[hp]collection]>)
 
 	if len(namespaceDBName) > maxLength {
 		// Compute the hash of untruncated namespaceDBName that needs to be appended to
@@ -252,12 +255,12 @@ func ConstructNamespaceDBName(chainName, namespace string) string {
 //CouchDB Rules: Only lowercase characters (a-z), digits (0-9), and any of the characters
 //_, $, (, ), +, -, and / are allowed. Must begin with a letter.
 //
-//Restictions have already been applied to the database name from Orderer based on
+//Restrictions have already been applied to the database name from Orderer based on
 //restrictions required by Kafka and couchDB (except a '.' char). The databaseName
 // passed in here is expected to follow `[a-z][a-z0-9.$_-]*` pattern.
 //
 //This validation will simply check whether the database name matches the above pattern and will replace
-// all occurence of '.' by '$'. This will not cause collisions in the transformed named
+// all occurrence of '.' by '$'. This will not cause collisions in the transformed named
 func mapAndValidateDatabaseName(databaseName string) (string, error) {
 	// test Length
 	if len(databaseName) <= 0 {

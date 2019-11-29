@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
+	cb "github.com/hyperledger/fabric-protos-go/common"
+	ab "github.com/hyperledger/fabric-protos-go/orderer"
 	"github.com/hyperledger/fabric/core/config/configtest"
 	"github.com/hyperledger/fabric/internal/peer/common"
 	"github.com/hyperledger/fabric/internal/peer/common/mock"
-	cb "github.com/hyperledger/fabric/protos/common"
-	ab "github.com/hyperledger/fabric/protos/orderer"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
@@ -55,18 +55,23 @@ func TestFetch(t *testing.T) {
 
 	// success cases - block and outputBlockPath
 	blocksToFetch := []string{"oldest", "newest", "config", "1"}
-	for _, block := range blocksToFetch {
-		outputBlockPath := filepath.Join(tempDir, block+".block")
-		args := []string{"-c", mockchain, block, outputBlockPath}
-		cmd.SetArgs(args)
+	for _, bestEffort := range []bool{false, true} {
+		for _, block := range blocksToFetch {
+			outputBlockPath := filepath.Join(tempDir, block+".block")
+			args := []string{"-c", mockchain, block, outputBlockPath}
+			if bestEffort {
+				args = append(args, "--bestEffort")
+			}
+			cmd.SetArgs(args)
 
-		err = cmd.Execute()
-		assert.NoError(t, err, "fetch command expected to succeed")
+			err = cmd.Execute()
+			assert.NoError(t, err, "fetch command expected to succeed")
 
-		if _, err := os.Stat(outputBlockPath); os.IsNotExist(err) {
-			// path/to/whatever does not exist
-			t.Error("expected configuration block to be fetched")
-			t.Fail()
+			if _, err := os.Stat(outputBlockPath); os.IsNotExist(err) {
+				// path/to/whatever does not exist
+				t.Error("expected configuration block to be fetched")
+				t.Fail()
+			}
 		}
 	}
 

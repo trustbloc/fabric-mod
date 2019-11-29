@@ -73,7 +73,7 @@ payload for the application to consume.
 
 The application verifies the endorsing peer signatures and compares the proposal
 responses to determine if the proposal responses are the same. If the chaincode
-is only queried the ledger, the application would inspect the query response and
+is only querying the ledger, the application would only inspect the query response and
 would typically not submit the transaction to the ordering service. If the client
 application intends to submit the transaction to the ordering service to update the
 ledger, the application determines if the specified endorsement policy has been
@@ -111,8 +111,8 @@ Transactions in the block are tagged as being valid or invalid.
 
 Each peer appends the block to the channel’s chain, and for each valid
 transaction the write sets are committed to current state database. An event is
-emitted, to notify the client application that the transaction (invocation) has
-been immutably appended to the chain, as well as notification of whether the
+emitted by each peer to notify the client application that the transaction (invocation)
+has been immutably appended to the chain, as well as notification of whether the
 transaction was validated or invalidated.
 
 .. note:: Applications should listen for the transaction event after submitting

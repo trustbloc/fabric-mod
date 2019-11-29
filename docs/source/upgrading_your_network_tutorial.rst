@@ -9,10 +9,8 @@ Upgrading Your Network Components
           no data migration, technically speaking, in Fabric, we will not use
           the term "migration" or "migrate" here.
 
-.. note:: Also, if your network is not yet at Fabric v1.3, follow the instructions for
-          `Upgrading Your Network to v1.3 <http://hyperledger-fabric.readthedocs.io/en/release-1.3/upgrading_your_network_tutorial.html>`_.
-          The instructions in this documentation only cover moving from v1.3 to
-          v1.4.x, not from any other version to v1.4.x.
+.. note:: Upgrading from Fabric v1.4 to the v2.0 Alpha release is not supported.
+          This tutorial will be updated after the 2.0 Alpha release.
 
 Overview
 --------
@@ -479,15 +477,13 @@ Upgrade Chaincodes with vendored shim
           of the peer.
 
 A number of third party tools exist that will allow you to vendor a chaincode
-shim. If you used one of these tools, use the same one to update your vendoring
-and re-package your chaincode.
+shim. If you used one of these tools, use the same one to update your vendored
+chaincode shim and re-package your chaincode.
 
 If your chaincode vendors the shim, after updating the shim version, you must install
 it to all peers which already have the chaincode. Install it with the same name, but
 a newer version. Then you should execute a chaincode upgrade on each channel where
 this chaincode has been deployed to move to the new version.
-
-If you did not vendor your chaincode, you can skip this step entirely.
 
 .. Licensed under Creative Commons Attribution 4.0 International License
    https://creativecommons.org/licenses/by/4.0/

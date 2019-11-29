@@ -13,7 +13,6 @@ type MockChaincodeDefinition struct {
 	ValidationStr   string
 	ValidationBytes []byte
 	HashRv          []byte
-	RequiresInitRv  bool
 }
 
 func (m *MockChaincodeDefinition) CCName() string {
@@ -36,6 +35,6 @@ func (m *MockChaincodeDefinition) Endorsement() string {
 	return m.EndorsementStr
 }
 
-func (m *MockChaincodeDefinition) RequiresInit() bool {
-	return m.RequiresInitRv
+func (m *MockChaincodeDefinition) ChaincodeID() string {
+	return m.NameRv + ":" + m.VersionRv
 }
