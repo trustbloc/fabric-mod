@@ -8,10 +8,26 @@ variables:
   GOPATH: $(Agent.BuildDirectory)/go
 
 jobs:
-  - job: UnitTest
+  - job: UnitTests
     pool:
       vmImage: ubuntu-18.04
-    timeoutInMinutes: 60
+    timeoutInMinutes: 90
     steps:
     - template: azp-dependencies-mod.yml
     - checkout: self
+      path: 'go/src/github.com/hyperledger/fabric'
+    - script: ./ci/scripts/setup_hsm.sh
+      displayName: Install SoftHSM
+    - script: make basic-checks native unit-test
+      displayName: Run checks and Unit Tests
+
+  - job: IntegrationTests
+    pool:
+      vmImage: ubuntu-18.04
+    timeoutInMinutes: 120
+    steps:
+    - template: azp-dependencies-mod.yml
+    - checkout: self
+      path: 'go/src/github.com/hyperledger/fabric'
+    - script: make integration-test
+      displayName: Run Integration Tests
