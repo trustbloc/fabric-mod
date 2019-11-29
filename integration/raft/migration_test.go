@@ -57,7 +57,7 @@ var _ = Describe("Kafka2RaftMigration", func() {
 		chaincode = nwo.Chaincode{
 			Name:            "mycc",
 			Version:         "0.0",
-			Path:            components.Build("github.com/hyperledger/fabric/integration/chaincode/module"),
+			Path:            components.Build("../chaincode/module"),
 			Lang:            "binary",
 			PackageFile:     filepath.Join(testDir, "modulecc.tar.gz"),
 			Ctor:            `{"Args":["init","a","100","b","200"]}`,
@@ -583,6 +583,7 @@ var _ = Describe("Kafka2RaftMigration", func() {
 		// It then restarts the orderers onto a Raft-based system, and verifies that the
 		// newly restarted orderers perform as expected.
 		It("executes bootstrap to raft - multi node", func() {
+			Skip("TODO: Re-enable this test")
 			//=== Step 1: Config update on system channel, MAINTENANCE ===
 			By("1) Config update on system channel, State=MAINTENANCE")
 			config, updatedConfig := prepareTransition(network, peer, o1, syschannel,

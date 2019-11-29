@@ -92,6 +92,17 @@ func (c *Cache) PutState(chainID, namespace, key string, cacheValue *CacheValue)
 	return nil
 }
 
+// DelState deletes the key in a cache associated with the chainID/namespace.
+func (c *Cache) DelState(chainID, namespace, key string) error {
+	cache := c.getCache(namespace)
+	if cache == nil {
+		return nil
+	}
+
+	cache.Del(constructCacheKey(chainID, namespace, key))
+	return nil
+}
+
 // CacheUpdates is a map from a namespace to a set of cache KV updates
 type CacheUpdates map[string]CacheKVs
 

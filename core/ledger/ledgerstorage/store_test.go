@@ -356,6 +356,10 @@ func TestPvtStoreAheadOfBlockStore(t *testing.T) {
 		t.Fatalf("Failed to create ledger storage directory: %s", err)
 	}
 	defer os.RemoveAll(storeDir)
+
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+	defer destroy()
+
 	conf := buildPrivateDataConfig(storeDir)
 	blockStoreDir := filepath.Join(storeDir, "chains")
 	provider, err := NewProvider(blockStoreDir, conf, xtestutil.TestLedgerConf(), metricsProvider)

@@ -6,35 +6,89 @@ SPDX-License-Identifier: Apache-2.0
 
 package statecouchdb
 
-//import (
-//	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
-//	"github.com/hyperledger/fabric/extensions/gossip/api"
-//	"github.com/stretchr/testify/assert"
-//	"github.com/stretchr/testify/require"
-//	"testing"
-//)
-//
-//func TestCCUpgradeHandler(t *testing.T) {
-//	env := NewTestVDBEnv(t)
-//	defer env.Cleanup()
-//
-//	db, err := env.DBProvider.GetDBHandle("testinit")
-//	assert.NoError(t, err)
-//	db.Open()
-//	defer db.Close()
-//
-//	initLen := len(db.(*VersionedDB).cache.cache)
-//	db.(*VersionedDB).lsccStateCache.cache["samplecc"] = &statedb.VersionedValue{Value: []byte("samplecc")}
-//	db.(*VersionedDB).lsccStateCache.cache["samplecc~collection"] = &statedb.VersionedValue{Value: []byte("samplecc~collection")}
-//	db.(*VersionedDB).lsccStateCache.cache["samplecc2"] = &statedb.VersionedValue{Value: []byte("samplecc2")}
-//	db.(*VersionedDB).lsccStateCache.cache["samplecc2~collection"] = &statedb.VersionedValue{Value: []byte("samplecc2~collection")}
-//
-//	handler := getCCUpgradeHandler(db.(*VersionedDB))
-//	err = handler(api.TxMetadata{}, "samplecc")
-//	require.NoError(t, err)
-//	require.Len(t, db.(*VersionedDB).lsccStateCache.cache, initLen+2)
-//
-//	err = handler(api.TxMetadata{}, "samplecc2")
-//	require.NoError(t, err)
-//	require.Len(t, db.(*VersionedDB).lsccStateCache.cache, initLen)
-//}
+import (
+	"fmt"
+	"testing"
+
+	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
+	"github.com/hyperledger/fabric/extensions/gossip/api"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+const (
+	channelID = "testchannel"
+	ccID1     = "samplecc"
+	ccID2     = "samplecc2"
+	coll      = "collection"
+)
+
+var (
+	ccID1Coll1 = fmt.Sprintf("%s~%s", ccID1, coll)
+	ccID2Coll1 = fmt.Sprintf("%s~%s", ccID2, coll)
+)
+
+func TestCCUpgradeHandler(t *testing.T) {
+	env := newTestVDBEnvWithCache(t, statedb.NewCache(1, []string{lsccNamespace}))
+	defer env.Cleanup()
+
+	db, err := env.DBProvider.GetDBHandle(channelID)
+	assert.NoError(t, err)
+	db.Open()
+	defer db.Close()
+
+	cache := db.(*VersionedDB).cache
+	require.NoError(t, cache.PutState(channelID, lsccNamespace, ccID1, &statedb.CacheValue{Value: []byte(ccID1)}))
+	require.NoError(t, cache.PutState(channelID, lsccNamespace, ccID1Coll1, &statedb.CacheValue{Value: []byte(ccID1Coll1)}))
+	require.NoError(t, cache.PutState(channelID, lsccNamespace, ccID2, &statedb.CacheValue{Value: []byte(ccID2)}))
+	require.NoError(t, cache.PutState(channelID, lsccNamespace, ccID2Coll1, &statedb.CacheValue{Value: []byte(ccID2Coll1)}))
+
+	v, err := cache.GetState(channelID, lsccNamespace, ccID1)
+	require.NoError(t, err)
+	require.NotNil(t, v)
+
+	v, err = cache.GetState(channelID, lsccNamespace, ccID1Coll1)
+	require.NoError(t, err)
+	require.NotNil(t, v)
+
+	v, err = cache.GetState(channelID, lsccNamespace, ccID2)
+	require.NoError(t, err)
+	require.NotNil(t, v)
+
+	v, err = cache.GetState(channelID, lsccNamespace, ccID2Coll1)
+	require.NoError(t, err)
+	require.NotNil(t, v)
+
+	handler := getCCUpgradeHandler(db.(*VersionedDB))
+	txnMetadata := api.TxMetadata{}
+
+	err = handler(txnMetadata, ccID1)
+	require.NoError(t, err)
+
+	v, err = cache.GetState(channelID, lsccNamespace, ccID1)
+	require.NoError(t, err)
+	require.Nil(t, v)
+
+	v, err = cache.GetState(channelID, lsccNamespace, ccID1Coll1)
+	require.NoError(t, err)
+	require.Nil(t, v)
+
+	v, err = cache.GetState(channelID, lsccNamespace, ccID2)
+	require.NoError(t, err)
+	require.NotNil(t, v)
+
+	v, err = cache.GetState(channelID, lsccNamespace, ccID2Coll1)
+	require.NoError(t, err)
+	require.NotNil(t, v)
+
+	err = handler(txnMetadata, ccID2)
+	require.NoError(t, err)
+
+	v, err = cache.GetState(channelID, lsccNamespace, ccID2)
+	require.NoError(t, err)
+	require.Nil(t, v)
+
+	v, err = cache.GetState(channelID, lsccNamespace, ccID2Coll1)
+	require.NoError(t, err)
+	require.Nil(t, v)
+}

@@ -24,7 +24,7 @@ jobs:
   - job: IntegrationTests
     pool:
       vmImage: ubuntu-18.04
-    timeoutInMinutes: 120
+    timeoutInMinutes: 240
     steps:
     - template: azp-dependencies-mod.yml
     - checkout: self

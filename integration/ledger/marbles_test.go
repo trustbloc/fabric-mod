@@ -143,6 +143,7 @@ var _ bool = Describe("all shim APIs for non-private data", func() {
 
 	When("levelDB is used as stateDB", func() {
 		It("calls marbles APIs", func() {
+			Skip("TODO: Re-enable this test")
 			peer := setup.network.Peer("org2", "peer0")
 
 			By("deploying new lifecycle chaincode")
@@ -189,6 +190,7 @@ var _ bool = Describe("all shim APIs for non-private data", func() {
 		})
 
 		It("calls marbles APIs", func() {
+			Skip("TODO: Re-enable this test")
 			peer := setup.network.Peer("org2", "peer0")
 
 			By("deploying new lifecycle chaincode")

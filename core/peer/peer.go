@@ -393,6 +393,7 @@ func (p *Peer) createChannel(
 		}),
 		CapabilityProvider: channel,
 		CollDataStore:      collDataStore,
+		Ledger:             l,
 		BlockPublisher:     blockpublisher.ForChannel(cid),
 	})
 

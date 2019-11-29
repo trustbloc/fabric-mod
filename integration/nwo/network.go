@@ -27,6 +27,7 @@ import (
 	"github.com/hyperledger/fabric/integration/runner"
 	"github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 	"github.com/tedsuo/ifrit"
 	"github.com/tedsuo/ifrit/ginkgomon"
@@ -1109,7 +1110,35 @@ func (n *Network) PeerRunner(p *Peer, env ...string) ifrit.Runner {
 		{Name: "couchdbs", Runner: n.CouchDBRunner(p)},
 		{Name: "peers", Runner: n.PeerNodeRunner(p)},
 	}
-	return grouper.NewOrdered(syscall.SIGTERM, members)
+	return &GroupRunner{
+		r:       grouper.NewOrdered(syscall.SIGTERM, members),
+		members: members,
+	}
+}
+
+// GroupRunner wraps a grouped runner
+type GroupRunner struct {
+	r       ifrit.Runner
+	members grouper.Members
+}
+
+// Run runs the task
+func (gr *GroupRunner) Run(signals <-chan os.Signal, ready chan<- struct{}) error {
+	return gr.r.Run(signals, ready)
+}
+
+// Err returns the gbytes.Buffer associated with the stderr stream of the given, named runner.
+func (gr *GroupRunner) Err(name string) *gbytes.Buffer {
+	for _, m := range gr.members {
+		if m.Name == name {
+			grunner, ok := m.Runner.(*ginkgomon.Runner)
+			if !ok {
+				return nil
+			}
+			return grunner.Err()
+		}
+	}
+	return nil
 }
 
 // PeerNodeRunner returns an ifrit.Runner for the specified peer. The runner can be

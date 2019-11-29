@@ -1,4 +1,4 @@
-module module
+module cmdwithindexspecs
 
 go 1.13
 

@@ -27,7 +27,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0
 	github.com/hashicorp/go-version v1.2.0
 	github.com/hyperledger/fabric-amcl v0.0.0-20181230093703-5ccba6eab8d6
-	github.com/hyperledger/fabric-chaincode-go v0.0.0-20191029183502-d970cbc54e83
+	github.com/hyperledger/fabric-chaincode-go v0.0.0-20191108205148-17c4b2760b56
 	github.com/hyperledger/fabric-lib-go v1.0.0
 	github.com/hyperledger/fabric-protos-go v0.0.0-20191121202242-f5500d5e3e85
 	github.com/hyperledger/fabric/extensions v0.0.0

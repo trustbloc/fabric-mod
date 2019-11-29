@@ -144,7 +144,7 @@ var _ = Describe("Gossip Test", func() {
 
 			By("confirm peer0Org1 elected to be a leader")
 			expectedMsg := "Elected as a leader, starting delivery service for channel testchannel"
-			Eventually(peerRunners[peer0Org1.ID()].(*ginkgomon.Runner).Err(), network.EventuallyTimeout).Should(gbytes.Say(expectedMsg))
+			Eventually(peerRunners[peer0Org1.ID()].(*nwo.GroupRunner).Err("peers"), network.EventuallyTimeout).Should(gbytes.Say(expectedMsg))
 
 			peersToSyncUp := []*nwo.Peer{peer1Org1, peer1Org2}
 			sendTransactionsAndSyncUpPeers(network, orderer, basePeerForTransactions, peersToSyncUp, channelName, &ordererProcess, ordererRunner, peerProcesses, peerRunners)
@@ -158,7 +158,7 @@ var _ = Describe("Gossip Test", func() {
 			stopPeers(network, peersToStop, peerProcesses)
 
 			By("confirm peer1Org1 elected to be a leader")
-			Eventually(peerRunners[peer1Org1.ID()].(*ginkgomon.Runner).Err(), network.EventuallyTimeout).Should(gbytes.Say(expectedMsg))
+			Eventually(peerRunners[peer1Org1.ID()].(*nwo.GroupRunner).Err("peers"), network.EventuallyTimeout).Should(gbytes.Say(expectedMsg))
 
 			peersToSyncUp = []*nwo.Peer{peer0Org1, peer1Org2}
 			// Note that with the static leader in Org2 down, the static follower peer0Org2 will also get blocks via state transfer
