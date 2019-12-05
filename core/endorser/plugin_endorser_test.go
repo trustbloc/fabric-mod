@@ -243,7 +243,7 @@ func TestTransientStore(t *testing.T) {
 		},
 	}
 
-	transientStore.Persist("tx1", 1, &tspb.TxPvtReadWriteSetWithConfigInfo{
+	transientStore.Persist("tx", 1, &tspb.TxPvtReadWriteSetWithConfigInfo{
 		PvtRwset:          rws,
 		CollectionConfigs: make(map[string]*peer.CollectionConfigPackage),
 	})

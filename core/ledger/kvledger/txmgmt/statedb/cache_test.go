@@ -55,6 +55,12 @@ func TestGetPutState(t *testing.T) {
 	v, err = cache.GetState("ch1", "ns1", "k1")
 	require.NoError(t, err)
 	require.True(t, proto.Equal(expectedValue1, v))
+
+	err = cache.DelState("ch1", "ns1", "k1")
+	require.NoError(t, err)
+	v, err = cache.GetState("ch1", "ns1", "k1")
+	require.NoError(t, err)
+	require.Nil(t, v)
 }
 
 func TestUpdateStates(t *testing.T) {

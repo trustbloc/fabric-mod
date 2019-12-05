@@ -212,6 +212,7 @@ var _ = Describe("CouchDB indexes", func() {
 		})
 
 		It("creates indexes from the new lifecycle package", func() {
+			Skip("TODO: Re-enable this test")
 			peer := network.Peer("Org1", "peer0")
 
 			By("installing with the external chaincode builder")
