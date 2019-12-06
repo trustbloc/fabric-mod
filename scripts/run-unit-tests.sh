@@ -156,13 +156,13 @@ run_tests() {
         local -a serial
         while IFS= read -r pkg; do serial+=("$pkg"); done < <(serial_test_packages "$@")
         if [ "${#serial[@]}" -ne 0 ]; then
-            go test "${flags[@]}" -tags "$GO_TAGS" "${serial[@]}" -short -p 1 -timeout=20m -failfast
+            go test "${flags[@]}" -tags "$GO_TAGS" "${serial[@]}" -short -p 1 -timeout=40m -failfast
         fi
 
         local -a parallel
         while IFS= read -r pkg; do parallel+=("$pkg"); done < <(parallel_test_packages "$@")
         if [ "${#parallel[@]}" -ne 0 ]; then
-            go test "${flags[@]}" "${race_flags[@]}" -tags "$GO_TAGS" "${parallel[@]}" -short -timeout=20m -failfast ${PARALLEL_NUM}
+            go test "${flags[@]}" "${race_flags[@]}" -tags "$GO_TAGS" "${parallel[@]}" -short -timeout=40m -failfast ${PARALLEL_NUM}
         fi
     }
 }
@@ -170,7 +170,7 @@ run_tests() {
 # "go test" the provided packages and generate code coverage reports.
 run_tests_with_coverage() {
     # run the tests serially
-    time go test -p 1 -cover -coverprofile=profile_tmp.cov -tags "$GO_TAGS" "$@" -timeout=20m
+    time go test -p 1 -cover -coverprofile=profile_tmp.cov -tags "$GO_TAGS" "$@" -timeout=40m
     tail -n +2 profile_tmp.cov >> profile.cov && rm profile_tmp.cov
 }
 
