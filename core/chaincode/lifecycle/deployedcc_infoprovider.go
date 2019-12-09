@@ -88,7 +88,11 @@ func (vc *ValidatorCommitter) ChaincodeInfo(channelName, chaincodeName string, q
 	}
 
 	if !exists {
-		return vc.LegacyDeployedCCInfoProvider.ChaincodeInfo(channelName, chaincodeName, qe)
+		ccInfo, err := vc.LegacyDeployedCCInfoProvider.ChaincodeInfo(channelName, chaincodeName, qe)
+		if err != nil || ccInfo == nil {
+			return &ledger.DeployedChaincodeInfo{}, err
+		}
+		return ccInfo, err
 	}
 
 	return &ledger.DeployedChaincodeInfo{
