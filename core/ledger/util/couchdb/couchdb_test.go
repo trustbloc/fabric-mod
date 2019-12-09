@@ -61,7 +61,7 @@ func testConfig() *Config {
 		Address:               testAddress,
 		Username:              "",
 		Password:              "",
-		MaxRetries:            3,
+		MaxRetries:            8,
 		MaxRetriesOnStartup:   20,
 		RequestTimeout:        35 * time.Second,
 		CreateGlobalChangesDB: true,

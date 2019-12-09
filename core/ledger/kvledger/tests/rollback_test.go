@@ -17,6 +17,7 @@ import (
 )
 
 func TestRollbackKVLedger(t *testing.T) {
+	t.Skip("Re-enable this test when upgrade is supported by fabric-peer-ext")
 	env := newEnv(t)
 	defer env.cleanup()
 	env.initLedgerMgmt()
@@ -67,6 +68,7 @@ func TestRollbackKVLedger(t *testing.T) {
 }
 
 func TestRollbackKVLedgerWithBTL(t *testing.T) {
+	t.Skip("Re-enable this test when upgrade is supported by fabric-peer-ext")
 	env := newEnv(t)
 	defer env.cleanup()
 	env.initLedgerMgmt()

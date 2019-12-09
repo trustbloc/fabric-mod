@@ -9,6 +9,7 @@ variables:
 
 jobs:
   - job: UnitTests
+    condition: in(variables['test-type'],'','unit-test') # Run if test-type is not set or if test-type is 'unit-test'
     pool:
       vmImage: ubuntu-18.04
     timeoutInMinutes: 90
@@ -22,8 +23,11 @@ jobs:
       displayName: Run checks and Unit Tests
 
   - job: IntegrationTests
+    condition: eq(variables['test-type'],'integration-test') # Run only if test-type is 'integration-test'
     pool:
       vmImage: ubuntu-18.04
+    strategy:
+      parallel: 6
     timeoutInMinutes: 240
     steps:
     - template: azp-dependencies-mod.yml

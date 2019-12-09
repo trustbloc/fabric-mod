@@ -148,7 +148,6 @@ func TestDBExistsWithRetry(t *testing.T) {
 	defer cleanup(database)
 
 	config := testConfig()
-	config.MaxRetries = 5
 
 	//create a new instance and database object
 	couchInstance, err := CreateCouchInstance(config, &disabled.Provider{})
