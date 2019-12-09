@@ -20,6 +20,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/ledgerstorage"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatastorage"
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
+	"github.com/hyperledger/fabric/extensions/roles"
 	storageapi "github.com/hyperledger/fabric/extensions/storage/api"
 	idstoreext "github.com/hyperledger/fabric/extensions/storage/idstore"
 	"github.com/hyperledger/fabric/protoutil"
@@ -124,7 +125,9 @@ func NewProvider(initializer *ledger.Initializer) (pr *Provider, e error) {
 
 	p.initLedgerStatistics()
 
-	p.recoverUnderConstructionLedger()
+	if roles.IsCommitter() {
+		p.recoverUnderConstructionLedger()
+	}
 
 	p.collDataProvider = initializer.CollDataProvider
 
