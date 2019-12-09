@@ -72,7 +72,6 @@ func newEnvWithInitializer(t *testing.T, initializer *ledgermgmt.Initializer) *e
 	addr, _, destroy := xtestutil.SetupExtTestEnv()
 	if addr != "" {
 		initializer.Config.StateDBConfig = &ledger.StateDBConfig{
-			StateDatabase: "CouchDB",
 			CouchDB: &couchdb.Config{
 				Address:             addr,
 				MaxRetries:          3,

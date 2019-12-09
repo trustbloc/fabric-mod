@@ -18,6 +18,7 @@ import (
 )
 
 func TestResetAllLedgers(t *testing.T) {
+	t.Skip("Re-enable this test when upgrade is supported by fabric-peer-ext")
 	env := newEnv(t)
 	defer env.cleanup()
 	env.initLedgerMgmt()
@@ -104,6 +105,7 @@ func TestResetAllLedgers(t *testing.T) {
 }
 
 func TestResetAllLedgersWithBTL(t *testing.T) {
+	t.Skip("Re-enable this test when upgrade is supported by fabric-peer-ext")
 	env := newEnv(t)
 	defer env.cleanup()
 	env.initLedgerMgmt()
@@ -183,6 +185,7 @@ func TestResetAllLedgersWithBTL(t *testing.T) {
 }
 
 func TestResetLedgerWithoutDroppingDBs(t *testing.T) {
+	t.Skip("Re-enable this test when upgrade is supported by fabric-peer-ext")
 	env := newEnv(t)
 	defer env.cleanup()
 	env.initLedgerMgmt()
