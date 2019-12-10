@@ -199,11 +199,7 @@ var _ = Describe("ValidatorCommitter", func() {
 
 			It("passes through to the legacy impl", func() {
 				res, err := vc.ChaincodeInfo("channel-name", "legacy-name", fakeQueryExecutor)
-				Expect(res).To(Equal(&ledger.DeployedChaincodeInfo{
-					Name:    "legacy-name",
-					Hash:    []byte("hash"),
-					Version: "cc-version",
-				}))
+				Expect(res).To(Equal(&ledger.DeployedChaincodeInfo{}))
 				Expect(err).To(MatchError("chaincode-info-error"))
 				Expect(fakeLegacyProvider.ChaincodeInfoCallCount()).To(Equal(1))
 				channelID, ccName, qe := fakeLegacyProvider.ChaincodeInfoArgsForCall(0)
