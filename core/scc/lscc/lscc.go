@@ -33,6 +33,7 @@ import (
 	"github.com/hyperledger/fabric/core/peer"
 	"github.com/hyperledger/fabric/core/policy"
 	"github.com/hyperledger/fabric/core/scc"
+	extchaincode "github.com/hyperledger/fabric/extensions/chaincode"
 	"github.com/hyperledger/fabric/internal/ccmetadata"
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/msp/mgmt"
@@ -263,11 +264,18 @@ func (lscc *SCC) ChaincodeEndorsementInfo(channelID, chaincodeName string, qe le
 		Support: lscc.Support,
 	}
 
+	if _, exists := extchaincode.GetUCC(chaincodeName); exists {
+		return &lifecycle.ChaincodeEndorsementInfo{
+			Version:           chaincodeData.Version,
+			EndorsementPlugin: chaincodeData.Escc,
+			ChaincodeID:       chaincodeData.Name,
+		}, nil
+	}
+
 	err = ls.SecurityCheckLegacyChaincode(chaincodeData)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed security checks")
 	}
-
 	return &lifecycle.ChaincodeEndorsementInfo{
 		Version:           chaincodeData.Version,
 		EndorsementPlugin: chaincodeData.Escc,
@@ -758,13 +766,23 @@ func (lscc *SCC) executeDeployOrUpgrade(
 
 	chaincodeNameVersion := chaincodeName + ":" + chaincodeVersion
 
-	ccpack, err := lscc.Support.GetChaincodeFromLocalStorage(chaincodeNameVersion)
-	if err != nil {
-		retErrMsg := fmt.Sprintf("cannot get package for chaincode (%s)", chaincodeNameVersion)
-		logger.Errorf("%s-err:%s", retErrMsg, err)
-		return nil, fmt.Errorf("%s", retErrMsg)
+	var ccpack ccprovider.CCPackage
+	var cd *ccprovider.ChaincodeData
+	if _, exists := extchaincode.GetUCC(chaincodeName); exists {
+		cd = &ccprovider.ChaincodeData{
+			Name:    cds.ChaincodeSpec.ChaincodeId.Name,
+			Version: cds.ChaincodeSpec.ChaincodeId.Version,
+		}
+	} else {
+		var err error
+		ccpack, err = lscc.Support.GetChaincodeFromLocalStorage(chaincodeNameVersion)
+		if err != nil {
+			retErrMsg := fmt.Sprintf("cannot get package for chaincode (%s)", chaincodeNameVersion)
+			logger.Errorf("%s-err:%s", retErrMsg, err)
+			return nil, fmt.Errorf("%s", retErrMsg)
+		}
+		cd = ccpack.GetChaincodeData()
 	}
-	cd := ccpack.GetChaincodeData()
 
 	switch function {
 	case DEPLOY:

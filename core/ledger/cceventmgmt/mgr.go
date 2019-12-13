@@ -11,6 +11,8 @@ import (
 
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/ledger"
+	extchaincode "github.com/hyperledger/fabric/extensions/chaincode"
+	"github.com/hyperledger/fabric/extensions/chaincode/api"
 )
 
 var logger = flogging.MustGetLogger("cceventmgmt")
@@ -72,17 +74,8 @@ func (m *Mgr) HandleChaincodeDeploy(chainid string, chaincodeDefinitions []*Chai
 	// Read lock to allow concurrent deploy on multiple channels but to synchronize concurrent `chaincode install` operation
 	m.rwlock.RLock()
 	for _, chaincodeDefinition := range chaincodeDefinitions {
-		installed, dbArtifacts, err := m.infoProvider.RetrieveChaincodeArtifacts(chaincodeDefinition)
-		if err != nil {
-			return err
-		}
-		if !installed {
-			logger.Infof("Channel [%s]: Chaincode [%s] is not installed hence no need to create chaincode artifacts for endorsement",
-				chainid, chaincodeDefinition)
-			continue
-		}
 		m.callbackStatus.setDeployPending(chainid)
-		if err := m.invokeHandler(chainid, chaincodeDefinition, dbArtifacts); err != nil {
+		if err := m.invokeDeployHandler(chainid, chaincodeDefinition); err != nil {
 			logger.Warningf("Channel [%s]: Error while invoking a listener for handling chaincode install event: %s", chainid, err)
 			return err
 		}
@@ -147,11 +140,52 @@ func (m *Mgr) ChaincodeInstallDone(succeeded bool) {
 	}
 }
 
+func (m *Mgr) invokeDeployHandler(chainid string, chaincodeDefinition *ChaincodeDefinition) error {
+	ucc, ok := extchaincode.GetUCC(chaincodeDefinition.Name)
+	if ok {
+		if err := m.invokeInProcDeployHandler(chainid, chaincodeDefinition, ucc.GetDBArtifacts()); err != nil {
+			logger.Errorf("Channel [%s]: Error invoking a listener for applying DB artifacts in deploy of in-process chaincode [%s]: %s", chainid, chaincodeDefinition.Name, err)
+			return err
+		}
+		logger.Debugf("Channel [%s]: Handled chaincode deploy event for in-process chaincode [%s]", chainid, chaincodeDefinition.Name)
+		return nil
+	}
+
+	installed, dbArtifactsTar, err := m.infoProvider.RetrieveChaincodeArtifacts(chaincodeDefinition)
+	if err != nil {
+		return err
+	}
+	if !installed {
+		logger.Infof("Channel [%s]: Chaincode [%s] is not installed hence no need to create chaincode artifacts for endorsement",
+			chainid, chaincodeDefinition)
+		return nil
+	}
+
+	return m.invokeHandler(chainid, chaincodeDefinition, dbArtifactsTar)
+}
+
 func (m *Mgr) invokeHandler(chainid string, chaincodeDefinition *ChaincodeDefinition, dbArtifactsTar []byte) error {
 	listeners := m.ccLifecycleListeners[chainid]
 	for _, listener := range listeners {
 		if err := listener.HandleChaincodeDeploy(chaincodeDefinition, dbArtifactsTar); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func (m *Mgr) invokeInProcDeployHandler(chainid string, chaincodeDefinition *ChaincodeDefinition, dbArtifacts map[string]*api.DBArtifacts) error {
+	listeners := m.ccLifecycleListeners[chainid]
+	for _, listener := range listeners {
+		if err := listener.HandleChaincodeDeploy(chaincodeDefinition, nil); err != nil {
+			return err
+		}
+
+		if dbHandler, ok := listener.(InProcChaincodeLifecycleListener); ok {
+			logger.Debugf("Handling in-process chaincode deploy for [%s]", chaincodeDefinition.Name)
+			if err := dbHandler.HandleInProcChaincodeDeploy(chaincodeDefinition, dbArtifacts); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

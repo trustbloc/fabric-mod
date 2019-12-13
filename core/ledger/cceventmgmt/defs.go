@@ -11,6 +11,7 @@ import (
 
 	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/core/ledger"
+	"github.com/hyperledger/fabric/extensions/chaincode/api"
 )
 
 // ChaincodeDefinition captures the info about chaincode
@@ -26,6 +27,13 @@ func (cdef *ChaincodeDefinition) String() string {
 		return fmt.Sprintf("Name=%s, Version=%s, Hash=%x", cdef.Name, cdef.Version, cdef.Hash)
 	}
 	return "<nil>"
+}
+
+// InProcChaincodeLifecycleListener enables ledger components to handle in-process chaincode deploy events.
+type InProcChaincodeLifecycleListener interface {
+	// HandleInProcChaincodeDeploy applies all DB artifacts (including indexes)
+	// The given artifacts are mapped by DB type.
+	HandleInProcChaincodeDeploy(chaincodeDefinition *ChaincodeDefinition, artifacts map[string]*api.DBArtifacts) error
 }
 
 // ChaincodeLifecycleEventListener interface enables ledger components (mainly, intended for statedb)
