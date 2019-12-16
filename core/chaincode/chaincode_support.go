@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric-chaincode-go/shim"
 	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/chaincode/lifecycle"
@@ -20,6 +21,8 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/peer"
 	"github.com/hyperledger/fabric/core/scc"
+	extchaincode "github.com/hyperledger/fabric/extensions/chaincode"
+	"github.com/hyperledger/fabric/extensions/chaincode/api"
 	"github.com/pkg/errors"
 )
 
@@ -71,6 +74,23 @@ type ChaincodeSupport struct {
 	UserRunsCC             bool
 }
 
+func (cs *ChaincodeSupport) launch(ccName, ccVersion string) (*Handler, error) {
+	var ccid string
+	_, ok := extchaincode.GetUCC(ccName)
+	if ok {
+		// For in-process user chaincode, the CC ID is simply the name of the chaincode
+		ccid = ccName
+	} else {
+		// FIXME: this is a hack, we shouldn't construct the
+		// ccid manually but rather let lifecycle construct it
+		// for us. However this is legacy code that will disappear
+		// so it is acceptable for now (FAB-14627)
+		ccid = ccName + ":" + ccVersion
+	}
+
+	return cs.Launch(ccid)
+}
+
 // Launch starts executing chaincode if it is not already running. This method
 // blocks until the peer side handler gets into ready state or encounters a fatal
 // error. If the chaincode is already running, it simply returns.
@@ -79,8 +99,13 @@ func (cs *ChaincodeSupport) Launch(ccid string) (*Handler, error) {
 		return h, nil
 	}
 
-	if err := cs.Launcher.Launch(ccid); err != nil {
-		return nil, errors.Wrapf(err, "could not launch chaincode %s", ccid)
+	cc, exists := extchaincode.GetUCC(ccid)
+	if exists {
+		cs.launchInProc(cc)
+	} else {
+		if err := cs.Launcher.Launch(ccid); err != nil {
+			return nil, errors.Wrapf(err, "could not launch chaincode %s", ccid)
+		}
 	}
 
 	h := cs.HandlerRegistry.Handler(ccid)
@@ -133,13 +158,7 @@ func (cs *ChaincodeSupport) Register(stream pb.ChaincodeSupport_RegisterServer) 
 // It does not attempt to start the chaincode based on the information from lifecycle, but instead
 // accepts the container information directly in the form of a ChaincodeDeploymentSpec.
 func (cs *ChaincodeSupport) ExecuteLegacyInit(txParams *ccprovider.TransactionParams, ccName, ccVersion string, input *pb.ChaincodeInput) (*pb.Response, *pb.ChaincodeEvent, error) {
-	// FIXME: this is a hack, we shouldn't construct the
-	// ccid manually but rather let lifecycle construct it
-	// for us. However this is legacy code that will disappear
-	// so it is acceptable for now (FAB-14627)
-	ccid := ccName + ":" + ccVersion
-
-	h, err := cs.Launch(ccid)
+	h, err := cs.launch(ccName, ccVersion)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -285,6 +304,31 @@ func (cs *ChaincodeSupport) executeTimeout(namespace string, input *pb.Chaincode
 	default:
 		return cs.ExecuteTimeout
 	}
+}
+
+func (cs *ChaincodeSupport) launchInProc(cc api.UserCC) {
+	ccid := cc.Name()
+
+	chaincodeLogger.Debugf("Launching in-process user chaincode '%s'", ccid)
+
+	done := cs.LaunchInProc(ccid)
+
+	peerRcvCCSend := make(chan *pb.ChaincodeMessage)
+	ccRcvPeerSend := make(chan *pb.ChaincodeMessage)
+
+	// TODO, these go routines leak in test.
+	go func() {
+		chaincodeLogger.Debugf("starting chaincode-support stream for  %s", ccid)
+		err := cs.HandleChaincodeStream(newInProcStream(peerRcvCCSend, ccRcvPeerSend))
+		chaincodeLogger.Criticalf("shim stream ended with err: %v", err)
+	}()
+
+	go func(cc api.UserCC) {
+		chaincodeLogger.Infof("In-process user chaincode started for %s", ccid)
+		err := shim.StartInProc(ccid, newInProcStream(ccRcvPeerSend, peerRcvCCSend), cc.Chaincode())
+		chaincodeLogger.Criticalf("in-process user chaincode ended with err: %v", err)
+	}(cc)
+	<-done
 }
 
 func maxDuration(durations ...time.Duration) time.Duration {

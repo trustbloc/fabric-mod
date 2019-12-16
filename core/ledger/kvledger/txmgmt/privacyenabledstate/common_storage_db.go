@@ -22,6 +22,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/stateleveldb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
 	"github.com/hyperledger/fabric/core/ledger/util"
+	"github.com/hyperledger/fabric/extensions/chaincode/api"
 	"github.com/pkg/errors"
 )
 
@@ -332,6 +333,55 @@ func (s *CommonStorageDB) HandleChaincodeDeploy(chaincodeDefinition *cceventmgmt
 			}
 		}
 	}
+	return nil
+}
+
+// HandleInProcChaincodeDeploy adds DB indexes for the chaincode
+func (s *CommonStorageDB) HandleInProcChaincodeDeploy(chaincodeDefinition *cceventmgmt.ChaincodeDefinition, artifacts map[string]*api.DBArtifacts) error {
+	//Check to see if the interface for IndexCapable is implemented
+	indexCapable, ok := s.VersionedDB.(statedb.IndexCapable)
+	if !ok {
+		return nil
+	}
+
+	if chaincodeDefinition == nil {
+		return errors.New("chaincode definition not found while creating couchdb index")
+	}
+
+	dbArtifacts, ok := artifacts[indexCapable.GetDBType()]
+	if !ok {
+		logger.Debugf("No index definitions for DB of type [%s] for chaincode [%s]", indexCapable.GetDBType(), chaincodeDefinition.Name)
+		return nil
+	}
+
+	collectionConfigMap, err := extractCollectionNames(chaincodeDefinition)
+	if err != nil {
+		logger.Errorf("Error while retrieving collection config for chaincode=[%s]: %s",
+			chaincodeDefinition.Name, err)
+		return nil
+	}
+
+	logger.Debugf("Adding %d index(es) for chaincode [%s]", len(dbArtifacts.Indexes), chaincodeDefinition.Name)
+	if err := indexCapable.ProcessIndexes(chaincodeDefinition.Name, dbArtifacts.Indexes); err != nil {
+		logger.Errorf("Error processing index for chaincode [%s]: %s", chaincodeDefinition.Name, err)
+		return errors.Errorf("Error processing index for chaincode [%s]: %s", chaincodeDefinition.Name, err)
+	}
+
+	for collectionName, collectionIndexes := range dbArtifacts.CollectionIndexes {
+		// check for the dbArtifacts directory for the collection
+		_, ok := collectionConfigMap[collectionName]
+		if !ok {
+			logger.Errorf("Error processing index for chaincode [%s]: cannot create an index for an undefined collection=[%s]", chaincodeDefinition.Name, collectionName)
+			return errors.Errorf("Error processing index for chaincode [%s]: cannot create an index for an undefined collection=[%s]", chaincodeDefinition.Name, collectionName)
+		}
+
+		logger.Debugf("Adding %d index(es) for collection [%s] in chaincode [%s]", len(collectionIndexes), collectionName, chaincodeDefinition.Name)
+		if err := indexCapable.ProcessIndexes(derivePvtDataNs(chaincodeDefinition.Name, collectionName), collectionIndexes); err != nil {
+			logger.Errorf("Error processing collection index for chaincode [%s]: %s", chaincodeDefinition.Name, err)
+			return errors.Errorf("Error processing collection index for chaincode [%s]: %s", chaincodeDefinition.Name, err)
+		}
+	}
+
 	return nil
 }
 

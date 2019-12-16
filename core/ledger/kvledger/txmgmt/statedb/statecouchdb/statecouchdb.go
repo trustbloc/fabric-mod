@@ -271,6 +271,22 @@ func (vdb *VersionedDB) ProcessIndexesForChaincodeDeploy(namespace string, fileE
 	return nil
 }
 
+// ProcessIndexes creates indexes for a specified namespace
+func (vdb *VersionedDB) ProcessIndexes(namespace string, entries []string) error {
+	db, err := vdb.getNamespaceDBHandle(namespace)
+	if err != nil {
+		return err
+	}
+
+	for _, indexData := range entries {
+		logger.Debugf("Creating index for [%s]:\n%s", namespace, indexData)
+		if _, err := db.CreateIndex(indexData); err != nil {
+			return errors.WithMessagef(err, "error creating index for chaincode [%s]", namespace)
+		}
+	}
+	return nil
+}
+
 // GetDBType returns the hosted stateDB
 func (vdb *VersionedDB) GetDBType() string {
 	return "couchdb"

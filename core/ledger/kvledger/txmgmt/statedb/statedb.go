@@ -86,6 +86,7 @@ type BulkOptimizable interface {
 type IndexCapable interface {
 	GetDBType() string
 	ProcessIndexesForChaincodeDeploy(namespace string, fileEntries []*ccprovider.TarFileEntry) error
+	ProcessIndexes(namespace string, entries []string) error
 }
 
 // CompositeKey encloses Namespace and Key components
