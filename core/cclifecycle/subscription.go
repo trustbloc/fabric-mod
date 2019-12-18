@@ -12,6 +12,7 @@ import (
 
 	"github.com/hyperledger/fabric/common/chaincode"
 	"github.com/hyperledger/fabric/core/ledger/cceventmgmt"
+	extucc "github.com/hyperledger/fabric/extensions/chaincode"
 )
 
 // Subscription channels information flow
@@ -93,6 +94,12 @@ func queryChaincodeDefinitions(query Query, installedCCs []chaincode.InstalledCh
 	}
 
 	filter := func(cc chaincode.Metadata) bool {
+		_, exists := extucc.GetUCC(cc.Name)
+		if exists {
+			Logger.Debugf("Accepting chaincode [%s] since it's an in-process user chaincode", cc.Name)
+			return true
+		}
+
 		installedID, exists := installedCCsToIDs[deployedCCToNameVersion(cc)]
 		if !exists {
 			Logger.Debug("Chaincode", cc, "is instantiated but a different version is installed")

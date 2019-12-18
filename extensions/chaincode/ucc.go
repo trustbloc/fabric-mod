@@ -14,3 +14,12 @@ import (
 func GetUCC(ccID string) (api.UserCC, bool) {
 	return nil, false
 }
+
+// Chaincodes returns all registered in-process chaincodes
+func Chaincodes() []api.UserCC {
+	return nil
+}
+
+// WaitForReady blocks until the chaincodes are all registered
+func WaitForReady() {
+}

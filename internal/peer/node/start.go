@@ -364,18 +364,9 @@ func serve(args []string) error {
 
 	ccInfoFSImpl := &ccprovider.CCInfoFSImpl{GetHasher: factory.GetDefault()}
 
-	// legacyMetadataManager collects metadata information from the legacy
-	// lifecycle (lscc). This is expected to disappear with FAB-15061.
-	legacyMetadataManager, err := cclifecycle.NewMetadataManager(
-		cclifecycle.EnumerateFunc(
-			func() ([]ccdef.InstalledChaincode, error) {
-				return ccInfoFSImpl.ListInstalledChaincodes(ccInfoFSImpl.GetChaincodeInstallPath(), ioutil.ReadDir, ccprovider.LoadPackage)
-			},
-		),
-	)
-	if err != nil {
-		logger.Panicf("Failed creating LegacyMetadataManager: +%v", err)
-	}
+	// Configure CC package storage
+	lsccInstallPath := filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "chaincodes")
+	ccprovider.SetChaincodesPath(lsccInstallPath)
 
 	// metadataManager aggregates metadata information from _lifecycle and
 	// the legacy lifecycle (lscc).
@@ -433,10 +424,6 @@ func serve(args []string) error {
 			CollDataProvider:                collDataProvider,
 		},
 	)
-
-	// Configure CC package storage
-	lsccInstallPath := filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "chaincodes")
-	ccprovider.SetChaincodesPath(lsccInstallPath)
 
 	if err := lifecycleCache.InitializeLocalChaincodes(); err != nil {
 		return errors.WithMessage(err, "could not initialize local chaincodes")
@@ -716,6 +703,12 @@ func serve(args []string) error {
 	}
 	defer resource.Close()
 
+	logger.Debugf("Waiting for in-process chaincodes to be registered...")
+
+	extcc.WaitForReady()
+
+	logger.Debugf("... done registering in-process chaincodes.")
+
 	// get the list of system chain codes provided by extensions
 	extscc := extcc.CreateSCC(aclProvider, lifecycleValidatorCommitter)
 
@@ -733,6 +726,29 @@ func serve(args []string) error {
 	}
 
 	logger.Infof("Deployed system chaincodes")
+
+	// legacyMetadataManager collects metadata information from the legacy
+	// lifecycle (lscc). This is expected to disappear with FAB-15061.
+	legacyMetadataManager, err := cclifecycle.NewMetadataManager(
+		cclifecycle.EnumerateFunc(
+			func() ([]ccdef.InstalledChaincode, error) {
+				var installedCCs []ccdef.InstalledChaincode
+
+				ccs, err := ccInfoFSImpl.ListInstalledChaincodes(ccInfoFSImpl.GetChaincodeInstallPath(), ioutil.ReadDir, ccprovider.LoadPackage)
+				installedCCs = append(installedCCs, ccs...)
+
+				for _, cc := range extcc.Chaincodes() {
+					logger.Infof("... adding in-process chaincode [%s]", cc.Name())
+					installedCCs = append(installedCCs, ccdef.InstalledChaincode{Name: cc.Name()})
+				}
+
+				return installedCCs, err
+			},
+		),
+	)
+	if err != nil {
+		logger.Panicf("Failed creating LegacyMetadataManager: +%v", err)
+	}
 
 	// register the lifecycleMetadataManager to get updates from the legacy
 	// chaincode; lifecycleMetadataManager will aggregate these updates with
