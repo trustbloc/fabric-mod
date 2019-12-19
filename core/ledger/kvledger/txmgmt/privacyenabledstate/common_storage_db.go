@@ -23,6 +23,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
 	"github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/hyperledger/fabric/extensions/chaincode/api"
+	"github.com/hyperledger/fabric/extensions/roles"
 	"github.com/pkg/errors"
 )
 
@@ -338,6 +339,11 @@ func (s *CommonStorageDB) HandleChaincodeDeploy(chaincodeDefinition *cceventmgmt
 
 // HandleInProcChaincodeDeploy adds DB indexes for the chaincode
 func (s *CommonStorageDB) HandleInProcChaincodeDeploy(chaincodeDefinition *cceventmgmt.ChaincodeDefinition, artifacts map[string]*api.DBArtifacts) error {
+	if !roles.IsCommitter() {
+		logger.Debugf("Not processing indexes for chaincode [%s] since this peer does not have the 'committer' role", chaincodeDefinition.Name)
+		return nil
+	}
+
 	//Check to see if the interface for IndexCapable is implemented
 	indexCapable, ok := s.VersionedDB.(statedb.IndexCapable)
 	if !ok {
