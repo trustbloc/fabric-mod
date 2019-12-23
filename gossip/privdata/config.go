@@ -9,7 +9,7 @@ package privdata
 import (
 	"time"
 
-	"github.com/spf13/viper"
+	viper "github.com/spf13/viper2015"
 )
 
 const (

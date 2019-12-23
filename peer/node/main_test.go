@@ -13,7 +13,7 @@ import (
 
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/viper2015"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"

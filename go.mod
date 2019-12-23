@@ -44,11 +44,10 @@ require (
 	github.com/pkg/errors v0.8.1
 	github.com/prometheus/client_golang v1.1.0
 	github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a
-	github.com/spf13/cast v1.3.0 // indirect
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.3
-	github.com/spf13/viper v1.3.2
+	github.com/spf13/viper2015 v1.3.2
 	github.com/stretchr/testify v1.4.0
 	github.com/sykesm/zap-logfmt v0.0.2
 	github.com/syndtr/goleveldb v0.0.0-20190625010220-02440ea7a285
@@ -74,6 +73,6 @@ replace github.com/hyperledger/fabric/extensions => ./extensions
 
 replace github.com/hyperledger/fabric-protos-go => github.com/trustbloc/fabric-protos-go-ext v0.1.1-0.20191126151100-5a61374c2e1b
 
-replace github.com/spf13/viper => github.com/spf13/viper v0.0.0-20150908122457-1967d93db724
+replace github.com/spf13/viper2015 => github.com/spf13/viper v0.0.0-20150908122457-1967d93db724
 
 go 1.13

@@ -19,7 +19,7 @@ import (
 	"github.com/hyperledger/fabric/internal/pkg/identity"
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
 	"github.com/hyperledger/fabric/protoutil"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/viper2015"
 	"github.com/stretchr/testify/assert"
 )
 

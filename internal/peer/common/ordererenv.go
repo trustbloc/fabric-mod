@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/viper2015"
 )
 
 var (

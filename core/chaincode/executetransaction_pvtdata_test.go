@@ -15,7 +15,7 @@ import (
 	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/peer"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/viper2015"
 	"github.com/stretchr/testify/assert"
 )
 

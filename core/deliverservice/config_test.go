@@ -19,7 +19,7 @@ import (
 
 	"github.com/hyperledger/fabric/core/comm"
 	"github.com/hyperledger/fabric/core/deliverservice"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/viper2015"
 )
 
 func TestSecureOptsConfig(t *testing.T) {

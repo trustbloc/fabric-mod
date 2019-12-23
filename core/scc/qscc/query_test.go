@@ -28,7 +28,7 @@ import (
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/viper2015"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

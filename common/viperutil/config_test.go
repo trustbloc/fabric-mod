@@ -17,7 +17,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/hyperledger/fabric/orderer/mocks/util"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/viper2015"
 )
 
 const Prefix = "VIPERUTIL"

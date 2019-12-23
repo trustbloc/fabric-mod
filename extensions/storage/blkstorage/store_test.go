@@ -17,7 +17,7 @@ import (
 
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	coreconfig "github.com/hyperledger/fabric/core/config"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/viper2015"
 	"github.com/stretchr/testify/require"
 )
 
