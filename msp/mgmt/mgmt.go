@@ -16,7 +16,7 @@ import (
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/msp/cache"
 	"github.com/pkg/errors"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/viper2015"
 )
 
 // LoadLocalMspWithType loads the local MSP with the specified type from the specified directory

@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spf13/viper"
+	viper "github.com/spf13/viper2015"
 )
 
 func init() { // do we really need this?

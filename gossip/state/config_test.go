@@ -13,7 +13,7 @@ import (
 	"github.com/hyperledger/fabric/gossip/state"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/spf13/viper"
+	viper "github.com/spf13/viper2015"
 )
 
 func TestGlobalConfig(t *testing.T) {

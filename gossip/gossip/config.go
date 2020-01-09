@@ -17,7 +17,7 @@ import (
 	"github.com/hyperledger/fabric/gossip/election"
 	"github.com/hyperledger/fabric/gossip/gossip/algo"
 	"github.com/hyperledger/fabric/gossip/util"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/viper2015"
 )
 
 // Config is the configuration of the gossip component

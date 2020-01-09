@@ -14,7 +14,7 @@ import (
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/viperutil"
 	coreconfig "github.com/hyperledger/fabric/core/config"
-	"github.com/spf13/viper"
+	viper "github.com/spf13/viper2015"
 )
 
 // Prefix for environment variables.
