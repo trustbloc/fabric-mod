@@ -10,8 +10,8 @@ import (
 	"github.com/hyperledger/fabric/extensions/chaincode/api"
 )
 
-// GetUCC returns the in-process user chaincode for the given ID
-func GetUCC(ccID string) (api.UserCC, bool) {
+// GetUCC returns the in-process user chaincode for the given name and version
+func GetUCC(name, version string) (api.UserCC, bool) {
 	return nil, false
 }
 
@@ -22,4 +22,9 @@ func Chaincodes() []api.UserCC {
 
 // WaitForReady blocks until the chaincodes are all registered
 func WaitForReady() {
+}
+
+// GetID returns the ID of the chaincode which includes the name and version
+func GetID(cc api.UserCC) string {
+	return cc.Name() + ":" + cc.Version()
 }

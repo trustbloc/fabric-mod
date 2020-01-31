@@ -19,5 +19,6 @@ type DBArtifacts struct {
 // UserCC contains information about an in-process user chaincode
 type UserCC interface {
 	scc.SelfDescribingSysCC
+	Version() string
 	GetDBArtifacts() map[string]*DBArtifacts
 }

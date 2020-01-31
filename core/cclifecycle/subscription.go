@@ -94,7 +94,7 @@ func queryChaincodeDefinitions(query Query, installedCCs []chaincode.InstalledCh
 	}
 
 	filter := func(cc chaincode.Metadata) bool {
-		_, exists := extucc.GetUCC(cc.Name)
+		_, exists := extucc.GetUCC(cc.Name, cc.Version)
 		if exists {
 			Logger.Debugf("Accepting chaincode [%s] since it's an in-process user chaincode", cc.Name)
 			return true

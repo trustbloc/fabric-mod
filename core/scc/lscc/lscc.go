@@ -264,18 +264,13 @@ func (lscc *SCC) ChaincodeEndorsementInfo(channelID, chaincodeName string, qe le
 		Support: lscc.Support,
 	}
 
-	if _, exists := extchaincode.GetUCC(chaincodeName); exists {
-		return &lifecycle.ChaincodeEndorsementInfo{
-			Version:           chaincodeData.Version,
-			EndorsementPlugin: chaincodeData.Escc,
-			ChaincodeID:       chaincodeData.Name,
-		}, nil
+	if _, exists := extchaincode.GetUCC(chaincodeData.Name, chaincodeData.Version); !exists {
+		err = ls.SecurityCheckLegacyChaincode(chaincodeData)
+		if err != nil {
+			return nil, errors.WithMessage(err, "failed security checks")
+		}
 	}
 
-	err = ls.SecurityCheckLegacyChaincode(chaincodeData)
-	if err != nil {
-		return nil, errors.WithMessage(err, "failed security checks")
-	}
 	return &lifecycle.ChaincodeEndorsementInfo{
 		Version:           chaincodeData.Version,
 		EndorsementPlugin: chaincodeData.Escc,
@@ -768,7 +763,7 @@ func (lscc *SCC) executeDeployOrUpgrade(
 
 	var ccpack ccprovider.CCPackage
 	var cd *ccprovider.ChaincodeData
-	if _, exists := extchaincode.GetUCC(chaincodeName); exists {
+	if _, exists := extchaincode.GetUCC(chaincodeName, chaincodeVersion); exists {
 		cd = &ccprovider.ChaincodeData{
 			Name:    cds.ChaincodeSpec.ChaincodeId.Name,
 			Version: cds.ChaincodeSpec.ChaincodeId.Version,

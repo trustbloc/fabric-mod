@@ -141,7 +141,7 @@ func (m *Mgr) ChaincodeInstallDone(succeeded bool) {
 }
 
 func (m *Mgr) invokeDeployHandler(chainid string, chaincodeDefinition *ChaincodeDefinition) error {
-	ucc, ok := extchaincode.GetUCC(chaincodeDefinition.Name)
+	ucc, ok := extchaincode.GetUCC(chaincodeDefinition.Name, chaincodeDefinition.Version)
 	if ok {
 		if err := m.invokeInProcDeployHandler(chainid, chaincodeDefinition, ucc.GetDBArtifacts()); err != nil {
 			logger.Errorf("Channel [%s]: Error invoking a listener for applying DB artifacts in deploy of in-process chaincode [%s]: %s", chainid, chaincodeDefinition.Name, err)

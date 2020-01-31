@@ -8,6 +8,7 @@ package chaincode
 
 import (
 	"bytes"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -21,7 +22,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/peer"
 	"github.com/hyperledger/fabric/core/scc"
-	extchaincode "github.com/hyperledger/fabric/extensions/chaincode"
+	extcc "github.com/hyperledger/fabric/extensions/chaincode"
 	"github.com/hyperledger/fabric/extensions/chaincode/api"
 	"github.com/pkg/errors"
 )
@@ -75,18 +76,11 @@ type ChaincodeSupport struct {
 }
 
 func (cs *ChaincodeSupport) launch(ccName, ccVersion string) (*Handler, error) {
-	var ccid string
-	_, ok := extchaincode.GetUCC(ccName)
-	if ok {
-		// For in-process user chaincode, the CC ID is simply the name of the chaincode
-		ccid = ccName
-	} else {
-		// FIXME: this is a hack, we shouldn't construct the
-		// ccid manually but rather let lifecycle construct it
-		// for us. However this is legacy code that will disappear
-		// so it is acceptable for now (FAB-14627)
-		ccid = ccName + ":" + ccVersion
-	}
+	// FIXME: this is a hack, we shouldn't construct the
+	// ccid manually but rather let lifecycle construct it
+	// for us. However this is legacy code that will disappear
+	// so it is acceptable for now (FAB-14627)
+	ccid := ccName + ":" + ccVersion
 
 	return cs.Launch(ccid)
 }
@@ -99,16 +93,24 @@ func (cs *ChaincodeSupport) Launch(ccid string) (*Handler, error) {
 		return h, nil
 	}
 
-	cc, exists := extchaincode.GetUCC(ccid)
+	var h *Handler
+
+	name, version := getNameAndVersion(ccid)
+
+	cc, exists := extcc.GetUCC(name, version)
 	if exists {
+		chaincodeLogger.Infof(".. found in-process user chaincode for [%s]: [%s]. Attempting to launch...", ccid, extcc.GetID(cc))
 		cs.launchInProc(cc)
+
+		h = cs.HandlerRegistry.Handler(extcc.GetID(cc))
 	} else {
 		if err := cs.Launcher.Launch(ccid); err != nil {
 			return nil, errors.Wrapf(err, "could not launch chaincode %s", ccid)
 		}
+
+		h = cs.HandlerRegistry.Handler(ccid)
 	}
 
-	h := cs.HandlerRegistry.Handler(ccid)
 	if h == nil {
 		return nil, errors.Errorf("claimed to start chaincode container for %s but could not find handler", ccid)
 	}
@@ -307,11 +309,17 @@ func (cs *ChaincodeSupport) executeTimeout(namespace string, input *pb.Chaincode
 }
 
 func (cs *ChaincodeSupport) launchInProc(cc api.UserCC) {
-	ccid := cc.Name()
+	ccid := extcc.GetID(cc)
+
+	launchStatus, ok := cs.HandlerRegistry.Launching(ccid)
+	if ok {
+		chaincodeLogger.Infof("In-process user chaincode already launched [%s]", ccid)
+		return
+	}
 
 	chaincodeLogger.Debugf("Launching in-process user chaincode '%s'", ccid)
 
-	done := cs.LaunchInProc(ccid)
+	done := launchStatus.Done()
 
 	peerRcvCCSend := make(chan *pb.ChaincodeMessage)
 	ccRcvPeerSend := make(chan *pb.ChaincodeMessage)
@@ -352,4 +360,18 @@ func logDevModeError(userRunsCC bool) {
 	if userRunsCC {
 		chaincodeLogger.Error("You are attempting to perform an action other than Deploy on Chaincode that is not ready and you are in developer mode. Did you forget to Deploy your chaincode?")
 	}
+}
+
+func getNameAndVersion(id string) (name string, version string) {
+	parts := strings.Split(id, ":")
+
+	if len(parts) > 0 {
+		name = parts[0]
+	}
+
+	if len(parts) > 1 {
+		version = parts[1]
+	}
+
+	return
 }

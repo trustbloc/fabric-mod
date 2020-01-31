@@ -21,6 +21,7 @@ import (
 	"github.com/hyperledger/fabric/bccsp/sw"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt/ledgermgmttest"
+	"github.com/stretchr/testify/require"
 
 	docker "github.com/fsouza/go-dockerclient"
 	"github.com/golang/protobuf/proto"
@@ -1291,4 +1292,10 @@ func TestMaxDuration(t *testing.T) {
 		result := maxDuration(tt.durations...)
 		assert.Equalf(t, tt.expected, result, "want %s got %s", tt.expected, result)
 	}
+}
+
+func TestGetNameAndVersion(t *testing.T) {
+	name, version := getNameAndVersion("cc1:v1")
+	require.Equal(t, "cc1", name)
+	require.Equal(t, "v1", version)
 }

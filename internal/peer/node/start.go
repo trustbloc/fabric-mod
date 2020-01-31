@@ -738,8 +738,11 @@ func serve(args []string) error {
 				installedCCs = append(installedCCs, ccs...)
 
 				for _, cc := range extcc.Chaincodes() {
-					logger.Infof("... adding in-process chaincode [%s]", cc.Name())
-					installedCCs = append(installedCCs, ccdef.InstalledChaincode{Name: cc.Name()})
+					logger.Infof("... adding in-process chaincode [%s]", extcc.GetID(cc))
+					installedCCs = append(installedCCs, ccdef.InstalledChaincode{
+						Name:    cc.Name(),
+						Version: cc.Version(),
+					})
 				}
 
 				return installedCCs, err
