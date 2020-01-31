@@ -15,9 +15,3 @@ import (
 func TestCreateSCC(t *testing.T) {
 	require.Empty(t, CreateSCC())
 }
-
-func TestGetUCC(t *testing.T) {
-	cc, ok := GetUCC("")
-	require.False(t, ok)
-	require.Nil(t, cc)
-}
