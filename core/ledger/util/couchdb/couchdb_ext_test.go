@@ -25,10 +25,9 @@ const testIndexDef = `
 	}`
 
 func TestCreateIndexWithRetry(t *testing.T) {
+	startCouchDB()
+
 	database := "testcreateindexwithretry"
-	err := cleanup(database)
-	require.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
-	defer cleanup(database)
 
 	//create a new instance and database object
 	couchInstance, err := CreateCouchInstance(testConfig(), &disabled.Provider{})
@@ -50,10 +49,9 @@ func TestCreateIndexWithRetry(t *testing.T) {
 }
 
 func TestIndexDesignDocExists(t *testing.T) {
+	startCouchDB()
+
 	database := "testindexdesigndocexists"
-	err := cleanup(database)
-	require.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
-	defer cleanup(database)
 
 	//create a new instance and database object
 	couchInstance, err := CreateCouchInstance(testConfig(), &disabled.Provider{})
@@ -80,10 +78,9 @@ func TestIndexDesignDocExists(t *testing.T) {
 }
 
 func TestIndexDesignDocExistsWithRetry(t *testing.T) {
+	startCouchDB()
+
 	database := "testindexdesigndocexistswithretry"
-	err := cleanup(database)
-	require.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
-	defer cleanup(database)
 
 	config := testConfig()
 	config.MaxRetries = 5
@@ -116,10 +113,9 @@ func TestIndexDesignDocExistsWithRetry(t *testing.T) {
 }
 
 func TestDBExists(t *testing.T) {
+	startCouchDB()
+
 	database := "testdbexists"
-	err := cleanup(database)
-	require.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
-	defer cleanup(database)
 
 	//create a new instance and database object
 	couchInstance, err := CreateCouchInstance(testConfig(), &disabled.Provider{})
@@ -142,10 +138,9 @@ func TestDBExists(t *testing.T) {
 }
 
 func TestDBExistsWithRetry(t *testing.T) {
+	startCouchDB()
+
 	database := "testdbexistswithretry"
-	err := cleanup(database)
-	require.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
-	defer cleanup(database)
 
 	config := testConfig()
 

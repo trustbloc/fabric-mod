@@ -59,6 +59,9 @@ func (p *PackageInput) Validate() error {
 	if p.Label == "" {
 		return errors.New("package label must be specified")
 	}
+	if err := persistence.ValidateLabel(p.Label); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -211,9 +214,9 @@ func writeBytesToPackage(tw *tar.Writer, name string, payload []byte) error {
 
 // PackageMetadata holds the path and type for a chaincode package
 type PackageMetadata struct {
-	Path  string `json:"Path"`
-	Type  string `json:"Type"`
-	Label string `json:"Label"`
+	Path  string `json:"path"`
+	Type  string `json:"type"`
+	Label string `json:"label"`
 }
 
 func toJSON(path, ccType, label string) ([]byte, error) {

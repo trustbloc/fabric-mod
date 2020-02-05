@@ -43,6 +43,7 @@ import (
 	"github.com/hyperledger/fabric/core/cclifecycle"
 	"github.com/hyperledger/fabric/core/chaincode"
 	"github.com/hyperledger/fabric/core/chaincode/accesscontrol"
+	"github.com/hyperledger/fabric/core/chaincode/extcc"
 	"github.com/hyperledger/fabric/core/chaincode/lifecycle"
 	"github.com/hyperledger/fabric/core/chaincode/persistence"
 	"github.com/hyperledger/fabric/core/chaincode/platforms"
@@ -79,7 +80,7 @@ import (
 	ccsupport "github.com/hyperledger/fabric/discovery/support/chaincode"
 	"github.com/hyperledger/fabric/discovery/support/config"
 	"github.com/hyperledger/fabric/discovery/support/gossip"
-	extcc "github.com/hyperledger/fabric/extensions/chaincode"
+	extchaincode "github.com/hyperledger/fabric/extensions/chaincode"
 	collretriever "github.com/hyperledger/fabric/extensions/collections/retriever"
 	extcscc "github.com/hyperledger/fabric/extensions/cscc"
 	"github.com/hyperledger/fabric/extensions/resource"
@@ -137,10 +138,10 @@ type externalVMAdapter struct {
 
 func (e externalVMAdapter) Build(
 	ccid string,
-	metadata *persistence.ChaincodePackageMetadata,
+	mdBytes []byte,
 	codePackage io.Reader,
 ) (container.Instance, error) {
-	i, err := e.detector.Build(ccid, metadata, codePackage)
+	i, err := e.detector.Build(ccid, mdBytes, codePackage)
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +165,19 @@ func (e endorserChannelAdapter) Channel(channelID string) *endorser.Channel {
 	}
 
 	return nil
+}
+
+type custodianLauncherAdapter struct {
+	launcher      chaincode.Launcher
+	streamHandler extcc.StreamHandler
+}
+
+func (c custodianLauncherAdapter) Launch(ccid string) error {
+	return c.launcher.Launch(ccid, c.streamHandler)
+}
+
+func (c custodianLauncherAdapter) Stop(ccid string) error {
+	return c.launcher.Stop(ccid)
 }
 
 func serve(args []string) error {
@@ -480,54 +494,59 @@ func serve(args []string) error {
 		CCID:            scc.ChaincodeID(lifecycle.LifecycleNamespace),
 		HandlerRegistry: chaincodeHandlerRegistry,
 	}
-	var client *docker.Client
-	if coreConfig.VMDockerTLSEnabled {
-		client, err = docker.NewTLSClient(coreConfig.VMEndpoint, coreConfig.DockerCert, coreConfig.DockerKey, coreConfig.DockerCA)
-	} else {
-		client, err = docker.NewClient(coreConfig.VMEndpoint)
-	}
-	if err != nil {
-		logger.Panicf("cannot create docker client: %s", err)
+
+	if coreConfig.VMEndpoint == "" && len(coreConfig.ExternalBuilders) == 0 {
+		logger.Panic("VMEndpoint not set and no ExternalBuilders defined")
 	}
 
 	chaincodeConfig := chaincode.GlobalConfig()
 
-	dockerVM := &dockercontroller.DockerVM{
-		PeerID:        coreConfig.PeerID,
-		NetworkID:     coreConfig.NetworkID,
-		BuildMetrics:  dockercontroller.NewBuildMetrics(opsSystem.Provider),
-		Client:        client,
-		AttachStdOut:  coreConfig.VMDockerAttachStdout,
-		HostConfig:    getDockerHostConfig(),
-		ChaincodePull: coreConfig.ChaincodePull,
-		NetworkMode:   coreConfig.VMNetworkMode,
-		PlatformBuilder: &platforms.Builder{
-			Registry: platformRegistry,
-			Client:   client,
-		},
-		// This field is superfluous for chaincodes built with v2.0+ binaries
-		// however, to prevent users from being forced to rebuild leaving for now
-		// but it should be removed in the future.
-		LoggingEnv: []string{
-			"CORE_CHAINCODE_LOGGING_LEVEL=" + chaincodeConfig.LogLevel,
-			"CORE_CHAINCODE_LOGGING_SHIM=" + chaincodeConfig.ShimLogLevel,
-			"CORE_CHAINCODE_LOGGING_FORMAT=" + chaincodeConfig.LogFormat,
-		},
-	}
-	if err := opsSystem.RegisterChecker("docker", dockerVM); err != nil {
-		logger.Panicf("failed to register docker health check: %s", err)
+	var client *docker.Client
+	var dockerVM *dockercontroller.DockerVM
+	if coreConfig.VMEndpoint != "" {
+		client, err = createDockerClient(coreConfig)
+		if err != nil {
+			logger.Panicf("cannot create docker client: %s", err)
+		}
+
+		dockerVM = &dockercontroller.DockerVM{
+			PeerID:        coreConfig.PeerID,
+			NetworkID:     coreConfig.NetworkID,
+			BuildMetrics:  dockercontroller.NewBuildMetrics(opsSystem.Provider),
+			Client:        client,
+			AttachStdOut:  coreConfig.VMDockerAttachStdout,
+			HostConfig:    getDockerHostConfig(),
+			ChaincodePull: coreConfig.ChaincodePull,
+			NetworkMode:   coreConfig.VMNetworkMode,
+			PlatformBuilder: &platforms.Builder{
+				Registry: platformRegistry,
+				Client:   client,
+			},
+			// This field is superfluous for chaincodes built with v2.0+ binaries
+			// however, to prevent users from being forced to rebuild leaving for now
+			// but it should be removed in the future.
+			LoggingEnv: []string{
+				"CORE_CHAINCODE_LOGGING_LEVEL=" + chaincodeConfig.LogLevel,
+				"CORE_CHAINCODE_LOGGING_SHIM=" + chaincodeConfig.ShimLogLevel,
+				"CORE_CHAINCODE_LOGGING_FORMAT=" + chaincodeConfig.LogFormat,
+			},
+			MSPID: mspID,
+		}
+		if err := opsSystem.RegisterChecker("docker", dockerVM); err != nil {
+			logger.Panicf("failed to register docker health check: %s", err)
+		}
 	}
 
 	externalVM := &externalbuilder.Detector{
-		Builders:    externalbuilder.CreateBuilders(coreConfig.ExternalBuilders),
+		Builders:    externalbuilder.CreateBuilders(coreConfig.ExternalBuilders, mspID),
 		DurablePath: externalBuilderOutput,
 	}
 
 	buildRegistry := &container.BuildRegistry{}
 
 	containerRouter := &container.Router{
-		DockerVM:   dockerVM,
-		ExternalVM: externalVMAdapter{externalVM},
+		DockerBuilder:   dockerVM,
+		ExternalBuilder: externalVMAdapter{externalVM},
 		PackageProvider: &persistence.FallbackPackageLocator{
 			ChaincodePackageLocator: &persistence.ChaincodePackageLocator{
 				ChaincodeDir: chaincodeInstallPath,
@@ -591,21 +610,20 @@ func serve(args []string) error {
 	}
 
 	chaincodeLauncher := &chaincode.RuntimeLauncher{
-		Metrics:        chaincode.NewLaunchMetrics(opsSystem.Provider),
-		Registry:       chaincodeHandlerRegistry,
-		Runtime:        containerRuntime,
-		StartupTimeout: chaincodeConfig.StartupTimeout,
-		CertGenerator:  authenticator,
-		CACert:         ca.CertBytes(),
-		PeerAddress:    ccEndpoint,
+		Metrics:           chaincode.NewLaunchMetrics(opsSystem.Provider),
+		Registry:          chaincodeHandlerRegistry,
+		Runtime:           containerRuntime,
+		StartupTimeout:    chaincodeConfig.StartupTimeout,
+		CertGenerator:     authenticator,
+		CACert:            ca.CertBytes(),
+		PeerAddress:       ccEndpoint,
+		ConnectionHandler: &extcc.ExternalChaincodeRuntime{},
 	}
 
 	// Keep TestQueries working
 	if !chaincodeConfig.TLSEnabled {
 		chaincodeLauncher.CertGenerator = nil
 	}
-
-	go chaincodeCustodian.Work(buildRegistry, containerRouter, chaincodeLauncher)
 
 	chaincodeSupport := &chaincode.ChaincodeSupport{
 		ACLProvider:            aclProvider,
@@ -624,6 +642,12 @@ func serve(args []string) error {
 		TotalQueryLimit:        chaincodeConfig.TotalQueryLimit,
 		UserRunsCC:             userRunsCC,
 	}
+
+	custodianLauncher := custodianLauncherAdapter{
+		launcher:      chaincodeLauncher,
+		streamHandler: chaincodeSupport,
+	}
+	go chaincodeCustodian.Work(buildRegistry, containerRouter, custodianLauncher)
 
 	ccSupSrv := pb.ChaincodeSupportServer(chaincodeSupport)
 	if tlsEnabled {
@@ -705,12 +729,12 @@ func serve(args []string) error {
 
 	logger.Debugf("Waiting for in-process chaincodes to be registered...")
 
-	extcc.WaitForReady()
+	extchaincode.WaitForReady()
 
 	logger.Debugf("... done registering in-process chaincodes.")
 
 	// get the list of system chain codes provided by extensions
-	extscc := extcc.CreateSCC(aclProvider, lifecycleValidatorCommitter)
+	extscc := extchaincode.CreateSCC(aclProvider, lifecycleValidatorCommitter)
 
 	var chaincodes []scc.SelfDescribingSysCC
 	chaincodes = append(chaincodes, lsccInst, csccInst, qsccInst, lifecycleSCC)
@@ -737,8 +761,8 @@ func serve(args []string) error {
 				ccs, err := ccInfoFSImpl.ListInstalledChaincodes(ccInfoFSImpl.GetChaincodeInstallPath(), ioutil.ReadDir, ccprovider.LoadPackage)
 				installedCCs = append(installedCCs, ccs...)
 
-				for _, cc := range extcc.Chaincodes() {
-					logger.Infof("... adding in-process chaincode [%s]", extcc.GetID(cc))
+				for _, cc := range extchaincode.Chaincodes() {
+					logger.Infof("... adding in-process chaincode [%s]", extchaincode.GetID(cc))
 					installedCCs = append(installedCCs, ccdef.InstalledChaincode{
 						Name:    cc.Name(),
 						Version: cc.Version(),
@@ -967,7 +991,7 @@ func registerDiscoveryService(
 	discprotos.RegisterDiscoveryServer(peerServer.Server(), svc)
 }
 
-//create a CC listener using peer.chaincodeListenAddress (and if that's not set use peer.peerAddress)
+// create a CC listener using peer.chaincodeListenAddress (and if that's not set use peer.peerAddress)
 func createChaincodeServer(coreConfig *peer.Config, ca tlsgen.CA, peerHostname string) (srv *comm.GRPCServer, ccEndpoint string, err error) {
 	// before potentially setting chaincodeListenAddress, compute chaincode endpoint at first
 	ccEndpoint, err = computeChaincodeEndpoint(coreConfig.ChaincodeAddress, coreConfig.ChaincodeListenAddress, peerHostname)
@@ -1108,6 +1132,13 @@ func computeChaincodeEndpoint(chaincodeAddress string, chaincodeListenAddress st
 
 	logger.Infof("Exit with ccEndpoint: %s", ccEndpoint)
 	return ccEndpoint, nil
+}
+
+func createDockerClient(coreConfig *peer.Config) (*docker.Client, error) {
+	if coreConfig.VMDockerTLSEnabled {
+		return docker.NewTLSClient(coreConfig.VMEndpoint, coreConfig.DockerCert, coreConfig.DockerKey, coreConfig.DockerCA)
+	}
+	return docker.NewClient(coreConfig.VMEndpoint)
 }
 
 // secureDialOpts is the callback function for secure dial options for gossip service

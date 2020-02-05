@@ -200,8 +200,8 @@ type endorsementPolicy struct {
 type collectionConfigJson struct {
 	Name              string             `json:"name"`
 	Policy            string             `json:"policy"`
-	RequiredPeerCount int32              `json:"requiredPeerCount"`
-	MaxPeerCount      int32              `json:"maxPeerCount"`
+	RequiredPeerCount *int32             `json:"requiredPeerCount"`
+	MaxPeerCount      *int32             `json:"maxPeerCount"`
 	BlockToLive       uint64             `json:"blockToLive"`
 	MemberOnlyRead    bool               `json:"memberOnlyRead"`
 	MemberOnlyWrite   bool               `json:"memberOnlyWrite"`
@@ -256,6 +256,16 @@ func getCollectionConfigFromBytes(cconfBytes []byte) (*pb.CollectionConfigPackag
 			}
 		}
 
+		// Set default requiredPeerCount and MaxPeerCount if not specified in json
+		requiredPeerCount := int32(0)
+		maxPeerCount := int32(1)
+		if cconfitem.RequiredPeerCount != nil {
+			requiredPeerCount = *cconfitem.RequiredPeerCount
+		}
+		if cconfitem.MaxPeerCount != nil {
+			maxPeerCount = *cconfitem.MaxPeerCount
+		}
+
 		var cc *pb.CollectionConfig
 		switch cconfitem.Type {
 		case CollectionType_TRANSIENT:
@@ -264,8 +274,8 @@ func getCollectionConfigFromBytes(cconfBytes []byte) (*pb.CollectionConfigPackag
 					StaticCollectionConfig: &pb.StaticCollectionConfig{
 						Name:              cconfitem.Name,
 						MemberOrgsPolicy:  cpc,
-						RequiredPeerCount: cconfitem.RequiredPeerCount,
-						MaximumPeerCount:  cconfitem.MaxPeerCount,
+						RequiredPeerCount: requiredPeerCount,
+						MaximumPeerCount:  maxPeerCount,
 						MemberOnlyRead:    cconfitem.MemberOnlyRead,
 						MemberOnlyWrite:   cconfitem.MemberOnlyWrite,
 						EndorsementPolicy: ep,
@@ -280,8 +290,8 @@ func getCollectionConfigFromBytes(cconfBytes []byte) (*pb.CollectionConfigPackag
 					StaticCollectionConfig: &pb.StaticCollectionConfig{
 						Name:              cconfitem.Name,
 						MemberOrgsPolicy:  cpc,
-						RequiredPeerCount: cconfitem.RequiredPeerCount,
-						MaximumPeerCount:  cconfitem.MaxPeerCount,
+						RequiredPeerCount: requiredPeerCount,
+						MaximumPeerCount:  maxPeerCount,
 						MemberOnlyRead:    cconfitem.MemberOnlyRead,
 						MemberOnlyWrite:   cconfitem.MemberOnlyWrite,
 						EndorsementPolicy: ep,
@@ -296,8 +306,8 @@ func getCollectionConfigFromBytes(cconfBytes []byte) (*pb.CollectionConfigPackag
 					StaticCollectionConfig: &pb.StaticCollectionConfig{
 						Name:              cconfitem.Name,
 						MemberOrgsPolicy:  cpc,
-						RequiredPeerCount: cconfitem.RequiredPeerCount,
-						MaximumPeerCount:  cconfitem.MaxPeerCount,
+						RequiredPeerCount: requiredPeerCount,
+						MaximumPeerCount:  maxPeerCount,
 						MemberOnlyRead:    cconfitem.MemberOnlyRead,
 						MemberOnlyWrite:   cconfitem.MemberOnlyWrite,
 						EndorsementPolicy: ep,
@@ -314,8 +324,8 @@ func getCollectionConfigFromBytes(cconfBytes []byte) (*pb.CollectionConfigPackag
 					StaticCollectionConfig: &pb.StaticCollectionConfig{
 						Name:              cconfitem.Name,
 						MemberOrgsPolicy:  cpc,
-						RequiredPeerCount: cconfitem.RequiredPeerCount,
-						MaximumPeerCount:  cconfitem.MaxPeerCount,
+						RequiredPeerCount: requiredPeerCount,
+						MaximumPeerCount:  maxPeerCount,
 						BlockToLive:       cconfitem.BlockToLive,
 						MemberOnlyRead:    cconfitem.MemberOnlyRead,
 						MemberOnlyWrite:   cconfitem.MemberOnlyWrite,

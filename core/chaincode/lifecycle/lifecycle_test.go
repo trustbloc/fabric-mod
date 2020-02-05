@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/golang/protobuf/proto"
+	cb "github.com/hyperledger/fabric-protos-go/common"
 	pb "github.com/hyperledger/fabric-protos-go/peer"
 	lb "github.com/hyperledger/fabric-protos-go/peer/lifecycle"
 	"github.com/hyperledger/fabric/common/chaincode"
@@ -59,6 +60,16 @@ var _ = Describe("ChaincodeParameters", func() {
 			})
 		})
 
+		Context("when the InitRequired differs from the current definition", func() {
+			BeforeEach(func() {
+				rhs.EndorsementInfo.InitRequired = true
+			})
+
+			It("returns an error", func() {
+				Expect(lhs.Equal(rhs)).To(MatchError("InitRequired 'false' != 'true'"))
+			})
+		})
+
 		Context("when the ValidationPlugin differs from the current definition", func() {
 			BeforeEach(func() {
 				rhs.ValidationInfo.ValidationPlugin = "different"
@@ -101,12 +112,35 @@ var _ = Describe("ChaincodeParameters", func() {
 
 var _ = Describe("Resources", func() {
 	var (
-		resources *lifecycle.Resources
+		resources               *lifecycle.Resources
+		fakeChannelConfigSource *mock.ChannelConfigSource
+		fakeChannelConfig       *mock.ChannelConfig
+		fakeApplicationConfig   *mock.ApplicationConfig
+		fakeOrgConfigs          []*mock.ApplicationOrgConfig
+		fakePolicyManager       *mock.PolicyManager
 	)
 
 	BeforeEach(func() {
+		fakeChannelConfigSource = &mock.ChannelConfigSource{}
+		fakeChannelConfig = &mock.ChannelConfig{}
+		fakeChannelConfigSource.GetStableChannelConfigReturns(fakeChannelConfig)
+		fakeApplicationConfig = &mock.ApplicationConfig{}
+		fakeChannelConfig.ApplicationConfigReturns(fakeApplicationConfig, true)
+		fakeOrgConfigs = []*mock.ApplicationOrgConfig{{}, {}}
+		fakeOrgConfigs[0].MSPIDReturns("first-mspid")
+		fakeOrgConfigs[1].MSPIDReturns("second-mspid")
+		fakePolicyManager = &mock.PolicyManager{}
+		fakePolicyManager.GetPolicyReturns(nil, true)
+		fakeChannelConfig.PolicyManagerReturns(fakePolicyManager)
+
+		fakeApplicationConfig.OrganizationsReturns(map[string]channelconfig.ApplicationOrg{
+			"org0": fakeOrgConfigs[0],
+			"org1": fakeOrgConfigs[1],
+		})
+
 		resources = &lifecycle.Resources{
-			Serializer: &lifecycle.Serializer{},
+			ChannelConfigSource: fakeChannelConfigSource,
+			Serializer:          &lifecycle.Serializer{},
 		}
 	})
 
@@ -119,22 +153,28 @@ var _ = Describe("Resources", func() {
 		BeforeEach(func() {
 			fakePublicState = map[string][]byte{}
 			err := resources.Serializer.Serialize(lifecycle.NamespacesName, "cc-name", &lifecycle.ChaincodeDefinition{
+				Sequence: 5,
 				EndorsementInfo: &lb.ChaincodeEndorsementInfo{
-					Version: "version",
+					Version:           "version",
+					EndorsementPlugin: "my endorsement plugin",
 				},
-				ValidationInfo: &lb.ChaincodeValidationInfo{},
-				Collections:    &pb.CollectionConfigPackage{},
+				ValidationInfo: &lb.ChaincodeValidationInfo{
+					ValidationPlugin:    "my validation plugin",
+					ValidationParameter: []byte("some awesome policy"),
+				},
+				Collections: &pb.CollectionConfigPackage{},
 			}, fakePublicState)
 			Expect(err).NotTo(HaveOccurred())
 			fakeReadableState = &mock.ReadWritableState{}
 			fakeReadableState.GetStateStub = fakePublicState.GetState
 		})
 
-		It("returns that the chaincode is defined and the definition", func() {
+		It("returns that the chaincode is defined and that the chaincode definition can be converted to a string suitable for log messages", func() {
 			exists, definition, err := resources.ChaincodeDefinitionIfDefined("cc-name", fakeReadableState)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(exists).To(BeTrue())
 			Expect(definition.EndorsementInfo.Version).To(Equal("version"))
+			Expect(fmt.Sprintf("{%s}", definition)).To(Equal("{sequence: 5, endorsement info: (version: 'version', plugin: 'my endorsement plugin', init required: false), validation info: (plugin: 'my validation plugin', policy: '736f6d6520617765736f6d6520706f6c696379'), collections: ()}"))
 		})
 
 		Context("when the requested chaincode is _lifecycle", func() {
@@ -172,6 +212,55 @@ var _ = Describe("Resources", func() {
 			It("wraps and returns the error", func() {
 				_, _, err := resources.ChaincodeDefinitionIfDefined("cc-name", fakeReadableState)
 				Expect(err).To(MatchError("could not deserialize metadata for chaincode cc-name: could not query metadata for namespace namespaces/cc-name: state-error"))
+			})
+		})
+	})
+
+	Describe("LifecycleEndorsementPolicyAsBytes", func() {
+		It("returns the endorsement policy for the lifecycle chaincode", func() {
+			b, err := resources.LifecycleEndorsementPolicyAsBytes("channel-id")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(b).NotTo(BeNil())
+			policy := &cb.ApplicationPolicy{}
+			err = proto.Unmarshal(b, policy)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(policy.GetChannelConfigPolicyReference()).To(Equal("/Channel/Application/LifecycleEndorsement"))
+		})
+
+		Context("when the endorsement policy reference is not found", func() {
+			BeforeEach(func() {
+				fakePolicyManager.GetPolicyReturns(nil, false)
+			})
+
+			It("returns an error", func() {
+				b, err := resources.LifecycleEndorsementPolicyAsBytes("channel-id")
+				Expect(err).NotTo(HaveOccurred())
+				policy := &cb.ApplicationPolicy{}
+				err = proto.Unmarshal(b, policy)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(policy.GetSignaturePolicy()).NotTo(BeNil())
+			})
+
+			Context("when the application config cannot be retrieved", func() {
+				BeforeEach(func() {
+					fakeChannelConfig.ApplicationConfigReturns(nil, false)
+				})
+
+				It("returns an error", func() {
+					_, err := resources.LifecycleEndorsementPolicyAsBytes("channel-id")
+					Expect(err).To(MatchError("could not get application config for channel 'channel-id'"))
+				})
+			})
+		})
+
+		Context("when the channel config cannot be retrieved", func() {
+			BeforeEach(func() {
+				fakeChannelConfigSource.GetStableChannelConfigReturns(nil)
+			})
+
+			It("returns an error", func() {
+				_, err := resources.LifecycleEndorsementPolicyAsBytes("channel-id")
+				Expect(err).To(MatchError("could not get channel config for channel 'channel-id'"))
 			})
 		})
 	})
@@ -625,7 +714,7 @@ var _ = Describe("ExternalFunctions", func() {
 
 				It("returns an error", func() {
 					err := ef.ApproveChaincodeDefinitionForOrg("my-channel", "cc-name", testDefinition, "hash", fakePublicState, fakeOrgState)
-					Expect(err).To(MatchError(ContainSubstring("could not set defaults for chaincode definition in channel my-channel: Policy '/Channel/Application/Endorsement' must be defined for channel 'my-channel' before chaincode operations can be attempted")))
+					Expect(err).To(MatchError(ContainSubstring("could not set defaults for chaincode definition in channel my-channel: policy '/Channel/Application/Endorsement' must be defined for channel 'my-channel' before chaincode operations can be attempted")))
 				})
 			})
 
@@ -652,7 +741,7 @@ var _ = Describe("ExternalFunctions", func() {
 			})
 		})
 
-		Context("when the sequence number already has a definition", func() {
+		Context("when the sequence number already has a committed definition", func() {
 			BeforeEach(func() {
 				err := resources.Serializer.Serialize("namespaces", "cc-name", &lifecycle.ChaincodeDefinition{
 					Sequence: 5,
@@ -729,6 +818,28 @@ var _ = Describe("ExternalFunctions", func() {
 				It("returns an error", func() {
 					err := ef.ApproveChaincodeDefinitionForOrg("my-channel", "cc-name", testDefinition, "hash", fakePublicState, fakeOrgState)
 					Expect(err).To(MatchError("attempted to define the current sequence (5) for namespace cc-name, but: Version 'other-version' != 'version'"))
+				})
+			})
+		})
+
+		Context("when the sequence number already has an uncommitted definition", func() {
+			BeforeEach(func() {
+				err := ef.ApproveChaincodeDefinitionForOrg("my-channel", "cc-name", testDefinition, "hash", fakePublicState, fakeOrgState)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			Context("when uncommitted definition differs from update", func() {
+				It("succeeds", func() {
+					testDefinition.ValidationInfo.ValidationParameter = []byte("more awesome policy")
+					err := ef.ApproveChaincodeDefinitionForOrg("my-channel", "cc-name", testDefinition, "hash", fakePublicState, fakeOrgState)
+					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+
+			Context("when uncommitted definition is identical to update", func() {
+				It("returns error", func() {
+					err := ef.ApproveChaincodeDefinitionForOrg("my-channel", "cc-name", testDefinition, "hash", fakePublicState, fakeOrgState)
+					Expect(err).To(MatchError("attempted to redefine uncommitted sequence (5) for namespace cc-name with unchanged content"))
 				})
 			})
 		})
@@ -907,7 +1018,7 @@ var _ = Describe("ExternalFunctions", func() {
 				It("returns an error", func() {
 					_, err := ef.CheckCommitReadiness("my-channel", "cc-name", testDefinition, fakePublicState, []lifecycle.OpaqueState{fakeOrgStates[0], fakeOrgStates[1]})
 					Expect(err).To(MatchError(ContainSubstring("could not set defaults for chaincode definition in " +
-						"channel my-channel: Policy '/Channel/Application/Endorsement' must be defined " +
+						"channel my-channel: policy '/Channel/Application/Endorsement' must be defined " +
 						"for channel 'my-channel' before chaincode operations can be attempted")))
 				})
 			})
@@ -1076,7 +1187,7 @@ var _ = Describe("ExternalFunctions", func() {
 				It("returns an error", func() {
 					_, err := ef.CommitChaincodeDefinition("my-channel", "cc-name", testDefinition, fakePublicState, []lifecycle.OpaqueState{fakeOrgStates[0], fakeOrgStates[1]})
 					Expect(err).To(MatchError(ContainSubstring("could not set defaults for chaincode definition in " +
-						"channel my-channel: Policy '/Channel/Application/Endorsement' must be defined " +
+						"channel my-channel: policy '/Channel/Application/Endorsement' must be defined " +
 						"for channel 'my-channel' before chaincode operations can be attempted")))
 				})
 			})

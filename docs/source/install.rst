@@ -26,6 +26,10 @@ Hyperledger Fabric.
           documentation for `shared drives <https://docs.docker.com/docker-for-windows/#shared-drives>`__
           and use a location under one of the shared drives.
 
+.. note:: If you are running on **Mac**, you may need to install ``wget`` before proceeding.
+          The ``wget`` command is used to download binaries from GitHub releases.
+          To install wget, ``brew install wget``.
+
 Determine a location on your machine where you want to place the `fabric-samples`
 repository and enter that directory in a terminal window. The
 command that follows will perform the following steps:
@@ -44,16 +48,17 @@ the binaries and images.
 
 .. code:: bash
 
-  curl -sSL http://bit.ly/2ysbOFE | bash -s
+  curl -sSL https://bit.ly/2ysbOFE | bash -s
 
 .. note:: If you want a specific release, pass a version identifier for Fabric,
           Fabric-ca and thirdparty Docker images.
-          The command below demonstrates how to download **Fabric v2.0.0 Alpha release v2.0.0-alpha**
+          The command below demonstrates how to download the latest production releases -
+          **Fabric v2.0.0** and **Fabric CA v1.4.4**
 
 .. code:: bash
 
-  curl -sSL http://bit.ly/2ysbOFE | bash -s -- <fabric_version> <fabric-ca_version> <thirdparty_version>
-  curl -sSL http://bit.ly/2ysbOFE | bash -s -- 2.0.0-alpha 2.0.0-alpha 0.4.15
+  curl -sSL https://bit.ly/2ysbOFE | bash -s -- <fabric_version> <fabric-ca_version> <thirdparty_version>
+  curl -sSL https://bit.ly/2ysbOFE | bash -s -- 2.0.0 1.4.4 0.4.18
 
 .. note:: If you get an error running the above curl command, you may
           have too old a version of curl that does not handle
