@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/hyperledger/fabric/common/flogging"
-	"github.com/hyperledger/fabric/core/chaincode/persistence"
 	"github.com/hyperledger/fabric/core/container/ccintf"
 	"github.com/hyperledger/fabric/core/container/externalbuilder"
 	"github.com/hyperledger/fabric/core/peer"
@@ -28,7 +27,7 @@ var _ = Describe("externalbuilder", func() {
 	var (
 		codePackage *os.File
 		logger      *flogging.FabricLogger
-		md          *persistence.ChaincodePackageMetadata
+		md          []byte
 	)
 
 	BeforeEach(func() {
@@ -36,10 +35,7 @@ var _ = Describe("externalbuilder", func() {
 		codePackage, err = os.Open("testdata/normal_archive.tar.gz")
 		Expect(err).NotTo(HaveOccurred())
 
-		md = &persistence.ChaincodePackageMetadata{
-			Path: "fake-path",
-			Type: "fake-type",
-		}
+		md = []byte(`{"some":"fake-metadata"}`)
 
 		enc := zapcore.NewConsoleEncoder(zapcore.EncoderConfig{MessageKey: "msg"})
 		core := zapcore.NewCore(enc, zapcore.AddSync(GinkgoWriter), zap.NewAtomicLevel())
@@ -108,7 +104,7 @@ var _ = Describe("externalbuilder", func() {
 					{Path: "bad1", Name: "bad1"},
 					{Path: "testdata/goodbuilder", Name: "goodbuilder"},
 					{Path: "bad2", Name: "bad2"},
-				}),
+				}, "mspid"),
 				DurablePath: durablePath,
 			}
 		})
@@ -131,7 +127,7 @@ var _ = Describe("externalbuilder", func() {
 				BeforeEach(func() {
 					detector.Builders = externalbuilder.CreateBuilders([]peer.ExternalBuilder{
 						{Path: "bad1", Name: "bad1"},
-					})
+					}, "mspid")
 				})
 
 				It("returns a nil instance", func() {
@@ -228,6 +224,7 @@ var _ = Describe("externalbuilder", func() {
 				Location: "testdata/goodbuilder",
 				Name:     "goodbuilder",
 				Logger:   logger,
+				MSPID:    "mspid",
 			}
 
 			var err error

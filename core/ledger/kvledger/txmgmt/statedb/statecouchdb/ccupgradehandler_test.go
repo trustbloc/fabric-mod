@@ -29,10 +29,10 @@ var (
 )
 
 func TestCCUpgradeHandler(t *testing.T) {
-	env := newTestVDBEnvWithCache(t, statedb.NewCache(1, []string{lsccNamespace}))
-	defer env.Cleanup()
+	testEnv.init(t, statedb.NewCache(1, []string{lsccNamespace}))
+	defer testEnv.cleanup()
 
-	db, err := env.DBProvider.GetDBHandle(channelID)
+	db, err := testEnv.DBProvider.GetDBHandle(channelID)
 	assert.NoError(t, err)
 	db.Open()
 	defer db.Close()

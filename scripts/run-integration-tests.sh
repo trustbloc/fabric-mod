@@ -41,3 +41,12 @@ done
 
 echo "Running the following test suites: ${files[*]}"
 ginkgo -keepGoing --slowSpecThreshold 60 ${files[*]}
+
+declare -a files
+for ((i = "$agentNumber"; i <= "$testCount"; )); do
+  files+=("${dirs[$i - 1]}")
+  i=$((${i} + ${totalAgents}))
+done
+
+echo "Running the following test suites: ${files[*]}"
+ginkgo -keepGoing --slowSpecThreshold 60 ${files[*]}

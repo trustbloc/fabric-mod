@@ -16,13 +16,14 @@ import (
 	"github.com/hyperledger/fabric-chaincode-go/shim"
 	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/util"
+	"github.com/hyperledger/fabric/core/chaincode/extcc"
 	"github.com/hyperledger/fabric/core/chaincode/lifecycle"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/container/ccintf"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/peer"
 	"github.com/hyperledger/fabric/core/scc"
-	extcc "github.com/hyperledger/fabric/extensions/chaincode"
+	extucc "github.com/hyperledger/fabric/extensions/chaincode"
 	"github.com/hyperledger/fabric/extensions/chaincode/api"
 	"github.com/pkg/errors"
 )
@@ -46,7 +47,8 @@ type Runtime interface {
 
 // Launcher is used to launch chaincode runtimes.
 type Launcher interface {
-	Launch(ccid string) error
+	Launch(ccid string, streamHandler extcc.StreamHandler) error
+	Stop(ccid string) error
 }
 
 // Lifecycle provides a way to retrieve chaincode definitions and the packages necessary to run them
@@ -97,14 +99,14 @@ func (cs *ChaincodeSupport) Launch(ccid string) (*Handler, error) {
 
 	name, version := getNameAndVersion(ccid)
 
-	cc, exists := extcc.GetUCC(name, version)
+	cc, exists := extucc.GetUCC(name, version)
 	if exists {
-		chaincodeLogger.Infof(".. found in-process user chaincode for [%s]: [%s]. Attempting to launch...", ccid, extcc.GetID(cc))
+		chaincodeLogger.Infof(".. found in-process user chaincode for [%s]: [%s]. Attempting to launch...", ccid, extucc.GetID(cc))
 		cs.launchInProc(cc)
 
-		h = cs.HandlerRegistry.Handler(extcc.GetID(cc))
+		h = cs.HandlerRegistry.Handler(extucc.GetID(cc))
 	} else {
-		if err := cs.Launcher.Launch(ccid); err != nil {
+		if err := cs.Launcher.Launch(ccid, cs); err != nil {
 			return nil, errors.Wrapf(err, "could not launch chaincode %s", ccid)
 		}
 
@@ -309,7 +311,7 @@ func (cs *ChaincodeSupport) executeTimeout(namespace string, input *pb.Chaincode
 }
 
 func (cs *ChaincodeSupport) launchInProc(cc api.UserCC) {
-	ccid := extcc.GetID(cc)
+	ccid := extucc.GetID(cc)
 
 	launchStatus, ok := cs.HandlerRegistry.Launching(ccid)
 	if ok {

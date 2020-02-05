@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -29,6 +30,9 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
+	. "github.com/onsi/gomega/gstruct"
+	"github.com/onsi/gomega/matchers"
+	"github.com/onsi/gomega/types"
 	"github.com/tedsuo/ifrit"
 	"github.com/tedsuo/ifrit/ginkgomon"
 	"github.com/tedsuo/ifrit/grouper"
@@ -651,13 +655,15 @@ func (n *Network) GenerateConfigTree() {
 // the Network using the channel's Profile attribute. The transactions are
 // written to ${rootDir}/${Channel.Name}_tx.pb.
 func (n *Network) Bootstrap() {
-	_, err := n.DockerClient.CreateNetwork(
-		docker.CreateNetworkOptions{
-			Name:   n.NetworkID,
-			Driver: "bridge",
-		},
-	)
-	Expect(err).NotTo(HaveOccurred())
+	if n.DockerClient != nil {
+		_, err := n.DockerClient.CreateNetwork(
+			docker.CreateNetworkOptions{
+				Name:   n.NetworkID,
+				Driver: "bridge",
+			},
+		)
+		Expect(err).NotTo(HaveOccurred())
+	}
 
 	sess, err := n.Cryptogen(commands.Generate{
 		Config: n.CryptoConfigPath(),
@@ -754,6 +760,10 @@ func (n *Network) listTLSCACertificates() []string {
 // Cleanup attempts to cleanup docker related artifacts that may
 // have been created by the network.
 func (n *Network) Cleanup() {
+	if n.DockerClient == nil {
+		return
+	}
+
 	nw, err := n.DockerClient.NetworkInfo(n.NetworkID)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -850,12 +860,14 @@ func (n *Network) UpdateChannelAnchors(o *Orderer, channelName string) {
 // VerifyMembership checks that each peer has discovered the expected
 // peers in the network
 func (n *Network) VerifyMembership(expectedPeers []*Peer, channel string, chaincodes ...string) {
-	expectedDiscoveredPeers := make([]DiscoveredPeer, len(expectedPeers))
+	// all peers currently include _lifecycle as an available chaincode
+	chaincodes = append(chaincodes, "_lifecycle")
+	expectedDiscoveredPeerMatchers := make([]types.GomegaMatcher, len(expectedPeers))
 	for i, peer := range expectedPeers {
-		expectedDiscoveredPeers[i] = n.DiscoveredPeer(peer, chaincodes...)
+		expectedDiscoveredPeerMatchers[i] = n.DiscoveredPeerMatcher(peer, chaincodes...) //n.DiscoveredPeer(peer, chaincodes...)
 	}
 	for _, peer := range expectedPeers {
-		Eventually(DiscoverPeers(n, peer, "User1", channel), n.EventuallyTimeout).Should(ConsistOf(expectedDiscoveredPeers))
+		Eventually(DiscoverPeers(n, peer, "User1", channel), n.EventuallyTimeout).Should(ConsistOf(expectedDiscoveredPeerMatchers))
 	}
 }
 
@@ -1289,7 +1301,8 @@ func (n *Network) Peer(orgName, peerName string) *Peer {
 	return nil
 }
 
-// the function creates a new DiscoveredPeer from the peer and chaincodes passed as arguments
+// DiscoveredPeer creates a new DiscoveredPeer from the peer and chaincodes
+// passed as arguments.
 func (n *Network) DiscoveredPeer(p *Peer, chaincodes ...string) DiscoveredPeer {
 	peerCert, err := ioutil.ReadFile(n.PeerCert(p))
 	Expect(err).NotTo(HaveOccurred())
@@ -1299,6 +1312,31 @@ func (n *Network) DiscoveredPeer(p *Peer, chaincodes ...string) DiscoveredPeer {
 		Endpoint:   fmt.Sprintf("127.0.0.1:%d", n.PeerPort(p, ListenPort)),
 		Identity:   string(peerCert),
 		Chaincodes: chaincodes,
+	}
+}
+
+func (n *Network) DiscoveredPeerMatcher(p *Peer, chaincodes ...string) types.GomegaMatcher {
+	peerCert, err := ioutil.ReadFile(n.PeerCert(p))
+	Expect(err).NotTo(HaveOccurred())
+
+	return MatchAllFields(Fields{
+		"MSPID":      Equal(n.Organization(p.Organization).MSPID),
+		"Endpoint":   Equal(fmt.Sprintf("127.0.0.1:%d", n.PeerPort(p, ListenPort))),
+		"Identity":   Equal(string(peerCert)),
+		"Chaincodes": containElements(chaincodes...),
+	})
+}
+
+// containElements succeeds if a slice contains the passed in elements.
+func containElements(elements ...string) types.GomegaMatcher {
+	ms := make([]types.GomegaMatcher, 0, len(elements))
+	for _, element := range elements {
+		ms = append(ms, &matchers.ContainElementMatcher{
+			Element: element,
+		})
+	}
+	return &matchers.AndMatcher{
+		Matchers: ms,
 	}
 }
 
@@ -1370,6 +1408,17 @@ func (n *Network) PeersWithChannel(chanName string) []*Peer {
 			}
 		}
 	}
+
+	// This is a bit of a hack to make the output of this function deterministic.
+	// When this function's output is supplied as input to functions such as ApproveChaincodeForMyOrg
+	// it causes a different subset of peers to be picked, which can create flakiness in tests.
+	sort.Slice(peers, func(i, j int) bool {
+		if peers[i].Organization < peers[j].Organization {
+			return true
+		}
+
+		return peers[i].Organization == peers[j].Organization && peers[i].Name < peers[j].Name
+	})
 	return peers
 }
 

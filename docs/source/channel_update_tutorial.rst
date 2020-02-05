@@ -380,7 +380,7 @@ earlier. We'll name this file ``org3_update_in_envelope.json``:
 
 .. code:: bash
 
-  echo '{"payload":{"header":{"channel_header":{"channel_id":"mychannel", "type":2}},"data":{"config_update":'$(cat org3_update.json)'}}}' | jq . > org3_update_in_envelope.json
+  echo '{"payload":{"header":{"channel_header":{"channel_id":"'$CHANNEL_NAME'", "type":2}},"data":{"config_update":'$(cat org3_update.json)'}}}' | jq . > org3_update_in_envelope.json
 
 Using our properly formed JSON -- ``org3_update_in_envelope.json`` -- we will
 leverage the ``configtxlator`` tool one last time and convert it into the
@@ -611,9 +611,9 @@ you have joined, you can start using the chaincode after you approve the
 definition.
 
 .. note:: These instructions use the Fabric chaincode lifecycle introduced in
-          the v2.0 Alpha release. If you would like to use the previous
-          lifecycle to install and instantiate a chaincode, visit the v1.4
-          version of the `Adding an org to a channel tutorial <https://hyperledger-fabric.readthedocs.io/en/release-1.4/channel_update_tutorial.html>`__.
+          the v2.0 release. If you would like to use the previous lifecycle to
+          install and instantiate a chaincode, visit the v1.4 version of the
+          `Adding an org to a channel tutorial <https://hyperledger-fabric.readthedocs.io/en/release-1.4/channel_update_tutorial.html>`__.
 
 The first step is to package the chaincode from the Org3 CLI:
 
@@ -820,7 +820,7 @@ stripped away header, outputting it to ``anchor_update_in_envelope.json``
 
 .. code:: bash
 
-    echo '{"payload":{"header":{"channel_header":{"channel_id":"mychannel", "type":2}},"data":{"config_update":'$(cat anchor_update.json)'}}}' | jq . > anchor_update_in_envelope.json
+    echo '{"payload":{"header":{"channel_header":{"channel_id":"'$CHANNEL_NAME'", "type":2}},"data":{"config_update":'$(cat anchor_update.json)'}}}' | jq . > anchor_update_in_envelope.json
 
 Now that we have reincorporated the envelope we need to convert it
 to a protobuf so it can be properly signed and submitted to the orderer for the update.
