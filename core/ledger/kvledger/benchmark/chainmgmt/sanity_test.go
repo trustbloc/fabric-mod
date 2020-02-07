@@ -11,15 +11,22 @@ import (
 	"os"
 	"testing"
 
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/require"
 )
 
 // TestChainMgmt is a basic sanity check test to catch any errors that could be caused by changes in the ledgermgmt or kvledger packages
 func TestChainMgmt(t *testing.T) {
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+
 	dataDir, err := ioutil.TempDir("", "ledgerbenchmark_sanitycheck")
 	require.NoError(t, err)
 	require.NoError(t, os.RemoveAll(dataDir))
-	defer os.RemoveAll(dataDir)
+
+	defer func() {
+		os.RemoveAll(dataDir)
+		destroy()
+	}()
 
 	mgrConf := &ChainMgrConf{
 		DataDir:   dataDir,
