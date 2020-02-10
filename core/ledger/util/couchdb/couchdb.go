@@ -29,6 +29,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/hyperledger/fabric/common/flogging"
+	"github.com/hyperledger/fabric/extensions/storage/dbname"
 	"github.com/pkg/errors"
 	"go.uber.org/zap/zapcore"
 )
@@ -164,6 +165,18 @@ type CouchDatabase struct {
 	CouchInstance    *CouchInstance //connection configuration
 	DBName           string
 	IndexWarmCounter int
+}
+
+func newCouchDB(name string, inst *CouchInstance, idxWarmCounter int) (*CouchDatabase, error) {
+	dbName := dbname.Resolve(name)
+
+	logger.Infof("Creating couch db [%s]", dbName)
+
+	return &CouchDatabase{
+		DBName:           dbName,
+		CouchInstance:    inst,
+		IndexWarmCounter: idxWarmCounter,
+	}, nil
 }
 
 //DBReturn contains an error reported by CouchDB
