@@ -23,6 +23,6 @@ func TestNewCouchDatabase(t *testing.T) {
 	require.Contains(t, err.Error(), "'_dbtest' does not match pattern")
 
 	dbName := ConstructBlockchainDBName("testchannel", "dbname")
-	_, err = NewCouchDatabase(&CouchInstance{}, dbName)
+	_, err = NewCouchDatabase(&CouchInstance{conf: &Config{}}, dbName)
 	require.Nil(t, err)
 }

@@ -52,6 +52,5 @@ func NewCouchDatabase(couchInstance *CouchInstance, dbName string) (*CouchDataba
 		return nil, err
 	}
 
-	couchDBDatabase := CouchDatabase{CouchInstance: couchInstance, DBName: databaseName, IndexWarmCounter: 1}
-	return &couchDBDatabase, nil
+	return newCouchDB(databaseName, couchInstance, 1)
 }

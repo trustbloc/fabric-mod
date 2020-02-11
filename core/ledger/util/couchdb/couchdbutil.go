@@ -120,7 +120,10 @@ func CreateCouchDatabase(couchInstance *CouchInstance, dbName string) (*CouchDat
 		return nil, err
 	}
 
-	couchDBDatabase := CouchDatabase{CouchInstance: couchInstance, DBName: databaseName, IndexWarmCounter: 1}
+	couchDBDatabase, err := newCouchDB(databaseName, couchInstance, 1)
+	if err != nil {
+		return nil, err
+	}
 
 	// Create CouchDB database upon ledger startup, if it doesn't already exist
 	err = couchDBDatabase.CreateDatabaseIfNotExist()
@@ -129,22 +132,30 @@ func CreateCouchDatabase(couchInstance *CouchInstance, dbName string) (*CouchDat
 		return nil, err
 	}
 
-	return &couchDBDatabase, nil
+	return couchDBDatabase, nil
 }
 
 //CreateSystemDatabasesIfNotExist - creates the system databases if they do not exist
 func CreateSystemDatabasesIfNotExist(couchInstance *CouchInstance) error {
 
 	dbName := "_users"
-	systemCouchDBDatabase := CouchDatabase{CouchInstance: couchInstance, DBName: dbName, IndexWarmCounter: 1}
-	err := systemCouchDBDatabase.CreateDatabaseIfNotExist()
+	systemCouchDBDatabase, err := newCouchDB(dbName, couchInstance, 1)
+	if err != nil {
+		return err
+	}
+
+	err = systemCouchDBDatabase.CreateDatabaseIfNotExist()
 	if err != nil {
 		logger.Errorf("Error calling CouchDB CreateDatabaseIfNotExist() for system dbName: %s, error: %s", dbName, err)
 		return err
 	}
 
 	dbName = "_replicator"
-	systemCouchDBDatabase = CouchDatabase{CouchInstance: couchInstance, DBName: dbName, IndexWarmCounter: 1}
+	systemCouchDBDatabase, err = newCouchDB(dbName, couchInstance, 1)
+	if err != nil {
+		return err
+	}
+
 	err = systemCouchDBDatabase.CreateDatabaseIfNotExist()
 	if err != nil {
 		logger.Errorf("Error calling CouchDB CreateDatabaseIfNotExist() for system dbName: %s, error: %s", dbName, err)
@@ -152,7 +163,11 @@ func CreateSystemDatabasesIfNotExist(couchInstance *CouchInstance) error {
 	}
 	if couchInstance.conf.CreateGlobalChangesDB {
 		dbName = "_global_changes"
-		systemCouchDBDatabase = CouchDatabase{CouchInstance: couchInstance, DBName: dbName, IndexWarmCounter: 1}
+		systemCouchDBDatabase, err = newCouchDB(dbName, couchInstance, 1)
+		if err != nil {
+			return err
+		}
+
 		err = systemCouchDBDatabase.CreateDatabaseIfNotExist()
 		if err != nil {
 			logger.Errorf("Error calling CouchDB CreateDatabaseIfNotExist() for system dbName: %s, error: %s", dbName, err)
