@@ -453,7 +453,7 @@ func (couchInstance *CouchInstance) VerifyCouchConfig() (*ConnectionInfo, *DBRet
 func (couchInstance *CouchInstance) IsEmpty(databasesToIgnore []string) (bool, error) {
 	toIgnore := map[string]bool{}
 	for _, s := range databasesToIgnore {
-		toIgnore[s] = true
+		toIgnore[dbname.Resolve(s)] = true
 	}
 	applicationDBNames, err := couchInstance.RetrieveApplicationDBNames()
 	if err != nil {
@@ -503,10 +503,13 @@ func (couchInstance *CouchInstance) RetrieveApplicationDBNames() ([]string, erro
 	logger.Debugf("dbNames = %s", dbNames)
 	applicationsDBNames := []string{}
 	for _, d := range dbNames {
-		if !isCouchSystemDBName(d) {
+		if !isCouchSystemDBName(d) && dbname.IsRelevant(d) {
 			applicationsDBNames = append(applicationsDBNames, d)
 		}
 	}
+
+	logger.Debugf("Returning application DB names: %s", applicationsDBNames)
+
 	return applicationsDBNames, nil
 }
 
