@@ -17,3 +17,7 @@ func TestResolve(t *testing.T) {
 
 	require.Equal(t, dbName, Resolve(dbName))
 }
+
+func TestIsRelevant(t *testing.T) {
+	require.True(t, IsRelevant("somedb"))
+}

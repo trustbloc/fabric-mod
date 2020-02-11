@@ -20,6 +20,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
 	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
+	"github.com/hyperledger/fabric/extensions/roles"
 	xcouchdb "github.com/hyperledger/fabric/extensions/storage/couchdb"
 	xstatedb "github.com/hyperledger/fabric/extensions/storage/statedb"
 	"github.com/pkg/errors"
@@ -54,9 +55,13 @@ func NewVersionedDBProvider(config *couchdb.Config, metricsProvider metrics.Prov
 	if err != nil {
 		return nil, err
 	}
-	if err := checkExpectedDataformatVersion(couchInstance); err != nil {
-		return nil, err
+
+	if roles.IsCommitter() {
+		if err := checkExpectedDataformatVersion(couchInstance); err != nil {
+			return nil, err
+		}
 	}
+
 	p, err := newRedoLoggerProvider(config.RedoLogPath)
 	if err != nil {
 		return nil, err
