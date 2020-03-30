@@ -36,10 +36,12 @@ type UserCC struct {
 	versionReturnsOnCall map[int]struct {
 		result1 string
 	}
-	GetDBArtifactsStub        func() map[string]*api.DBArtifacts
+	GetDBArtifactsStub        func(collNames []string) map[string]*api.DBArtifacts
 	getDBArtifactsMutex       sync.RWMutex
-	getDBArtifactsArgsForCall []struct{}
-	getDBArtifactsReturns     struct {
+	getDBArtifactsArgsForCall []struct {
+		collNames []string
+	}
+	getDBArtifactsReturns struct {
 		result1 map[string]*api.DBArtifacts
 	}
 	getDBArtifactsReturnsOnCall map[int]struct {
@@ -169,14 +171,21 @@ func (fake *UserCC) VersionReturnsOnCall(i int, result1 string) {
 	}{result1}
 }
 
-func (fake *UserCC) GetDBArtifacts() map[string]*api.DBArtifacts {
+func (fake *UserCC) GetDBArtifacts(collNames []string) map[string]*api.DBArtifacts {
+	var collNamesCopy []string
+	if collNames != nil {
+		collNamesCopy = make([]string, len(collNames))
+		copy(collNamesCopy, collNames)
+	}
 	fake.getDBArtifactsMutex.Lock()
 	ret, specificReturn := fake.getDBArtifactsReturnsOnCall[len(fake.getDBArtifactsArgsForCall)]
-	fake.getDBArtifactsArgsForCall = append(fake.getDBArtifactsArgsForCall, struct{}{})
-	fake.recordInvocation("GetDBArtifacts", []interface{}{})
+	fake.getDBArtifactsArgsForCall = append(fake.getDBArtifactsArgsForCall, struct {
+		collNames []string
+	}{collNamesCopy})
+	fake.recordInvocation("GetDBArtifacts", []interface{}{collNamesCopy})
 	fake.getDBArtifactsMutex.Unlock()
 	if fake.GetDBArtifactsStub != nil {
-		return fake.GetDBArtifactsStub()
+		return fake.GetDBArtifactsStub(collNames)
 	}
 	if specificReturn {
 		return ret.result1
@@ -188,6 +197,12 @@ func (fake *UserCC) GetDBArtifactsCallCount() int {
 	fake.getDBArtifactsMutex.RLock()
 	defer fake.getDBArtifactsMutex.RUnlock()
 	return len(fake.getDBArtifactsArgsForCall)
+}
+
+func (fake *UserCC) GetDBArtifactsArgsForCall(i int) []string {
+	fake.getDBArtifactsMutex.RLock()
+	defer fake.getDBArtifactsMutex.RUnlock()
+	return fake.getDBArtifactsArgsForCall[i].collNames
 }
 
 func (fake *UserCC) GetDBArtifactsReturns(result1 map[string]*api.DBArtifacts) {

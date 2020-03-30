@@ -9,6 +9,7 @@ package cceventmgmt
 import (
 	"sync"
 
+	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/ledger"
 	extchaincode "github.com/hyperledger/fabric/extensions/chaincode"
@@ -143,8 +144,9 @@ func (m *Mgr) ChaincodeInstallDone(succeeded bool) {
 func (m *Mgr) invokeDeployHandler(chainid string, chaincodeDefinition *ChaincodeDefinition) error {
 	ucc, ok := extchaincode.GetUCC(chaincodeDefinition.Name, chaincodeDefinition.Version)
 	if ok {
-		if err := m.invokeInProcDeployHandler(chainid, chaincodeDefinition, ucc.GetDBArtifacts()); err != nil {
-			logger.Errorf("Channel [%s]: Error invoking a listener for applying DB artifacts in deploy of in-process chaincode [%s]: %s", chainid, chaincodeDefinition.Name, err)
+		collNames := getCollectionNames(chaincodeDefinition.CollectionConfigs)
+		if err := m.invokeInProcDeployHandler(chainid, chaincodeDefinition, ucc.GetDBArtifacts(collNames)); err != nil {
+			logger.Errorf("Channel [%s]: Error invoking a listener for applying DB dbArtifacts in deploy of in-process chaincode [%s]: %s", chainid, chaincodeDefinition.Name, err)
 			return err
 		}
 		logger.Debugf("Channel [%s]: Handled chaincode deploy event for in-process chaincode [%s]", chainid, chaincodeDefinition.Name)
@@ -238,4 +240,20 @@ func (s *callbackStatus) unsetInstallPending(channelID string) {
 	s.l.Lock()
 	defer s.l.Unlock()
 	delete(s.installPending, channelID)
+}
+
+func getCollectionNames(collConfigs *peer.CollectionConfigPackage) []string {
+	if collConfigs == nil {
+		return nil
+	}
+
+	var collNames []string
+	for _, c := range collConfigs.Config {
+		cfg := c.GetStaticCollectionConfig()
+		if cfg != nil {
+			collNames = append(collNames, cfg.Name)
+		}
+	}
+
+	return collNames
 }
