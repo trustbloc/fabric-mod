@@ -323,7 +323,7 @@ func (s *GossipStateProviderImpl) receiveAndQueueGossipMessages(ch <-chan *proto
 
 			dataMsg := msg.GetDataMsg()
 			if dataMsg != nil {
-				if err := s.addPayload(dataMsg.GetPayload(), nonBlocking); err != nil {
+				if err := s.extension.AddPayload(s.addPayload)(dataMsg.GetPayload(), s.blockingMode); err != nil {
 					logger.Warningf("Block [%d] received from gossip wasn't added to payload buffer: %v", dataMsg.Payload.SeqNum, err)
 					return
 				}
