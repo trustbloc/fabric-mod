@@ -73,7 +73,7 @@ replace github.com/docker/docker => github.com/docker/docker v0.0.0-201808271313
 
 replace github.com/hyperledger/fabric/extensions => ./extensions
 
-replace github.com/hyperledger/fabric-protos-go => github.com/trustbloc/fabric-protos-go-ext v0.1.2
+replace github.com/hyperledger/fabric-protos-go => github.com/trustbloc/fabric-protos-go-ext v0.1.4-0.20200529174943-b277c62ed131
 
 replace github.com/spf13/viper2015 => github.com/spf13/viper v0.0.0-20150908122457-1967d93db724
 
