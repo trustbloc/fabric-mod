@@ -231,7 +231,8 @@ func NewGossipStateProvider(
 		receivedMsg := message.(protoext.ReceivedMessage)
 		msg := receivedMsg.GetGossipMessage()
 		if !(protoext.IsRemoteStateMessage(msg.GossipMessage) || msg.GetPrivateData() != nil ||
-			msg.GetCollDataReq() != nil || msg.GetCollDataRes() != nil) {
+			msg.GetCollDataReq() != nil || msg.GetCollDataRes() != nil ||
+			msg.GetAppDataReq() != nil || msg.GetAppDataRes() != nil) {
 			return false
 		}
 		// Ensure we deal only with messages that belong to this channel
