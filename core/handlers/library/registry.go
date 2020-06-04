@@ -49,10 +49,15 @@ const (
 )
 
 type registry struct {
-	filters    []auth.Filter
-	decorators []decoration.Decorator
-	endorsers  map[string]endorsement2.PluginFactory
-	validators map[string]validation.PluginFactory
+	filters        []auth.Filter
+	decorators     []decoration.Decorator
+	endorsers      map[string]endorsement2.PluginFactory
+	validators     map[string]validation.PluginFactory
+	cfg            Config
+	filtersOnce    sync.Once
+	decoratorsOnce sync.Once
+	endorsersOnce  sync.Once
+	validatorsOnce sync.Once
 }
 
 var once sync.Once
@@ -63,37 +68,59 @@ var reg registry
 func InitRegistry(c Config) Registry {
 	once.Do(func() {
 		reg = registry{
+			cfg:        c,
 			endorsers:  make(map[string]endorsement2.PluginFactory),
 			validators: make(map[string]validation.PluginFactory),
 		}
-		reg.loadHandlers(c)
 	})
 	return &reg
 }
 
-// loadHandlers loads the configured handlers
-func (r *registry) loadHandlers(c Config) {
-	for _, config := range c.AuthFilters {
-		r.evaluateModeAndLoad(config, Auth)
-	}
-	for _, config := range c.Decorators {
-		r.evaluateModeAndLoad(config, Decoration)
-	}
+func (r *registry) loadAuthFilters() []auth.Filter {
+	r.filtersOnce.Do(func() {
+		for _, config := range r.cfg.AuthFilters {
+			r.evaluateModeAndLoad(config, Auth)
+		}
+	})
 
-	for chaincodeID, config := range c.Endorsers {
-		r.evaluateModeAndLoad(config, Endorsement, chaincodeID)
-	}
+	return r.filters
+}
 
-	for chaincodeID, config := range c.Validators {
-		r.evaluateModeAndLoad(config, Validation, chaincodeID)
-	}
+func (r *registry) loadDecorators() []decoration.Decorator {
+	r.decoratorsOnce.Do(func() {
+		for _, config := range r.cfg.Decorators {
+			r.evaluateModeAndLoad(config, Decoration)
+		}
+	})
+
+	return r.decorators
+}
+
+func (r *registry) loadEndorsers() map[string]endorsement2.PluginFactory {
+	r.endorsersOnce.Do(func() {
+		for chaincodeID, config := range r.cfg.Endorsers {
+			r.evaluateModeAndLoad(config, Endorsement, chaincodeID)
+		}
+	})
+
+	return r.endorsers
+}
+
+func (r *registry) loadValidators() map[string]validation.PluginFactory {
+	r.validatorsOnce.Do(func() {
+		for chaincodeID, config := range r.cfg.Validators {
+			r.evaluateModeAndLoad(config, Validation, chaincodeID)
+		}
+	})
+
+	return r.validators
 }
 
 // evaluateModeAndLoad if a library path is provided, load the shared object
 func (r *registry) evaluateModeAndLoad(c *HandlerConfig, handlerType HandlerType, extraArgs ...string) {
 	if c.Library != "" {
 		r.loadPlugin(c.Library, handlerType, extraArgs...)
-	} else {
+	} else if !r.loadExtension(c.Name, handlerType, extraArgs...) {
 		r.loadCompiled(c.Name, handlerType, extraArgs...)
 	}
 }
@@ -237,13 +264,13 @@ func panicWithDefinitionError(factory string) {
 // type, or nil if none exist
 func (r *registry) Lookup(handlerType HandlerType) interface{} {
 	if handlerType == Auth {
-		return r.filters
+		return r.loadAuthFilters()
 	} else if handlerType == Decoration {
-		return r.decorators
+		return r.loadDecorators()
 	} else if handlerType == Endorsement {
-		return r.endorsers
+		return r.loadEndorsers()
 	} else if handlerType == Validation {
-		return r.validators
+		return r.loadValidators()
 	}
 
 	return nil
