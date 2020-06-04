@@ -682,7 +682,6 @@ func serve(args []string) error {
 
 	reg := library.InitRegistry(libConf)
 
-	authFilters := reg.Lookup(library.Auth).([]authHandler.Filter)
 	endorserSupport := &endorser.SupportImpl{
 		SignerSerializer: signingIdentity,
 		Peer:             peerInstance,
@@ -881,6 +880,7 @@ func serve(args []string) error {
 		logger.Infof("Ledger rebuild: channel [%s]: preresetHeight: [%d]", cid, height)
 	}
 
+	authFilters := reg.Lookup(library.Auth).([]authHandler.Filter)
 	if len(preResetHeights) > 0 {
 		logger.Info("Ledger rebuild: Entering loop to check if current ledger heights surpass prereset ledger heights. Endorsement request processing will be disabled.")
 		resetFilter := &reset{
