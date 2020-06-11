@@ -720,6 +720,8 @@ func serve(args []string) error {
 		newLedgerConfigProvider(ledgerConfig),
 		newCCEventMgrProvider(),
 		plugin.MapBasedMapper(validationPluginsByName),
+		aclProvider,
+		endorserSupport,
 	)
 	if err != nil {
 		panic(err)
