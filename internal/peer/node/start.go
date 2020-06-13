@@ -741,6 +741,11 @@ func serve(args []string) error {
 	chaincodes = append(chaincodes, lsccInst, csccInst, qsccInst, lifecycleSCC)
 	chaincodes = append(chaincodes, extscc...)
 
+	for _, cc := range extscc {
+		logger.Debugf("Adding external system chaincode to the list of built-in system chaincodes [%s]", cc.Name())
+		builtinSCCs[cc.Name()] = struct{}{}
+	}
+
 	// deploy system chaincodes
 	for _, cc := range chaincodes {
 		if enabled, ok := chaincodeConfig.SCCWhitelist[cc.Name()]; !ok || !enabled {
