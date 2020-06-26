@@ -13,12 +13,12 @@ import (
 	"time"
 
 	"github.com/hyperledger/fabric/common/flogging"
-	"github.com/hyperledger/fabric/core/comm"
 	"github.com/hyperledger/fabric/core/deliverservice"
 	extmocks "github.com/hyperledger/fabric/extensions/gossip/mocks"
 	"github.com/hyperledger/fabric/gossip/api"
 	"github.com/hyperledger/fabric/gossip/election"
 	"github.com/hyperledger/fabric/gossip/util"
+	"github.com/hyperledger/fabric/internal/pkg/comm"
 	"github.com/hyperledger/fabric/internal/pkg/peer/blocksprovider"
 	"github.com/hyperledger/fabric/internal/pkg/peer/orderers"
 	"github.com/stretchr/testify/assert"
@@ -99,12 +99,12 @@ func TestLeaderYield(t *testing.T) {
 		ElectionLeaderElectionDuration: time.Millisecond * 500,
 	}
 	n := 2
-	gossips := startPeers(t, serviceConfig, n, 0, 1)
+	gossips := startPeers(serviceConfig, n, 0, 1)
 	defer stopPeers(gossips)
 	channelName := "channelA"
 	peerIndexes := []int{0, 1}
 	// Add peers to the channel
-	addPeersToChannel(t, n, channelName, gossips, peerIndexes)
+	addPeersToChannel(channelName, gossips, peerIndexes)
 	// Prime the membership view of the peers
 	waitForFullMembershipOrFailNow(t, channelName, gossips, n, time.Second*30, time.Millisecond*100)
 

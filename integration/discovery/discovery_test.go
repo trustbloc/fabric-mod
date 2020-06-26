@@ -18,7 +18,7 @@ import (
 	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric-protos-go/discovery"
 	pm "github.com/hyperledger/fabric-protos-go/msp"
-	"github.com/hyperledger/fabric/common/cauthdsl"
+	"github.com/hyperledger/fabric/common/policydsl"
 	"github.com/hyperledger/fabric/integration/nwo"
 	"github.com/hyperledger/fabric/integration/nwo/commands"
 	"github.com/hyperledger/fabric/msp"
@@ -262,10 +262,20 @@ var _ = Describe("DiscoveryService", func() {
 		Expect(discovered[0].Layouts).To(HaveLen(1))
 		Expect(discovered[0].Layouts[0].QuantitiesByGroup).To(ConsistOf(uint32(1), uint32(1)))
 
+		endorsers.Collection = "mycc:collectionMarbles"
+		endorsers.NoPrivateReads = []string{"mycc"}
+		de = discoverEndorsers(network, endorsers)
+		By("discovering endorsers for a blind write with a collection consists of all possible peers")
+		Eventually(endorsersByGroups(de), network.EventuallyTimeout).Should(ConsistOf(
+			[]nwo.DiscoveredPeer{network.DiscoveredPeer(org1Peer0)},
+			[]nwo.DiscoveredPeer{network.DiscoveredPeer(org2Peer0)},
+			[]nwo.DiscoveredPeer{network.DiscoveredPeer(org3Peer0)},
+		))
+
 		By("changing the channel policy")
 		currentConfig := nwo.GetConfig(network, org3Peer0, orderer, "testchannel")
 		updatedConfig := proto.Clone(currentConfig).(*common.Config)
-		updatedConfig.ChannelGroup.Groups["Application"].Groups["Org3"].Policies["Writers"].Policy.Value = protoutil.MarshalOrPanic(cauthdsl.SignedByMspAdmin("Org3MSP"))
+		updatedConfig.ChannelGroup.Groups["Application"].Groups["Org3"].Policies["Writers"].Policy.Value = protoutil.MarshalOrPanic(policydsl.SignedByMspAdmin("Org3MSP"))
 		nwo.UpdateConfig(network, orderer, "testchannel", currentConfig, updatedConfig, true, org3Peer0)
 
 		By("trying to discover endorsers as an org3 admin")
@@ -538,7 +548,7 @@ var _ = Describe("DiscoveryService", func() {
 		Expect(discovered[0].Layouts).To(HaveLen(1))
 		Expect(discovered[0].Layouts[0].QuantitiesByGroup).To(ConsistOf(uint32(1), uint32(1), uint32(1)))
 
-		By("discovering endorsers for collection available on all peers")
+		By("discovering endorsers for a collection without collection EP, using chaincode EP")
 		endorsers.Collection = "mycc:collectionMarbles"
 		de = discoverEndorsers(network, endorsers)
 		Eventually(endorsersByGroups(de), network.EventuallyTimeout).Should(ConsistOf(
@@ -546,6 +556,18 @@ var _ = Describe("DiscoveryService", func() {
 			ConsistOf(network.DiscoveredPeer(org2Peer0)),
 			ConsistOf(network.DiscoveredPeer(org3Peer0)),
 		))
+
+		By("discovering endorsers for a collection with collection EP, using collection EP")
+		endorsers.Collection = "mycc:collectionDetails"
+		de = discoverEndorsers(network, endorsers)
+		Eventually(endorsersByGroups(de), network.EventuallyTimeout).Should(ConsistOf(
+			ConsistOf(network.DiscoveredPeer(org1Peer0)),
+			ConsistOf(network.DiscoveredPeer(org2Peer0)),
+		))
+		discovered = de()
+		Expect(discovered).To(HaveLen(1))
+		Expect(discovered[0].Layouts).To(HaveLen(1))
+		Expect(discovered[0].Layouts[0].QuantitiesByGroup).To(ConsistOf(uint32(1), uint32(1)))
 
 		By("trying to discover endorsers as an org3 admin")
 		endorsers = commands.Endorsers{

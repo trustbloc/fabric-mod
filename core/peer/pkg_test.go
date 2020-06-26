@@ -22,12 +22,12 @@ import (
 	mspproto "github.com/hyperledger/fabric-protos-go/msp"
 	pb "github.com/hyperledger/fabric-protos-go/peer"
 	configtxtest "github.com/hyperledger/fabric/common/configtx/test"
-	"github.com/hyperledger/fabric/core/comm"
-	"github.com/hyperledger/fabric/core/comm/testpb"
 	"github.com/hyperledger/fabric/core/ledger/mock"
 	"github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/hyperledger/fabric/core/peer"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
+	"github.com/hyperledger/fabric/internal/pkg/comm"
+	"github.com/hyperledger/fabric/internal/pkg/comm/testpb"
 	"github.com/hyperledger/fabric/msp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -287,7 +287,7 @@ func TestUpdateRootsFromConfigBlock(t *testing.T) {
 				return
 			}
 
-			peerInstance.Server = server
+			peerInstance.SetServer(server)
 			peerInstance.ServerConfig = test.serverConfig
 
 			assert.NoError(t, err, "NewGRPCServer should not have returned an error")

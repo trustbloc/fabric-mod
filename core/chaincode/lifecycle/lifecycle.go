@@ -9,14 +9,15 @@ package lifecycle
 import (
 	"bytes"
 	"fmt"
+	"sync"
 
 	cb "github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric-protos-go/msp"
 	pb "github.com/hyperledger/fabric-protos-go/peer"
 	lb "github.com/hyperledger/fabric-protos-go/peer/lifecycle"
-	"github.com/hyperledger/fabric/common/cauthdsl"
 	"github.com/hyperledger/fabric/common/chaincode"
 	"github.com/hyperledger/fabric/common/flogging"
+	"github.com/hyperledger/fabric/common/policydsl"
 	"github.com/hyperledger/fabric/core/chaincode/persistence"
 	"github.com/hyperledger/fabric/core/container"
 	"github.com/hyperledger/fabric/protoutil"
@@ -36,7 +37,7 @@ const (
 
 	// ChaincodeSourcesName is the namespace reserved for storing the information about where
 	// to find the chaincode (such as as a package on the local filesystem, or in the future,
-	// at some network resource).  This namespace is only populated in the org implicit collection.
+	// at some network resource). This namespace is only populated in the org implicit collection.
 	ChaincodeSourcesName = "chaincode-sources"
 
 	// ChaincodeDefinitionType is the name of the type used to store defined chaincodes
@@ -90,10 +91,10 @@ var (
 // namespaces/fields/mycc#2/ValidationInfo:      {ValidationPlugin: "builtin", ValidationParameter: <application-policy>}
 // namespaces/fields/mycc#2/Collections          {<collection info>}
 //
-// chaincode-source/metadata/mycc#1              "LocalPackage"
-// chaincode-source/fields/mycc#1/Hash           "hash1"
+// chaincode-sources/metadata/mycc#1              "ChaincodeLocalPackage"
+// chaincode-sources/fields/mycc#1/PackageID      "hash1"
 
-// ChaincodeLocalPackage is a type of chaincode-source which may be serialized
+// ChaincodeLocalPackage is a type of chaincode-sources which may be serialized
 // into the org's private data collection.
 // WARNING: This structure is serialized/deserialized from the DB, re-ordering
 // or adding fields will cause opaque checks to fail.
@@ -275,7 +276,7 @@ func (r *Resources) LifecycleEndorsementPolicyAsBytes(channelID string) ([]byte,
 
 	return protoutil.MarshalOrPanic(&cb.ApplicationPolicy{
 		Type: &cb.ApplicationPolicy_SignaturePolicy{
-			SignaturePolicy: cauthdsl.SignedByNOutOfGivenRole(int32(len(mspids)/2+1), msp.MSPRole_MEMBER, mspids),
+			SignaturePolicy: policydsl.SignedByNOutOfGivenRole(int32(len(mspids)/2+1), msp.MSPRole_MEMBER, mspids),
 		},
 	}), nil
 }
@@ -283,7 +284,7 @@ func (r *Resources) LifecycleEndorsementPolicyAsBytes(channelID string) ([]byte,
 // ExternalFunctions is intended primarily to support the SCC functions.
 // In general, its methods signatures produce writes (which must be commmitted
 // as part of an endorsement flow), or return human readable errors (for
-// instance indicating a chaincode is not found) rather than sentinals.
+// instance indicating a chaincode is not found) rather than sentinels.
 // Instead, use the utility functions attached to the lifecycle Resources
 // when needed.
 type ExternalFunctions struct {
@@ -292,6 +293,8 @@ type ExternalFunctions struct {
 	InstalledChaincodesLister InstalledChaincodesLister
 	ChaincodeBuilder          ChaincodeBuilder
 	BuildRegistry             *container.BuildRegistry
+	mutex                     sync.Mutex
+	BuildLocks                map[string]sync.Mutex
 }
 
 // CheckCommitReadiness takes a chaincode definition, checks that
@@ -456,7 +459,21 @@ func (ef *ExternalFunctions) ApproveChaincodeDefinitionForOrg(chname, ccname str
 			}
 
 			if err := uncommittedParameters.Equal(cd.Parameters()); err == nil {
-				return errors.Errorf("attempted to redefine uncommitted sequence (%d) for namespace %s with unchanged content", requestedSequence, ccname)
+				// also check package ID updates
+				metadata, ok, err := ef.Resources.Serializer.DeserializeMetadata(ChaincodeSourcesName, privateName, orgState)
+				if err != nil {
+					return errors.WithMessagef(err, "could not deserialize chaincode-source metadata for %s", privateName)
+				}
+				if ok {
+					ccLocalPackage := &ChaincodeLocalPackage{}
+					if err := ef.Resources.Serializer.Deserialize(ChaincodeSourcesName, privateName, metadata, ccLocalPackage, orgState); err != nil {
+						return errors.WithMessagef(err, "could not deserialize chaincode package for %s", privateName)
+					}
+
+					if ccLocalPackage.PackageID == packageID {
+						return errors.Errorf("attempted to redefine uncommitted sequence (%d) for namespace %s with unchanged content", requestedSequence, ccname)
+					}
+				}
 			}
 		}
 	}
@@ -467,7 +484,7 @@ func (ef *ExternalFunctions) ApproveChaincodeDefinitionForOrg(chname, ccname str
 
 	// set the package id - whether empty or not. Setting
 	// an empty package ID means that the chaincode won't
-	// be invokable. The package might be set empty after
+	// be invocable. The package might be set empty after
 	// the definition commits as a way of instructing the
 	// peers of an org no longer to endorse invocations
 	// for this chaincode
@@ -551,11 +568,22 @@ func (ef *ExternalFunctions) InstallChaincode(chaincodeInstallPackage []byte) (*
 		return nil, errors.WithMessage(err, "could not save cc install package")
 	}
 
+	buildLock := ef.getBuildLock(packageID)
+	buildLock.Lock()
+	defer buildLock.Unlock()
+
 	buildStatus, ok := ef.BuildRegistry.BuildStatus(packageID)
-	if !ok {
-		err := ef.ChaincodeBuilder.Build(packageID)
-		buildStatus.Notify(err)
+	if ok {
+		// another invocation of lifecycle has concurrently
+		// installed a chaincode with this package id
+		<-buildStatus.Done()
+		if buildStatus.Err() == nil {
+			return nil, errors.New("chaincode already successfully installed")
+		}
+		buildStatus = ef.BuildRegistry.ResetBuildStatus(packageID)
 	}
+	err = ef.ChaincodeBuilder.Build(packageID)
+	buildStatus.Notify(err)
 	<-buildStatus.Done()
 	if err := buildStatus.Err(); err != nil {
 		ef.Resources.ChaincodeStore.Delete(packageID)
@@ -574,7 +602,23 @@ func (ef *ExternalFunctions) InstallChaincode(chaincodeInstallPackage []byte) (*
 	}, nil
 }
 
-// GetInstalledChaincodePakcage retreives the installed chaincode with the given package ID
+func (ef *ExternalFunctions) getBuildLock(packageID string) *sync.Mutex {
+	ef.mutex.Lock()
+	defer ef.mutex.Unlock()
+
+	if ef.BuildLocks == nil {
+		ef.BuildLocks = map[string]sync.Mutex{}
+	}
+
+	buildLock, ok := ef.BuildLocks[packageID]
+	if !ok {
+		ef.BuildLocks[packageID] = sync.Mutex{}
+	}
+
+	return &buildLock
+}
+
+// GetInstalledChaincodePackage retrieves the installed chaincode with the given package ID
 // from the peer's chaincode store.
 func (ef *ExternalFunctions) GetInstalledChaincodePackage(packageID string) ([]byte, error) {
 	pkgBytes, err := ef.Resources.ChaincodeStore.Load(packageID)

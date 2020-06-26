@@ -433,7 +433,7 @@ func (couchInstance *CouchInstance) VerifyCouchConfig() (*ConnectionInfo, *DBRet
 	}
 
 	// trace the database info response
-	logger.Debugw("VerifyConnection() dbResponseJSON: %s", dbResponse)
+	logger.Debugw("VerifyConnection()", "dbResponseJSON", dbResponse)
 
 	//check to see if the system databases exist
 	//Verifying the existence of the system database accomplishes two steps
@@ -1912,7 +1912,7 @@ func (couchInstance *CouchInstance) handleRequest(ctx context.Context, method, d
 
 	//if a golang http error is still present after retries are exhausted, return the error
 	if errResp != nil {
-		return nil, couchDBReturn, errResp
+		return nil, couchDBReturn, errors.Wrap(errResp, "http error calling couchdb")
 	}
 
 	//This situation should not occur according to the golang spec.

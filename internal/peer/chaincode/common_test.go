@@ -22,7 +22,7 @@ import (
 	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/bccsp/factory"
 	"github.com/hyperledger/fabric/bccsp/sw"
-	"github.com/hyperledger/fabric/common/cauthdsl"
+	"github.com/hyperledger/fabric/common/policydsl"
 	"github.com/hyperledger/fabric/core/config/configtest"
 	"github.com/hyperledger/fabric/internal/configtxgen/encoder"
 	"github.com/hyperledger/fabric/internal/configtxgen/genesisconfig"
@@ -296,7 +296,7 @@ func TestCollectionParsing(t *testing.T) {
 	assert.NotNil(t, ccp)
 	assert.NotNil(t, ccpBytes)
 	conf := ccp.Config[0].GetStaticCollectionConfig()
-	pol, _ := cauthdsl.FromString("OR('A.member', 'B.member')")
+	pol, _ := policydsl.FromString("OR('A.member', 'B.member')")
 	assert.Equal(t, 3, int(conf.RequiredPeerCount))
 	assert.Equal(t, 483279847, int(conf.MaximumPeerCount))
 	assert.Equal(t, "foo", conf.Name)
@@ -312,7 +312,23 @@ func TestCollectionParsing(t *testing.T) {
 	assert.NotNil(t, ccp)
 	assert.NotNil(t, ccpBytes)
 	conf = ccp.Config[0].GetStaticCollectionConfig()
-	pol, _ = cauthdsl.FromString("OR('A.member', 'B.member')")
+	pol, _ = policydsl.FromString("OR('A.member', 'B.member')")
+	assert.Equal(t, 0, int(conf.RequiredPeerCount))
+	assert.Equal(t, 1, int(conf.MaximumPeerCount))
+	assert.Equal(t, "foo", conf.Name)
+	assert.True(t, proto.Equal(pol, conf.MemberOrgsPolicy.GetSignaturePolicy()))
+	assert.Equal(t, 10, int(conf.BlockToLive))
+	assert.Equal(t, true, conf.MemberOnlyRead)
+	assert.Nil(t, conf.EndorsementPolicy)
+	t.Logf("conf=%s", conf)
+
+	// Test default values for RequiredPeerCount and MaxPeerCount
+	ccp, ccpBytes, err = getCollectionConfigFromBytes([]byte(sampleCollectionConfigGoodNoMaxPeerCountOrRequiredPeerCount))
+	assert.NoError(t, err)
+	assert.NotNil(t, ccp)
+	assert.NotNil(t, ccpBytes)
+	conf = ccp.Config[0].GetStaticCollectionConfig()
+	pol, _ = policydsl.FromString("OR('A.member', 'B.member')")
 	assert.Equal(t, 0, int(conf.RequiredPeerCount))
 	assert.Equal(t, 1, int(conf.MaximumPeerCount))
 	assert.Equal(t, "foo", conf.Name)
@@ -327,7 +343,7 @@ func TestCollectionParsing(t *testing.T) {
 	assert.NotNil(t, ccp)
 	assert.NotNil(t, ccpBytes)
 	conf = ccp.Config[0].GetStaticCollectionConfig()
-	pol, _ = cauthdsl.FromString("OR('A.member', 'B.member')")
+	pol, _ = policydsl.FromString("OR('A.member', 'B.member')")
 	assert.Equal(t, 3, int(conf.RequiredPeerCount))
 	assert.Equal(t, 483279847, int(conf.MaximumPeerCount))
 	assert.Equal(t, "foo", conf.Name)
@@ -342,7 +358,7 @@ func TestCollectionParsing(t *testing.T) {
 	assert.NotNil(t, ccp)
 	assert.NotNil(t, ccpBytes)
 	conf = ccp.Config[0].GetStaticCollectionConfig()
-	pol, _ = cauthdsl.FromString("OR('A.member', 'B.member')")
+	pol, _ = policydsl.FromString("OR('A.member', 'B.member')")
 	assert.Equal(t, 3, int(conf.RequiredPeerCount))
 	assert.Equal(t, 483279847, int(conf.MaximumPeerCount))
 	assert.Equal(t, "foo", conf.Name)

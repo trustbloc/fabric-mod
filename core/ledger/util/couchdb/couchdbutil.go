@@ -1,5 +1,6 @@
 /*
 Copyright IBM Corp. All Rights Reserved.
+
 SPDX-License-Identifier: Apache-2.0
 */
 
@@ -34,7 +35,6 @@ var namespaceNameAllowedLength = 50
 var collectionNameAllowedLength = 50
 
 func CreateCouchInstance(config *Config, metricsProvider metrics.Provider) (*CouchInstance, error) {
-
 	// make sure the address is valid
 	connectURL := &url.URL{
 		Host:   config.Address,
@@ -278,7 +278,7 @@ func ConstructNamespaceDBName(chainName, namespace string) string {
 //
 //Restrictions have already been applied to the database name from Orderer based on
 //restrictions required by Kafka and couchDB (except a '.' char). The databaseName
-// passed in here is expected to follow `[a-z][a-z0-9.$_-]*` pattern.
+// passed in here is expected to follow `[a-z][a-z0-9.$_()+-]*` pattern.
 //
 //This validation will simply check whether the database name matches the above pattern and will replace
 // all occurrence of '.' by '$'. This will not cause collisions in the transformed named

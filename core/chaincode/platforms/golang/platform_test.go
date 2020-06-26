@@ -29,6 +29,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func init() {
+	// Significantly reduce execution time of deployment payload tests.
+	gzipCompressionLevel = gzip.NoCompression
+}
+
 func generateFakeCDS(ccname, path, file string, mode int64) (*pb.ChaincodeDeploymentSpec, error) {
 	codePackage := bytes.NewBuffer(nil)
 	gw := gzip.NewWriter(codePackage)
@@ -172,14 +177,17 @@ func getGopath() (string, error) {
 func Test_findSource(t *testing.T) {
 	t.Run("Gopath", func(t *testing.T) {
 		source, err := findSource(&CodeDescriptor{
+			Module:       false,
 			Source:       filepath.FromSlash("testdata/src/chaincodes/noop"),
 			MetadataRoot: filepath.FromSlash("testdata/src/chaincodes/noop/META-INF"),
 			Path:         "chaincodes/noop",
 		})
 		require.NoError(t, err, "failed to find source")
-		assert.Len(t, source, 2)
 		assert.Contains(t, source, "src/chaincodes/noop/chaincode.go")
 		assert.Contains(t, source, "META-INF/statedb/couchdb/indexes/indexOwner.json")
+		assert.NotContains(t, source, "src/chaincodes/noop/go.mod")
+		assert.NotContains(t, source, "src/chaincodes/noop/go.sum")
+		assert.Len(t, source, 2)
 	})
 
 	t.Run("Module", func(t *testing.T) {
@@ -314,15 +322,17 @@ func TestGetDeploymentPayload(t *testing.T) {
 		{gopath: "", path: "testdata/ccmodule", succ: true},
 	}
 
-	for _, tst := range tests {
-		reset := updateGopath(t, tst.gopath)
-		_, err := platform.GetDeploymentPayload(tst.path)
-		if tst.succ {
-			assert.NoError(t, err, "expected success for path: %s", tst.path)
-		} else {
-			assert.Errorf(t, err, "expected error for path: %s", tst.path)
-		}
-		reset()
+	for i, tst := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			reset := updateGopath(t, tst.gopath)
+			_, err := platform.GetDeploymentPayload(tst.path)
+			if tst.succ {
+				assert.NoError(t, err, "expected success for path: %s", tst.path)
+			} else {
+				assert.Errorf(t, err, "expected error for path: %s", tst.path)
+			}
+			reset()
+		})
 	}
 }
 
@@ -453,6 +463,24 @@ func TestDescribeCode(t *testing.T) {
 			Module:       true,
 		}
 		assert.Equal(t, expected, cd)
+	})
+}
+
+func TestRegularFileExists(t *testing.T) {
+	t.Run("RegularFile", func(t *testing.T) {
+		ok, err := regularFileExists("testdata/ccmodule/go.mod")
+		assert.NoError(t, err)
+		assert.True(t, ok)
+	})
+	t.Run("MissingFile", func(t *testing.T) {
+		ok, err := regularFileExists("testdata/missing.file")
+		assert.NoError(t, err)
+		assert.False(t, ok)
+	})
+	t.Run("Directory", func(t *testing.T) {
+		ok, err := regularFileExists("testdata")
+		assert.NoError(t, err)
+		assert.False(t, ok)
 	})
 }
 

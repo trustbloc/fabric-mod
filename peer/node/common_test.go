@@ -13,6 +13,7 @@ import (
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/config/configtest"
 	"github.com/hyperledger/fabric/internal/peer/common"
+	"github.com/spf13/cobra"
 	viper "github.com/spf13/viper2015"
 	"github.com/stretchr/testify/assert"
 )
@@ -34,7 +35,7 @@ func TestInitCmd(t *testing.T) {
 
 	origEnvValue := os.Getenv("FABRIC_LOGGING_SPEC")
 	os.Setenv("FABRIC_LOGGING_SPEC", "chaincode=debug:test.test2=fatal:abc=error")
-	common.InitCmd(nil, nil)
+	common.InitCmd(&cobra.Command{}, nil)
 	assert.Equal(t, "debug", flogging.Global.Level("chaincode").String())
 	assert.Equal(t, "info", flogging.Global.Level("test").String())
 	assert.Equal(t, "fatal", flogging.Global.Level("test.test2").String())
