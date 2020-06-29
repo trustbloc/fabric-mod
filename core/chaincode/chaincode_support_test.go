@@ -57,6 +57,7 @@ import (
 	policymocks "github.com/hyperledger/fabric/core/policy/mocks"
 	"github.com/hyperledger/fabric/core/scc"
 	"github.com/hyperledger/fabric/core/scc/lscc"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/msp"
 	mspmgmt "github.com/hyperledger/fabric/msp/mgmt"
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
@@ -162,7 +163,7 @@ func (meqe *mockExecQuerySimulator) GetTxSimulationResults() ([]byte, error) {
 }
 
 //initialize peer and start up. If security==enabled, login as vp
-func initMockPeer(channelIDs ...string) (*peer.Peer, *ChaincodeSupport, func(), error) {
+func initMockPeer(t *testing.T, channelIDs ...string) (*peer.Peer, *ChaincodeSupport, func(), error) {
 	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
 	if err != nil {
 		panic(fmt.Sprintf("failed to create cryptoProvider: %s", err))
@@ -175,10 +176,11 @@ func initMockPeer(channelIDs ...string) (*peer.Peer, *ChaincodeSupport, func(), 
 		panic(fmt.Sprintf("failed to create temporary directory: %s", err))
 	}
 
-	initializer := ledgermgmttest.NewInitializer(filepath.Join(tempdir, "ledgerData"))
-	peerInstance.LedgerMgr = ledgermgmt.NewLedgerMgr(initializer)
+	ledgerMgr, cleanupLedger := constructLedgerMgrWithTestDefaults(t, "ledgerData")
+	peerInstance.LedgerMgr = ledgerMgr
 
 	cleanup := func() {
+		cleanupLedger()
 		peerInstance.LedgerMgr.Close()
 		os.RemoveAll(tempdir)
 	}
@@ -988,7 +990,7 @@ func TestStartAndWaitLaunchError(t *testing.T) {
 
 func TestGetTxContextFromHandler(t *testing.T) {
 	chnl := "test"
-	peerInstance, _, cleanup, err := initMockPeer(chnl)
+	peerInstance, _, cleanup, err := initMockPeer(t, chnl)
 	assert.NoError(t, err, "failed to initialize mock peer")
 	defer cleanup()
 
@@ -1163,7 +1165,7 @@ func TestCCFramework(t *testing.T) {
 	//register 2 channels
 	chainID := "mockchainid"
 	chainID2 := "secondchain"
-	peerInstance, chaincodeSupport, cleanup, err := initMockPeer(chainID, chainID2)
+	peerInstance, chaincodeSupport, cleanup, err := initMockPeer(t, chainID, chainID2)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
@@ -1215,7 +1217,7 @@ func TestCCFramework(t *testing.T) {
 }
 
 func TestExecuteTimeout(t *testing.T) {
-	_, cs, cleanup, err := initMockPeer("testchannel")
+	_, cs, cleanup, err := initMockPeer(t, "testchannel")
 	assert.NoError(t, err)
 	defer cleanup()
 
@@ -1491,4 +1493,22 @@ func newPolicyChecker(peerInstance *peer.Peer) policy.PolicyChecker {
 		},
 		&policymocks.MockMSPPrincipalGetter{Principal: []byte("Admin")},
 	)
+}
+
+func constructLedgerMgrWithTestDefaults(t *testing.T, testDir string) (*ledgermgmt.LedgerMgr, func()) {
+	_, _, destroy := xtestutil.SetupExtTestEnv()
+
+	testDir, err := ioutil.TempDir("", testDir)
+	if err != nil {
+		t.Fatalf("Failed to create ledger directory: %s", err)
+	}
+	initializer := ledgermgmttest.NewInitializer(testDir)
+	ledgerMgr := ledgermgmt.NewLedgerMgr(initializer)
+
+	cleanup := func() {
+		ledgerMgr.Close()
+		os.RemoveAll(testDir)
+		destroy()
+	}
+	return ledgerMgr, cleanup
 }
