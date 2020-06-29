@@ -510,7 +510,6 @@ func (p *Peer) Initialize(
 	legacyLifecycleValidation plugindispatcher.LifecycleResources,
 	newLifecycleValidation plugindispatcher.CollectionAndLifecycleResources,
 	nWorkers int,
-	collDataProvider storeapi.Provider,
 ) {
 	// TODO: exported dep fields or constructor
 	p.server = server
@@ -524,21 +523,36 @@ func (p *Peer) Initialize(
 	}
 
 	for _, cid := range ledgerIds {
-		peerLogger.Infof("Loading chain %s", cid)
-		ledger, err := p.LedgerMgr.OpenLedger(cid)
-		if err != nil {
-			peerLogger.Errorf("Failed to load ledger %s(%+v)", cid, err)
-			peerLogger.Debugf("Error while loading ledger %s with message %s. We continue to the next ledger rather than abort.", cid, err)
+		if err := p.InitializeChannel(cid, deployedCCInfoProvider, legacyLifecycleValidation, newLifecycleValidation); err != nil {
 			continue
 		}
-		// Create a chain if we get a valid ledger with config block
-		err = p.createChannel(cid, ledger, deployedCCInfoProvider, legacyLifecycleValidation, newLifecycleValidation)
-		if err != nil {
-			peerLogger.Errorf("Failed to load chain %s(%s)", cid, err)
-			peerLogger.Debugf("Error reloading chain %s with message %s. We continue to the next chain rather than abort.", cid, err)
-			continue
-		}
-
-		p.initChannel(cid)
 	}
+}
+
+// InitializeChannel sets up the given channel that the peer has from the persistence.
+func (p *Peer) InitializeChannel(
+	cid string,
+	deployedCCInfoProvider ledger.DeployedChaincodeInfoProvider,
+	legacyLifecycleValidation plugindispatcher.LifecycleResources,
+	newLifecycleValidation plugindispatcher.CollectionAndLifecycleResources,
+) error {
+	peerLogger.Infof("Loading chain %s", cid)
+	ledger, err := p.LedgerMgr.OpenLedger(cid)
+	if err != nil {
+		peerLogger.Errorf("Failed to load ledger %s(%+v)", cid, err)
+		peerLogger.Debugf("Error while loading ledger %s with message %s. We continue to the next ledger rather than abort.", cid, err)
+		return err
+	}
+
+	// Create a chain if we get a valid ledger with config block
+	err = p.createChannel(cid, ledger, deployedCCInfoProvider, legacyLifecycleValidation, newLifecycleValidation)
+	if err != nil {
+		peerLogger.Errorf("Failed to load chain %s(%s)", cid, err)
+		peerLogger.Debugf("Error reloading chain %s with message %s. We continue to the next chain rather than abort.", cid, err)
+		return err
+	}
+
+	p.initChannel(cid)
+
+	return nil
 }

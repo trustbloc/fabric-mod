@@ -844,7 +844,6 @@ func serve(args []string) error {
 		lsccInst,
 		lifecycleValidatorCommitter,
 		coreConfig.ValidatorPoolSize,
-		collDataProvider,
 	)
 
 	if coreConfig.DiscoveryEnabled {

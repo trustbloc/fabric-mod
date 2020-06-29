@@ -27,7 +27,6 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt/ledgermgmttest"
 	"github.com/hyperledger/fabric/core/ledger/mock"
 	ledgermocks "github.com/hyperledger/fabric/core/ledger/mock"
-	extmocks "github.com/hyperledger/fabric/extensions/mocks"
 	transientstoreext "github.com/hyperledger/fabric/extensions/storage/transientstore"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/gossip/gossip"
@@ -166,7 +165,6 @@ func TestInitialize(t *testing.T) {
 		nil,
 		nil,
 		runtime.NumCPU(),
-		&extmocks.DataProvider{},
 	)
 	assert.Equal(t, peerInstance.server, server)
 }
@@ -187,7 +185,6 @@ func TestCreateChannel(t *testing.T) {
 		nil,
 		nil,
 		runtime.NumCPU(),
-		&extmocks.DataProvider{},
 	)
 
 	testChainID := fmt.Sprintf("mytestchainid-%d", rand.Int())
