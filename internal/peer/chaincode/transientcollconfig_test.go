@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/common/cauthdsl"
+	"github.com/hyperledger/fabric/common/policydsl"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -38,7 +38,7 @@ const sampleCollectionConfigInvalidType = `[
 ]`
 
 func TestCollectionTypeParsing(t *testing.T) {
-	pol, _ := cauthdsl.FromString("OR('A.member', 'B.member')")
+	pol, _ := policydsl.FromString("OR('A.member', 'B.member')")
 
 	t.Run("Invalid Collection Config Type", func(t *testing.T) {
 		_, _, err := getCollectionConfigFromBytes([]byte(sampleCollectionConfigInvalidType))

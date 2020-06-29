@@ -1,5 +1,6 @@
 /*
 Copyright IBM Corp. All Rights Reserved.
+
 SPDX-License-Identifier: Apache-2.0
 */
 
@@ -18,7 +19,6 @@ import (
 	"github.com/hyperledger/fabric/bccsp/sw"
 	configtxtest "github.com/hyperledger/fabric/common/configtx/test"
 	"github.com/hyperledger/fabric/common/metrics/disabled"
-	"github.com/hyperledger/fabric/core/comm"
 	"github.com/hyperledger/fabric/core/committer/txvalidator/plugin"
 	"github.com/hyperledger/fabric/core/deliverservice"
 	validation "github.com/hyperledger/fabric/core/handlers/validation/api"
@@ -32,10 +32,12 @@ import (
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/gossip/gossip"
 	gossipmetrics "github.com/hyperledger/fabric/gossip/metrics"
+	"github.com/hyperledger/fabric/gossip/privdata"
 	"github.com/hyperledger/fabric/gossip/service"
 	gossipservice "github.com/hyperledger/fabric/gossip/service"
 	peergossip "github.com/hyperledger/fabric/internal/peer/gossip"
 	"github.com/hyperledger/fabric/internal/peer/gossip/mocks"
+	"github.com/hyperledger/fabric/internal/pkg/comm"
 	"github.com/hyperledger/fabric/msp/mgmt"
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
 	"github.com/stretchr/testify/assert"
@@ -97,6 +99,7 @@ func NewTestPeer(t *testing.T) (*Peer, func()) {
 		nil,
 		gossipConfig,
 		&service.ServiceConfig{},
+		&privdata.PrivdataConfig{},
 		&deliverservice.DeliverServiceConfig{
 			ReConnectBackoffThreshold:   deliverservice.DefaultReConnectBackoffThreshold,
 			ReconnectTotalTimeThreshold: deliverservice.DefaultReConnectTotalTimeThreshold,
@@ -133,8 +136,31 @@ func TestInitialize(t *testing.T) {
 	peerInstance, cleanup := NewTestPeer(t)
 	defer cleanup()
 
+	org1CA, err := ioutil.ReadFile(filepath.Join("testdata", "Org1-cert.pem"))
+	require.NoError(t, err)
+	org1Server1Key, err := ioutil.ReadFile(filepath.Join("testdata", "Org1-server1-key.pem"))
+	require.NoError(t, err)
+	org1Server1Cert, err := ioutil.ReadFile(filepath.Join("testdata", "Org1-server1-cert.pem"))
+	require.NoError(t, err)
+	serverConfig := comm.ServerConfig{
+		SecOpts: comm.SecureOptions{
+			UseTLS:            true,
+			Certificate:       org1Server1Cert,
+			Key:               org1Server1Key,
+			ServerRootCAs:     [][]byte{org1CA},
+			RequireClientCert: true,
+		},
+	}
+
+	server, err := comm.NewGRPCServer("localhost:0", serverConfig)
+	if err != nil {
+		t.Fatalf("NewGRPCServer failed with error [%s]", err)
+		return
+	}
+
 	peerInstance.Initialize(
 		nil,
+		server,
 		plugin.MapBasedMapper(map[string]validation.PluginFactory{}),
 		&ledgermocks.DeployedChaincodeInfoProvider{},
 		nil,
@@ -142,6 +168,7 @@ func TestInitialize(t *testing.T) {
 		runtime.NumCPU(),
 		&extmocks.DataProvider{},
 	)
+	assert.Equal(t, peerInstance.server, server)
 }
 
 func TestCreateChannel(t *testing.T) {
@@ -154,6 +181,7 @@ func TestCreateChannel(t *testing.T) {
 	var initArg string
 	peerInstance.Initialize(
 		func(cid string) { initArg = cid },
+		nil,
 		plugin.MapBasedMapper(map[string]validation.PluginFactory{}),
 		&ledgermocks.DeployedChaincodeInfoProvider{},
 		nil,
@@ -240,4 +268,10 @@ func constructLedgerMgrWithTestDefaults(ledgersDataDir string) (*ledgermgmt.Ledg
 		Enabled: true,
 	}
 	return ledgermgmt.NewLedgerMgr(ledgerInitializer), nil
+}
+
+// SetServer sets the gRPC server for the peer.
+// It should only be used in peer/pkg_test.
+func (p *Peer) SetServer(server *comm.GRPCServer) {
+	p.server = server
 }

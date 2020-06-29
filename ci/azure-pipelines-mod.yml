@@ -4,7 +4,7 @@
 
 name: $(SourceBranchName)-$(Date:yyyyMMdd).$(Rev:r)
 variables:
-  GO_VERSION: 1.13.4
+  GO_VERSION: 1.14.1
   GOPATH: $(Agent.BuildDirectory)/go
 
 jobs:

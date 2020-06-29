@@ -63,6 +63,11 @@ gotool.dep:
 	@git -C $(abspath $(GOTOOLS_GOPATH))/src/github.com/golang/dep checkout -q master
 
 # Default rule for gotools uses the name->path map for a generic 'go get' style build
+gotool.mockery:
+	@echo "Building github.com/vektra/mockery/cmd/mockery -> mockery"
+	GOPATH=$(abspath $(GOTOOLS_GOPATH)) GOBIN=$(abspath $(GOTOOLS_BINDIR)) go get github.com/vektra/mockery/cmd/mockery
+
+# Default rule for gotools uses the name->path map for a generic 'go get' style build
 gotool.%:
 	$(eval TOOL = ${subst gotool.,,${@}})
 	@echo "Building ${go.fqp.${TOOL}} -> $(TOOL)"

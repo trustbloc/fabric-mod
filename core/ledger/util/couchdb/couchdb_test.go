@@ -235,7 +235,7 @@ func TestBadCouchDBInstance(t *testing.T) {
 }
 
 func TestDBCreateSaveWithoutRevision(t *testing.T) {
-
+	startCouchDB()
 	database := "testdbcreatesavewithoutrevision"
 	err := cleanup(database)
 	assert.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
@@ -257,7 +257,7 @@ func TestDBCreateSaveWithoutRevision(t *testing.T) {
 }
 
 func TestDBCreateEnsureFullCommit(t *testing.T) {
-
+	startCouchDB()
 	database := "testdbensurefullcommit"
 	err := cleanup(database)
 	assert.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
@@ -322,11 +322,11 @@ func TestIsEmpty(t *testing.T) {
 	couchInstance.conf.MaxRetries = 0
 	isEmpty, err = couchInstance.IsEmpty(ignore)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "unable to connect to CouchDB, check the hostname and port: Get http://junk/_all_dbs")
+	require.Regexp(t, `unable to connect to CouchDB, check the hostname and port: http error calling couchdb: Get "?http://junk/_all_dbs"?`, err.Error())
 }
 
 func TestDBBadDatabaseName(t *testing.T) {
-
+	startCouchDB()
 	//create a new instance and database object using a valid database name mixed case
 	couchInstance, err := CreateCouchInstance(testConfig(), &disabled.Provider{})
 	assert.NoError(t, err, "Error when trying to create couch instance")
@@ -357,7 +357,7 @@ func TestDBBadDatabaseName(t *testing.T) {
 }
 
 func TestDBBadConnection(t *testing.T) {
-
+	startCouchDB()
 	//create a new instance and database object
 	//Limit the maxRetriesOnStartup to 3 in order to reduce time for the failure
 	config := testConfig()
@@ -368,7 +368,7 @@ func TestDBBadConnection(t *testing.T) {
 }
 
 func TestBadDBCredentials(t *testing.T) {
-
+	startCouchDB()
 	database := "testdbbadcredentials"
 	err := cleanup(database)
 	assert.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
@@ -384,6 +384,7 @@ func TestBadDBCredentials(t *testing.T) {
 }
 
 func TestDBCreateDatabaseAndPersist(t *testing.T) {
+	startCouchDB()
 
 	//Test create and persist with default configured maxRetries
 	testDBCreateDatabaseAndPersist(t, testConfig().MaxRetries)
@@ -614,14 +615,14 @@ func testDBCreateDatabaseAndPersist(t *testing.T, maxRetries int) {
 }
 
 func TestDBRequestTimeout(t *testing.T) {
-
+	startCouchDB()
 	database := "testdbrequesttimeout"
 	err := cleanup(database)
 	assert.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
 	defer cleanup(database)
 
 	//create an impossibly short timeout
-	impossibleTimeout := time.Microsecond * 1
+	impossibleTimeout := time.Nanosecond
 
 	//create a new instance and database object with a timeout that will fail
 	//Also use a maxRetriesOnStartup=3 to reduce the number of retries
@@ -641,7 +642,7 @@ func TestDBRequestTimeout(t *testing.T) {
 }
 
 func TestDBTimeoutConflictRetry(t *testing.T) {
-
+	startCouchDB()
 	database := "testdbtimeoutretry"
 	err := cleanup(database)
 	assert.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
@@ -682,7 +683,7 @@ func TestDBTimeoutConflictRetry(t *testing.T) {
 }
 
 func TestDBBadNumberOfRetries(t *testing.T) {
-
+	startCouchDB()
 	database := "testdbbadretries"
 	err := cleanup(database)
 	assert.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
@@ -698,7 +699,7 @@ func TestDBBadNumberOfRetries(t *testing.T) {
 }
 
 func TestDBBadJSON(t *testing.T) {
-
+	startCouchDB()
 	database := "testdbbadjson"
 	err := cleanup(database)
 	assert.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
@@ -727,7 +728,7 @@ func TestDBBadJSON(t *testing.T) {
 }
 
 func TestPrefixScan(t *testing.T) {
-
+	startCouchDB()
 	database := "testprefixscan"
 	err := cleanup(database)
 	assert.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
@@ -785,7 +786,7 @@ func TestPrefixScan(t *testing.T) {
 }
 
 func TestDBSaveAttachment(t *testing.T) {
-
+	startCouchDB()
 	database := "testdbsaveattachment"
 	err := cleanup(database)
 	assert.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
@@ -825,7 +826,7 @@ func TestDBSaveAttachment(t *testing.T) {
 }
 
 func TestDBDeleteDocument(t *testing.T) {
-
+	startCouchDB()
 	database := "testdbdeletedocument"
 	err := cleanup(database)
 	assert.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
@@ -859,7 +860,7 @@ func TestDBDeleteDocument(t *testing.T) {
 }
 
 func TestDBDeleteNonExistingDocument(t *testing.T) {
-
+	startCouchDB()
 	database := "testdbdeletenonexistingdocument"
 	err := cleanup(database)
 	assert.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
@@ -880,7 +881,7 @@ func TestDBDeleteNonExistingDocument(t *testing.T) {
 }
 
 func TestCouchDBVersion(t *testing.T) {
-
+	startCouchDB()
 	err := checkCouchDBVersion("2.0.0")
 	assert.NoError(t, err, "Error should not have been thrown for valid version")
 
@@ -896,7 +897,7 @@ func TestCouchDBVersion(t *testing.T) {
 }
 
 func TestIndexOperations(t *testing.T) {
-
+	startCouchDB()
 	database := "testindexoperations"
 	err := cleanup(database)
 	assert.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
@@ -1068,7 +1069,7 @@ func TestIndexOperations(t *testing.T) {
 }
 
 func TestRichQuery(t *testing.T) {
-
+	startCouchDB()
 	byteJSON01 := []byte(`{"asset_name":"marble01","color":"blue","size":1,"owner":"jerry"}`)
 	byteJSON02 := []byte(`{"asset_name":"marble02","color":"red","size":2,"owner":"tom"}`)
 	byteJSON03 := []byte(`{"asset_name":"marble03","color":"green","size":3,"owner":"jerry"}`)
@@ -1605,7 +1606,7 @@ func addRevisionAndDeleteStatus(revision string, value []byte, deleted bool) []b
 }
 
 func TestDatabaseSecuritySettings(t *testing.T) {
-
+	startCouchDB()
 	database := "testdbsecuritysettings"
 	err := cleanup(database)
 	assert.NoError(t, err, "Error when trying to cleanup  Error: %s", err)
@@ -1659,7 +1660,7 @@ func TestDatabaseSecuritySettings(t *testing.T) {
 }
 
 func TestURLWithSpecialCharacters(t *testing.T) {
-
+	startCouchDB()
 	database := "testdb+with+plus_sign"
 	err := cleanup(database)
 	assert.NoError(t, err, "Error when trying to cleanup  Error: %s", err)

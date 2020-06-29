@@ -151,13 +151,13 @@ func (d *Detector) Build(ccid string, mdBytes []byte, codeStream io.Reader) (*In
 	}
 
 	durableReleaseDir := filepath.Join(durablePath, "release")
-	err = MoveOrCopyDir(logger, buildContext.ReleaseDir, durableReleaseDir)
+	err = CopyDir(logger, buildContext.ReleaseDir, durableReleaseDir)
 	if err != nil {
 		return nil, errors.WithMessagef(err, "could not move or copy build context release to persistent location '%s'", durablePath)
 	}
 
 	durableBldDir := filepath.Join(durablePath, "bld")
-	err = MoveOrCopyDir(logger, buildContext.BldDir, durableBldDir)
+	err = CopyDir(logger, buildContext.BldDir, durableBldDir)
 	if err != nil {
 		return nil, errors.WithMessagef(err, "could not move or copy build context bld to persistent location '%s'", durablePath)
 	}
@@ -316,13 +316,10 @@ func (b *Builder) Build(buildContext *BuildContext) error {
 func (b *Builder) Release(buildContext *BuildContext) error {
 	release := filepath.Join(b.Location, "bin", "release")
 
-	_, err := os.Stat(release)
-	if os.IsNotExist(err) {
+	_, err := exec.LookPath(release)
+	if err != nil {
 		b.Logger.Debugf("Skipping release step for '%s' as no release binary found", buildContext.CCID)
 		return nil
-	}
-	if err != nil {
-		return errors.WithMessagef(err, "could not stat release binary '%s'", release)
 	}
 
 	cmd := b.NewCommand(release, buildContext.BldDir, buildContext.ReleaseDir)

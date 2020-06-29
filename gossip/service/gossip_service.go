@@ -11,7 +11,7 @@ import (
 
 	gproto "github.com/hyperledger/fabric-protos-go/gossip"
 	tspb "github.com/hyperledger/fabric-protos-go/transientstore"
-	corecomm "github.com/hyperledger/fabric/core/comm"
+	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/committer"
 	"github.com/hyperledger/fabric/core/committer/txvalidator"
 	"github.com/hyperledger/fabric/core/common/privdata"
@@ -35,6 +35,7 @@ import (
 	"github.com/hyperledger/fabric/gossip/protoext"
 	"github.com/hyperledger/fabric/gossip/state"
 	"github.com/hyperledger/fabric/gossip/util"
+	corecomm "github.com/hyperledger/fabric/internal/pkg/comm"
 	"github.com/hyperledger/fabric/internal/pkg/identity"
 	"github.com/hyperledger/fabric/internal/pkg/peer/blocksprovider"
 	"github.com/hyperledger/fabric/internal/pkg/peer/orderers"
@@ -178,6 +179,7 @@ type GossipService struct {
 	secAdv          api.SecurityAdvisor
 	metrics         *gossipmetrics.GossipMetrics
 	serviceConfig   *ServiceConfig
+	privdataConfig  *gossipprivdata.PrivdataConfig
 }
 
 // This is an implementation of api.JoinChannelMessage.
@@ -219,6 +221,7 @@ func New(
 	deliverGRPCClient *corecomm.GRPCClient,
 	gossipConfig *gossip.Config,
 	serviceConfig *ServiceConfig,
+	privdataConfig *gossipprivdata.PrivdataConfig,
 	deliverServiceConfig *deliverservice.DeliverServiceConfig,
 ) (*GossipService, error) {
 	serializedIdentity, err := peerIdentity.Serialize()
@@ -251,10 +254,11 @@ func New(
 			deliverGRPCClient:    deliverGRPCClient,
 			deliverServiceConfig: deliverServiceConfig,
 		},
-		peerIdentity:  serializedIdentity,
-		secAdv:        secAdv,
-		metrics:       gossipMetrics,
-		serviceConfig: serviceConfig,
+		peerIdentity:   serializedIdentity,
+		secAdv:         secAdv,
+		metrics:        gossipMetrics,
+		serviceConfig:  serviceConfig,
+		privdataConfig: privdataConfig,
 	}, nil
 }
 
@@ -268,7 +272,8 @@ func (g *GossipService) DistributePrivateData(channelID string, txID string, pri
 	}
 
 	if err := handler.distributor.Distribute(txID, privData, blkHt); err != nil {
-		logger.Error("Failed to distributed private collection, txID", txID, "channel", channelID, "due to", err)
+		err := errors.WithMessagef(err, "failed to distribute private collection, txID %s, channel %s", txID, channelID)
+		logger.Error(err)
 		return err
 	}
 
@@ -317,7 +322,9 @@ func (g *GossipService) InitializeChannel(channelID string, ordererSource *order
 		PullRetryThreshold:             g.serviceConfig.PvtDataPullRetryThreshold,
 		SkipPullingInvalidTransactions: g.serviceConfig.SkipPullingInvalidTransactionsDuringCommit,
 	}
-	coordinator := gossipprivdata.NewCoordinator(gossipprivdata.Support{
+	selfSignedData := g.createSelfSignedData()
+	mspID := string(g.secAdv.OrgByPeerIdentity(selfSignedData.Identity))
+	coordinator := gossipprivdata.NewCoordinator(mspID, gossipprivdata.Support{
 		ChainID:            channelID,
 		CollectionStore:    support.CollectionStore,
 		Validator:          support.Validator,
@@ -325,15 +332,14 @@ func (g *GossipService) InitializeChannel(channelID string, ordererSource *order
 		Fetcher:            fetcher,
 		CapabilityProvider: support.CapabilityProvider,
 		CollDataStore:      support.CollDataStore,
-	}, store, g.createSelfSignedData(), g.metrics.PrivdataMetrics, coordinatorConfig,
+	}, store, selfSignedData, g.metrics.PrivdataMetrics, coordinatorConfig,
 		support.IdDeserializeFactory)
 
-	privdataConfig := gossipprivdata.GlobalConfig()
 	var reconciler gossipprivdata.PvtDataReconciler
 
-	if xgossipservice.IsPvtDataReconcilerEnabled(privdataConfig.ReconciliationEnabled) {
+	if xgossipservice.IsPvtDataReconcilerEnabled(g.privdataConfig.ReconciliationEnabled) {
 		reconciler = gossipprivdata.NewReconciler(channelID, g.metrics.PrivdataMetrics,
-			support.Committer, fetcher, privdataConfig)
+			support.Committer, fetcher, g.privdataConfig)
 	} else {
 		reconciler = &gossipprivdata.NoOpReconciler{}
 	}
@@ -350,6 +356,7 @@ func (g *GossipService) InitializeChannel(channelID string, ordererSource *order
 	blockingMode := !g.serviceConfig.NonBlockingCommitMode
 	stateConfig := state.GlobalConfig()
 	g.chains[channelID] = state.NewGossipStateProvider(
+		flogging.MustGetLogger(util.StateLogger),
 		channelID,
 		servicesAdapter,
 		coordinator,

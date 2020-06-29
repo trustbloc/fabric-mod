@@ -41,12 +41,8 @@
 #   - docker-tag-stable - re-tags the images made by 'make docker' with the :stable tag
 #   - help-docs - generate the command reference docs
 
-ALPINE_VER ?= 3.10
-BASE_VERSION = 2.0.0
-PREV_VERSION = 2.0.0-beta
-
-# BASEIMAGE_RELEASE should be removed now
-BASEIMAGE_RELEASE = 0.4.18
+ALPINE_VER ?= 3.11
+BASE_VERSION = 2.1.1
 
 # 3rd party image version
 # These versions are also set in the runners in ./integration/runners/
@@ -75,9 +71,8 @@ METADATA_VAR = Version=$(BASE_VERSION)
 METADATA_VAR += CommitSHA=$(EXTRA_VERSION)
 METADATA_VAR += BaseDockerLabel=$(BASE_DOCKER_LABEL)
 METADATA_VAR += DockerNamespace=$(DOCKER_NS)
-METADATA_VAR += BaseDockerNamespace=$(BASE_DOCKER_NS)
 
-GO_VER = $(shell grep "GO_VER" ci.properties |cut -d'=' -f2-)
+GO_VER = 1.14.1
 GO_TAGS ?=
 
 RELEASE_EXES = orderer $(TOOLS_EXES)
@@ -135,7 +130,7 @@ gotools: gotools-install
 
 .PHONY: check-go-version
 check-go-version:
-	@scripts/check_go_version.sh
+	@scripts/check_go_version.sh $(GO_VER)
 
 .PHONY: integration-test
 integration-test: gotool.ginkgo ccenv-docker baseos-docker docker-thirdparty
@@ -190,10 +185,6 @@ generate-metrics-doc: gotools
 protos: gotools
 	@echo "Compiling non-API protos..."
 	./scripts/compile_protos.sh
-
-.PHONY: changelog
-changelog:
-	./scripts/changelog.sh v$(PREV_VERSION) v$(BASE_VERSION)
 
 .PHONY: native
 native: $(RELEASE_EXES)

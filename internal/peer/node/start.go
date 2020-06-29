@@ -39,6 +39,7 @@ import (
 	"github.com/hyperledger/fabric/common/metadata"
 	"github.com/hyperledger/fabric/common/metrics"
 	"github.com/hyperledger/fabric/common/policies"
+	"github.com/hyperledger/fabric/common/policydsl"
 	"github.com/hyperledger/fabric/core/aclmgmt"
 	"github.com/hyperledger/fabric/core/cclifecycle"
 	"github.com/hyperledger/fabric/core/chaincode"
@@ -47,7 +48,6 @@ import (
 	"github.com/hyperledger/fabric/core/chaincode/lifecycle"
 	"github.com/hyperledger/fabric/core/chaincode/persistence"
 	"github.com/hyperledger/fabric/core/chaincode/platforms"
-	"github.com/hyperledger/fabric/core/comm"
 	"github.com/hyperledger/fabric/core/committer/txvalidator/plugin"
 	"github.com/hyperledger/fabric/core/common/ccprovider"
 	"github.com/hyperledger/fabric/core/common/privdata"
@@ -88,10 +88,12 @@ import (
 	gossipcommon "github.com/hyperledger/fabric/gossip/common"
 	gossipgossip "github.com/hyperledger/fabric/gossip/gossip"
 	gossipmetrics "github.com/hyperledger/fabric/gossip/metrics"
+	gossipprivdata "github.com/hyperledger/fabric/gossip/privdata"
 	"github.com/hyperledger/fabric/gossip/service"
 	gossipservice "github.com/hyperledger/fabric/gossip/service"
 	peergossip "github.com/hyperledger/fabric/internal/peer/gossip"
 	"github.com/hyperledger/fabric/internal/peer/version"
+	"github.com/hyperledger/fabric/internal/pkg/comm"
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/msp/mgmt"
 	"github.com/hyperledger/fabric/protoutil"
@@ -151,6 +153,12 @@ func (e externalVMAdapter) Build(
 		return nil, nil
 	}
 	return i, err
+}
+
+type disabledDockerBuilder struct{}
+
+func (disabledDockerBuilder) Build(string, *persistence.ChaincodePackageMetadata, io.Reader) (container.Instance, error) {
+	return nil, errors.New("docker build is disabled")
 }
 
 type endorserChannelAdapter struct {
@@ -214,7 +222,7 @@ func serve(args []string) error {
 	opsSystem := newOperationsSystem(coreConfig)
 	err = opsSystem.Start()
 	if err != nil {
-		return errors.WithMessage(err, "failed to initialize operations subsystems")
+		return errors.WithMessage(err, "failed to initialize operations subsystem")
 	}
 	defer opsSystem.Stop()
 
@@ -222,9 +230,9 @@ func serve(args []string) error {
 	logObserver := floggingmetrics.NewObserver(metricsProvider)
 	flogging.SetObserver(logObserver)
 
-	membershipInfoProvider := privdata.NewMembershipInfoProvider(createSelfSignedData(), identityDeserializerFactory)
-
 	mspID := coreConfig.LocalMSPID
+
+	membershipInfoProvider := privdata.NewMembershipInfoProvider(mspID, createSelfSignedData(), identityDeserializerFactory)
 
 	chaincodeInstallPath := filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "lifecycle", "chaincodes")
 	ccStore := persistence.NewStore(chaincodeInstallPath)
@@ -256,6 +264,12 @@ func serve(args []string) error {
 		grpclogging.StreamServerInterceptor(flogging.MustGetLogger("comm.grpc.server").Zap()),
 	)
 
+	semaphores := initGrpcSemaphores(coreConfig)
+	if len(semaphores) != 0 {
+		serverConfig.UnaryInterceptors = append(serverConfig.UnaryInterceptors, unaryGrpcLimiter(semaphores))
+		serverConfig.StreamInterceptors = append(serverConfig.StreamInterceptors, streamGrpcLimiter(semaphores))
+	}
+
 	cs := comm.NewCredentialSupport()
 	if serverConfig.SecOpts.UseTLS {
 		logger.Info("Starting peer with TLS enabled")
@@ -269,11 +283,6 @@ func serve(args []string) error {
 		cs.SetClientCertificate(clientCert)
 	}
 
-	peerServer, err := comm.NewGRPCServer(listenAddr, serverConfig)
-	if err != nil {
-		logger.Fatalf("Failed to create peer server (%s)", err)
-	}
-
 	transientStoreProvider, err := transientstoreext.NewStoreProvider(
 		filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "transientstore"),
 	)
@@ -284,7 +293,6 @@ func serve(args []string) error {
 	deliverServiceConfig := deliverservice.GlobalConfig()
 
 	peerInstance := &peer.Peer{
-		Server:                   peerServer,
 		ServerConfig:             serverConfig,
 		CredentialSupport:        cs,
 		StoreProvider:            transientStoreProvider,
@@ -324,25 +332,6 @@ func serve(args []string) error {
 		logger.Panicf("Could not create the deliver grpc client: [%+v]", err)
 	}
 
-	// FIXME: Creating the gossip service has the side effect of starting a bunch
-	// of go routines and registration with the grpc server.
-	gossipService, err := initGossipService(
-		policyMgr,
-		metricsProvider,
-		peerServer,
-		signingIdentity,
-		cs,
-		coreConfig.PeerAddress,
-		deliverGRPCClient,
-		deliverServiceConfig,
-	)
-	if err != nil {
-		return errors.WithMessage(err, "failed to initialize gossip service")
-	}
-	defer gossipService.Stop()
-
-	peerInstance.GossipService = gossipService
-
 	policyChecker := policy.NewPolicyChecker(
 		policies.PolicyManagerGetterFunc(peerInstance.GetPolicyManager),
 		mgmt.GetLocalMSP(factory.GetDefault()),
@@ -371,16 +360,15 @@ func serve(args []string) error {
 		PackageParser:       ccPackageParser,
 	}
 
+	privdataConfig := gossipprivdata.GlobalConfig()
 	lifecycleValidatorCommitter := &lifecycle.ValidatorCommitter{
+		CoreConfig:                   coreConfig,
+		PrivdataConfig:               privdataConfig,
 		Resources:                    lifecycleResources,
 		LegacyDeployedCCInfoProvider: &lscc.DeployedCCInfoProvider{},
 	}
 
 	ccInfoFSImpl := &ccprovider.CCInfoFSImpl{GetHasher: factory.GetDefault()}
-
-	// Configure CC package storage
-	lsccInstallPath := filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "chaincodes")
-	ccprovider.SetChaincodesPath(lsccInstallPath)
 
 	// metadataManager aggregates metadata information from _lifecycle and
 	// the legacy lifecycle (lscc).
@@ -438,6 +426,35 @@ func serve(args []string) error {
 			CollDataProvider:                collDataProvider,
 		},
 	)
+
+	peerServer, err := comm.NewGRPCServer(listenAddr, serverConfig)
+	if err != nil {
+		logger.Fatalf("Failed to create peer server (%s)", err)
+	}
+
+	// FIXME: Creating the gossip service has the side effect of starting a bunch
+	// of go routines and registration with the grpc server.
+	gossipService, err := initGossipService(
+		policyMgr,
+		metricsProvider,
+		peerServer,
+		signingIdentity,
+		cs,
+		coreConfig.PeerAddress,
+		deliverGRPCClient,
+		deliverServiceConfig,
+		privdataConfig,
+	)
+	if err != nil {
+		return errors.WithMessage(err, "failed to initialize gossip service")
+	}
+	defer gossipService.Stop()
+
+	peerInstance.GossipService = gossipService
+
+	// Configure CC package storage
+	lsccInstallPath := filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "chaincodes")
+	ccprovider.SetChaincodesPath(lsccInstallPath)
 
 	if err := lifecycleCache.InitializeLocalChaincodes(); err != nil {
 		return errors.WithMessage(err, "could not initialize local chaincodes")
@@ -501,15 +518,14 @@ func serve(args []string) error {
 
 	chaincodeConfig := chaincode.GlobalConfig()
 
-	var client *docker.Client
-	var dockerVM *dockercontroller.DockerVM
+	var dockerBuilder container.DockerBuilder
 	if coreConfig.VMEndpoint != "" {
-		client, err = createDockerClient(coreConfig)
+		client, err := createDockerClient(coreConfig)
 		if err != nil {
 			logger.Panicf("cannot create docker client: %s", err)
 		}
 
-		dockerVM = &dockercontroller.DockerVM{
+		dockerVM := &dockercontroller.DockerVM{
 			PeerID:        coreConfig.PeerID,
 			NetworkID:     coreConfig.NetworkID,
 			BuildMetrics:  dockercontroller.NewBuildMetrics(opsSystem.Provider),
@@ -535,6 +551,12 @@ func serve(args []string) error {
 		if err := opsSystem.RegisterChecker("docker", dockerVM); err != nil {
 			logger.Panicf("failed to register docker health check: %s", err)
 		}
+		dockerBuilder = dockerVM
+	}
+
+	// docker is disabled when we're missing the docker config
+	if dockerBuilder == nil {
+		dockerBuilder = &disabledDockerBuilder{}
 	}
 
 	externalVM := &externalbuilder.Detector{
@@ -545,7 +567,7 @@ func serve(args []string) error {
 	buildRegistry := &container.BuildRegistry{}
 
 	containerRouter := &container.Router{
-		DockerBuilder:   dockerVM,
+		DockerBuilder:   dockerBuilder,
 		ExternalBuilder: externalVMAdapter{externalVM},
 		PackageProvider: &persistence.FallbackPackageLocator{
 			ChaincodePackageLocator: &persistence.ChaincodePackageLocator{
@@ -664,9 +686,6 @@ func serve(args []string) error {
 		factory.GetDefault(),
 	)
 	qsccInst := scc.SelfDescribingSysCC(qscc.New(aclProvider, peerInstance))
-	if maxConcurrency := coreConfig.LimitsConcurrencyQSCC; maxConcurrency != 0 {
-		qsccInst = scc.Throttle(maxConcurrency, qsccInst)
-	}
 
 	pb.RegisterChaincodeSupportServer(ccSrv.Server(), ccSupSrv)
 
@@ -819,6 +838,7 @@ func serve(args []string) error {
 			// this is expected to disappear with FAB-15061
 			cceventmgmt.GetMgr().Register(cid, sub)
 		},
+		peerServer,
 		plugin.MapBasedMapper(validationPluginsByName),
 		lifecycleValidatorCommitter,
 		lsccInst,
@@ -863,7 +883,7 @@ func serve(args []string) error {
 		}()
 	}
 
-	go handleSignals(addPlatformSignals(map[os.Signal]func(){
+	handleSignals(addPlatformSignals(map[os.Signal]func(){
 		syscall.SIGINT:  func() { serve <- nil },
 		syscall.SIGTERM: func() { serve <- nil },
 	}))
@@ -923,10 +943,12 @@ func handleSignals(handlers map[os.Signal]func()) {
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, signals...)
 
-	for sig := range signalChan {
-		logger.Infof("Received signal: %d (%s)", sig, sig)
-		handlers[sig]()
-	}
+	go func() {
+		for sig := range signalChan {
+			logger.Infof("Received signal: %d (%s)", sig, sig)
+			handlers[sig]()
+		}
+	}()
 }
 
 func localPolicy(policyObject proto.Message) policies.Policy {
@@ -966,9 +988,9 @@ func registerDiscoveryService(
 	gossipService *gossipservice.GossipService,
 ) {
 	mspID := coreConfig.LocalMSPID
-	localAccessPolicy := localPolicy(cauthdsl.SignedByAnyAdmin([]string{mspID}))
+	localAccessPolicy := localPolicy(policydsl.SignedByAnyAdmin([]string{mspID}))
 	if coreConfig.DiscoveryOrgMembersAllowed {
-		localAccessPolicy = localPolicy(cauthdsl.SignedByAnyMember([]string{mspID}))
+		localAccessPolicy = localPolicy(policydsl.SignedByAnyMember([]string{mspID}))
 	}
 	channelVerifier := discacl.NewChannelVerifier(policies.ChannelApplicationWriters, polMgr)
 	acl := discacl.NewDiscoverySupport(channelVerifier, localAccessPolicy, discacl.ChannelConfigGetterFunc(peerInstance.GetStableChannelConfig))
@@ -1190,6 +1212,7 @@ func initGossipService(
 	peerAddress string,
 	deliverGRPCClient *comm.GRPCClient,
 	deliverServiceConfig *deliverservice.DeliverServiceConfig,
+	privdataConfig *gossipprivdata.PrivdataConfig,
 ) (*gossipservice.GossipService, error) {
 
 	var certs *gossipcommon.TLSCertificates
@@ -1234,6 +1257,7 @@ func initGossipService(
 		deliverGRPCClient,
 		gossipConfig,
 		serviceConfig,
+		privdataConfig,
 		deliverServiceConfig,
 	)
 }

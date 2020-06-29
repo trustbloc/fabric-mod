@@ -728,7 +728,7 @@ func (vdb *VersionedDB) postCommitProcessing(committers []*committer, namespaces
 	wg.Wait()
 	select {
 	case err := <-errChan:
-		return err
+		return errors.WithStack(err)
 	default:
 		return nil
 	}
@@ -788,7 +788,7 @@ func (vdb *VersionedDB) ensureFullCommitAndRecordSavepoint(height *version.Heigh
 	select {
 	case err := <-errsChan:
 		logger.Errorf("Failed to perform full commit")
-		return errors.WithMessage(err, "failed to perform full commit")
+		return errors.Wrap(err, "failed to perform full commit")
 	default:
 		logger.Debugf("All changes have been flushed to the disk")
 	}

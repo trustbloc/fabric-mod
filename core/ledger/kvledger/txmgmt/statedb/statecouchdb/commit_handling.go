@@ -1,5 +1,6 @@
 /*
 Copyright IBM Corp. All Rights Reserved.
+
 SPDX-License-Identifier: Apache-2.0
 */
 
@@ -88,7 +89,7 @@ func (vdb *VersionedDB) buildCommitters(updates *statedb.UpdateBatch) ([]*commit
 	var allCommitters []*committer
 	select {
 	case err := <-errsChan:
-		return nil, err
+		return nil, errors.WithStack(err)
 	default:
 		for i := 0; i < len(namespaces); i++ {
 			allCommitters = append(allCommitters, <-nsCommittersChan...)
@@ -164,7 +165,7 @@ func (vdb *VersionedDB) executeCommitter(committers []*committer) error {
 
 	select {
 	case err := <-errsChan:
-		return err
+		return errors.WithStack(err)
 	default:
 		return nil
 	}

@@ -28,6 +28,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
 	"github.com/hyperledger/fabric/core/ledger/mock"
 	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
+	corepeer "github.com/hyperledger/fabric/core/peer"
 	"github.com/hyperledger/fabric/core/scc/lscc"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/msp"
@@ -241,7 +242,8 @@ func populateMissingsWithTestDefaults(t *testing.T, initializer *ledgermgmt.Init
 		}
 		cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
 		assert.NoError(t, err)
-		membershipInfoProvider := privdata.NewMembershipInfoProvider(createSelfSignedData(cryptoProvider), identityDeserializerFactory)
+		mspID := "test-mspid"
+		membershipInfoProvider := privdata.NewMembershipInfoProvider(mspID, createSelfSignedData(cryptoProvider), identityDeserializerFactory)
 		initializer.MembershipInfoProvider = membershipInfoProvider
 	}
 
@@ -345,13 +347,14 @@ func (dc *deployedCCInfoProviderWrapper) AllCollectionsConfigPkg(channelName, ch
 func (dc *deployedCCInfoProviderWrapper) ImplicitCollections(channelName, chaincodeName string, qe ledger.SimpleQueryExecutor) ([]*peer.StaticCollectionConfig, error) {
 	collConfigs := make([]*peer.StaticCollectionConfig, 0, len(dc.orgMSPIDs))
 	for _, mspID := range dc.orgMSPIDs {
-		collConfigs = append(collConfigs, lifecycle.GenerateImplicitCollectionForOrg(mspID))
+		collConfigs = append(collConfigs, dc.ValidatorCommitter.GenerateImplicitCollectionForOrg(mspID))
 	}
 	return collConfigs, nil
 }
 
 func createDeployedCCInfoProvider(orgMSPIDs []string) ledger.DeployedChaincodeInfoProvider {
 	deployedCCInfoProvider := &lifecycle.ValidatorCommitter{
+		CoreConfig: &corepeer.Config{},
 		Resources: &lifecycle.Resources{
 			Serializer: &lifecycle.Serializer{},
 		},

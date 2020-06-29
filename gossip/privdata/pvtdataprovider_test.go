@@ -1333,6 +1333,7 @@ func setupPrivateDataProvider(t *testing.T,
 	storePvtdataInPeer(rwSetsInPeer, expectedDigKeys, fetcher, ts, skipPullingInvalidTransactions)
 
 	pdp := &PvtdataProvider{
+		mspID:                                   "Org1MSP",
 		selfSignedData:                          ts.peerSelfSignedData,
 		logger:                                  logger,
 		listMissingPrivateDataDurationHistogram: metrics.ListMissingPrivateDataDuration.With("channel", ts.channelID),

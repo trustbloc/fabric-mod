@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/common/cauthdsl"
+	"github.com/hyperledger/fabric/common/policydsl"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,7 +38,7 @@ const sampleCollectionConfigDCAS = `[
 ]`
 
 func TestOffLedgerCollectionTypeParsing(t *testing.T) {
-	pol, _ := cauthdsl.FromString("OR('A.member', 'B.member')")
+	pol, _ := policydsl.FromString("OR('A.member', 'B.member')")
 
 	t.Run("OffLedger Collection Config", func(t *testing.T) {
 		ccp, _, err := getCollectionConfigFromBytes([]byte(sampleCollectionConfigOffLedger))

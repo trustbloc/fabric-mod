@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -20,10 +21,10 @@ import (
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/integration/nwo/commands"
 	"github.com/hyperledger/fabric/protoutil"
+	"github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
-
-	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 )
 
@@ -170,6 +171,11 @@ func PackageChaincodeLegacy(n *Network, chaincode Chaincode, peer *Peer) {
 }
 
 func InstallChaincode(n *Network, chaincode Chaincode, peers ...*Peer) {
+	// Ensure 'jq' exists in path, because we need it to build chaincode
+	if _, err := exec.LookPath("jq"); err != nil {
+		ginkgo.Fail("'jq' is needed to build chaincode but it wasn't found in the PATH")
+	}
+
 	if chaincode.PackageID == "" {
 		chaincode.SetPackageIDFromPackageFile()
 	}
@@ -179,14 +185,19 @@ func InstallChaincode(n *Network, chaincode Chaincode, peers ...*Peer) {
 			PackageFile: chaincode.PackageFile,
 			ClientAuth:  n.ClientAuthRequired,
 		})
-		Expect(err).NotTo(HaveOccurred())
-		Eventually(sess, n.EventuallyTimeout).Should(gexec.Exit(0))
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		EventuallyWithOffset(1, sess, n.EventuallyTimeout).Should(gexec.Exit())
 
 		EnsureInstalled(n, chaincode.Label, chaincode.PackageID, p)
 	}
 }
 
 func InstallChaincodeLegacy(n *Network, chaincode Chaincode, peers ...*Peer) {
+	// Ensure 'jq' exists in path, because we need it to build chaincode
+	if _, err := exec.LookPath("jq"); err != nil {
+		ginkgo.Fail("'jq' is needed to build chaincode but it wasn't found in the PATH")
+	}
+
 	for _, p := range peers {
 		sess, err := n.PeerAdminSession(p, commands.ChaincodeInstallLegacy{
 			Name:        chaincode.Name,
