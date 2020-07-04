@@ -208,14 +208,14 @@ func InstallChaincodeLegacy(n *Network, chaincode Chaincode, peers ...*Peer) {
 			ClientAuth:  n.ClientAuthRequired,
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Eventually(sess, n.EventuallyTimeout).Should(gexec.Exit(0))
+		EventuallyWithOffset(1, sess, n.EventuallyTimeout).Should(gexec.Exit(0))
 
 		sess, err = n.PeerAdminSession(p, commands.ChaincodeListInstalledLegacy{
 			ClientAuth: n.ClientAuthRequired,
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Eventually(sess, n.EventuallyTimeout).Should(gexec.Exit(0))
-		Expect(sess).To(gbytes.Say(fmt.Sprintf("Name: %s, Version: %s,", chaincode.Name, chaincode.Version)))
+		EventuallyWithOffset(1, sess, n.EventuallyTimeout).Should(gexec.Exit(0))
+		ExpectWithOffset(1, sess).To(gbytes.Say(fmt.Sprintf("Name: %s, Version: %s,", chaincode.Name, chaincode.Version)))
 	}
 }
 
@@ -249,6 +249,16 @@ func ApproveChaincodeForMyOrg(n *Network, channel string, orderer *Orderer, chai
 			Eventually(sess.Err, n.EventuallyTimeout).Should(gbytes.Say(`\Qcommitted with status (VALID)\E`))
 		}
 	}
+}
+
+func EnsureChaincodeApproved(n *Network, peer *Peer, channel, name, sequence string) {
+	sequenceInt, err := strconv.ParseInt(sequence, 10, 64)
+	Expect(err).NotTo(HaveOccurred())
+	Eventually(queryApproved(n, peer, channel, name, sequence), n.EventuallyTimeout).Should(
+		MatchFields(IgnoreExtras, Fields{
+			"Sequence": Equal(sequenceInt),
+		}),
+	)
 }
 
 func CheckCommitReadinessUntilReady(n *Network, channel string, chaincode Chaincode, checkOrgs []*Organization, peers ...*Peer) {
@@ -439,9 +449,6 @@ func QueryInstalledReferences(n *Network, channel, label, packageID string, chec
 	)
 }
 
-func QueryInstalledNoReferences(n *Network, channel, label, packageID string, checkPeer *Peer) {
-}
-
 type queryInstalledOutput struct {
 	InstalledChaincodes []lifecycle.QueryInstalledChaincodesResult_InstalledChaincode `json:"installed_chaincodes"`
 }
@@ -485,6 +492,34 @@ func checkCommitReadiness(n *Network, peer *Peer, channel string, chaincode Chai
 		err = json.Unmarshal(sess.Out.Contents(), output)
 		Expect(err).NotTo(HaveOccurred())
 		return output.Approvals
+	}
+}
+
+type queryApprovedOutput struct {
+	Sequence int64 `json:"sequence"`
+}
+
+// queryApproved returns the result of the queryApproved command.
+// If the command fails for any reason, it will return an empty output object.
+func queryApproved(n *Network, peer *Peer, channel, name, sequence string) func() queryApprovedOutput {
+	return func() queryApprovedOutput {
+		sess, err := n.PeerAdminSession(peer, commands.ChaincodeQueryApproved{
+			ChannelID:     channel,
+			Name:          name,
+			Sequence:      sequence,
+			PeerAddresses: []string{n.PeerAddress(peer, ListenPort)},
+			ClientAuth:    n.ClientAuthRequired,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(sess, n.EventuallyTimeout).Should(gexec.Exit())
+		output := &queryApprovedOutput{}
+		if sess.ExitCode() == 1 {
+			// don't try to unmarshal the output as JSON if the query failed
+			return *output
+		}
+		err = json.Unmarshal(sess.Out.Contents(), output)
+		Expect(err).NotTo(HaveOccurred())
+		return *output
 	}
 }
 

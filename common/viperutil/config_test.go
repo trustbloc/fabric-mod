@@ -16,29 +16,25 @@ import (
 	"testing"
 
 	"github.com/Shopify/sarama"
+	"github.com/hyperledger/fabric/bccsp/factory"
 	"github.com/hyperledger/fabric/orderer/mocks/util"
-	viper "github.com/spf13/viper2015"
 )
 
 const Prefix = "VIPERUTIL"
 
-type testSlice struct {
-	Inner struct {
-		Slice []string
-	}
-}
-
 func TestEnvSlice(t *testing.T) {
+	type testSlice struct {
+		Inner struct {
+			Slice []string
+		}
+	}
+
 	envVar := "VIPERUTIL_INNER_SLICE"
 	envVal := "[a, b, c]"
 	os.Setenv(envVar, envVal)
 	defer os.Unsetenv(envVar)
-	config := viper.New()
+	config := New()
 	config.SetEnvPrefix(Prefix)
-	config.AutomaticEnv()
-	replacer := strings.NewReplacer(".", "_")
-	config.SetEnvKeyReplacer(replacer)
-	config.SetConfigType("yaml")
 
 	data := "---\nInner:\n    Slice: [d,e,f]"
 
@@ -49,9 +45,7 @@ func TestEnvSlice(t *testing.T) {
 	}
 
 	var uconf testSlice
-
-	err = EnhancedExactUnmarshal(config, &uconf)
-	if err != nil {
+	if err := config.EnhancedExactUnmarshal(&uconf); err != nil {
 		t.Fatalf("Failed to unmarshal with: %s", err)
 	}
 
@@ -62,15 +56,13 @@ func TestEnvSlice(t *testing.T) {
 }
 
 func TestKafkaVersionDecode(t *testing.T) {
-
 	type testKafkaVersion struct {
 		Inner struct {
 			Version sarama.KafkaVersion
 		}
 	}
 
-	config := viper.New()
-	config.SetConfigType("yaml")
+	config := New()
 
 	testCases := []struct {
 		data        string
@@ -116,7 +108,7 @@ func TestKafkaVersionDecode(t *testing.T) {
 			}
 
 			var uconf testKafkaVersion
-			err = EnhancedExactUnmarshal(config, &uconf)
+			err = config.EnhancedExactUnmarshal(&uconf)
 
 			if tc.errExpected {
 				if err == nil {
@@ -143,8 +135,7 @@ type testByteSize struct {
 }
 
 func TestByteSize(t *testing.T) {
-	config := viper.New()
-	config.SetConfigType("yaml")
+	config := New()
 
 	testCases := []struct {
 		data     string
@@ -180,7 +171,7 @@ func TestByteSize(t *testing.T) {
 				t.Fatalf("Error reading config: %s", err)
 			}
 			var uconf testByteSize
-			err = EnhancedExactUnmarshal(config, &uconf)
+			err = config.EnhancedExactUnmarshal(&uconf)
 			if err != nil {
 				t.Fatalf("Failed to unmarshal with: %s", err)
 			}
@@ -192,8 +183,7 @@ func TestByteSize(t *testing.T) {
 }
 
 func TestByteSizeOverflow(t *testing.T) {
-	config := viper.New()
-	config.SetConfigType("yaml")
+	config := New()
 
 	data := "---\nInner:\n    ByteSize: 4GB"
 	err := config.ReadConfig(bytes.NewReader([]byte(data)))
@@ -201,7 +191,7 @@ func TestByteSizeOverflow(t *testing.T) {
 		t.Fatalf("Error reading config: %s", err)
 	}
 	var uconf testByteSize
-	err = EnhancedExactUnmarshal(config, &uconf)
+	err = config.EnhancedExactUnmarshal(&uconf)
 	if err == nil {
 		t.Fatalf("Should have failed to unmarshal")
 	}
@@ -219,15 +209,14 @@ func TestStringNotFromFile(t *testing.T) {
 	expectedValue := "expected_value"
 	yaml := fmt.Sprintf("---\nInner:\n  Single: %s\n", expectedValue)
 
-	config := viper.New()
-	config.SetConfigType("yaml")
+	config := New()
 
 	if err := config.ReadConfig(bytes.NewReader([]byte(yaml))); err != nil {
 		t.Fatalf("Error reading config: %s", err)
 	}
 
 	var uconf stringFromFileConfig
-	if err := EnhancedExactUnmarshal(config, &uconf); err != nil {
+	if err := config.EnhancedExactUnmarshal(&uconf); err != nil {
 		t.Fatalf("Failed to unmarshall: %s", err)
 	}
 
@@ -255,14 +244,13 @@ func TestStringFromFile(t *testing.T) {
 
 	yaml := fmt.Sprintf("---\nInner:\n  Single:\n    File: %s", file.Name())
 
-	config := viper.New()
-	config.SetConfigType("yaml")
+	config := New()
 
 	if err = config.ReadConfig(bytes.NewReader([]byte(yaml))); err != nil {
 		t.Fatalf("Error reading config: %s", err)
 	}
 	var uconf stringFromFileConfig
-	if err = EnhancedExactUnmarshal(config, &uconf); err != nil {
+	if err = config.EnhancedExactUnmarshal(&uconf); err != nil {
 		t.Fatalf("Failed to unmarshall: %s", err)
 	}
 
@@ -294,14 +282,13 @@ func TestPEMBlocksFromFile(t *testing.T) {
 
 	yaml := fmt.Sprintf("---\nInner:\n  Multiple:\n    File: %s", file.Name())
 
-	config := viper.New()
-	config.SetConfigType("yaml")
+	config := New()
 
 	if err := config.ReadConfig(bytes.NewReader([]byte(yaml))); err != nil {
 		t.Fatalf("Error reading config: %v", err)
 	}
 	var uconf stringFromFileConfig
-	if err := EnhancedExactUnmarshal(config, &uconf); err != nil {
+	if err := config.EnhancedExactUnmarshal(&uconf); err != nil {
 		t.Fatalf("Failed to unmarshall: %v", err)
 	}
 
@@ -347,18 +334,14 @@ func TestPEMBlocksFromFileEnv(t *testing.T) {
 			envVal := file.Name()
 			os.Setenv(envVar, envVal)
 			defer os.Unsetenv(envVar)
-			config := viper.New()
+			config := New()
 			config.SetEnvPrefix(Prefix)
-			config.AutomaticEnv()
-			replacer := strings.NewReplacer(".", "_")
-			config.SetEnvKeyReplacer(replacer)
-			config.SetConfigType("yaml")
 
 			if err := config.ReadConfig(bytes.NewReader([]byte(tc.data))); err != nil {
 				t.Fatalf("Error reading config: %v", err)
 			}
 			var uconf stringFromFileConfig
-			if err := EnhancedExactUnmarshal(config, &uconf); err != nil {
+			if err := config.EnhancedExactUnmarshal(&uconf); err != nil {
 				t.Fatalf("Failed to unmarshall: %v", err)
 			}
 
@@ -370,24 +353,20 @@ func TestPEMBlocksFromFileEnv(t *testing.T) {
 }
 
 func TestStringFromFileNotSpecified(t *testing.T) {
+	yaml := "---\nInner:\n  Single:\n    File:\n"
 
-	yaml := fmt.Sprintf("---\nInner:\n  Single:\n    File:\n")
-
-	config := viper.New()
-	config.SetConfigType("yaml")
+	config := New()
 
 	if err := config.ReadConfig(bytes.NewReader([]byte(yaml))); err != nil {
 		t.Fatalf("Error reading config: %s", err)
 	}
 	var uconf stringFromFileConfig
-	if err := EnhancedExactUnmarshal(config, &uconf); err == nil {
+	if err := config.EnhancedExactUnmarshal(&uconf); err == nil {
 		t.Fatalf("Should of failed to unmarshall.")
 	}
-
 }
 
 func TestStringFromFileEnv(t *testing.T) {
-
 	expectedValue := "this is the text in the file"
 
 	// create temp file
@@ -408,7 +387,6 @@ func TestStringFromFileEnv(t *testing.T) {
 	}{
 		{"Override", "---\nInner:\n  Single:\n    File: wrong_file"},
 		{"NoFileElement", "---\nInner:\n  Single:\n"},
-		// {"NoElementAtAll", "---\nInner:\n"}, test case for another time
 	}
 
 	for _, tc := range testCases {
@@ -417,12 +395,8 @@ func TestStringFromFileEnv(t *testing.T) {
 			envVal := file.Name()
 			os.Setenv(envVar, envVal)
 			defer os.Unsetenv(envVar)
-			config := viper.New()
+			config := New()
 			config.SetEnvPrefix(Prefix)
-			config.AutomaticEnv()
-			replacer := strings.NewReplacer(".", "_")
-			config.SetEnvKeyReplacer(replacer)
-			config.SetConfigType("yaml")
 
 			if err = config.ReadConfig(bytes.NewReader([]byte(tc.data))); err != nil {
 				t.Fatalf("Error reading %s plugin config: %s", Prefix, err)
@@ -430,7 +404,7 @@ func TestStringFromFileEnv(t *testing.T) {
 
 			var uconf stringFromFileConfig
 
-			err = EnhancedExactUnmarshal(config, &uconf)
+			err = config.EnhancedExactUnmarshal(&uconf)
 			if err != nil {
 				t.Fatalf("Failed to unmarshal with: %s", err)
 			}
@@ -442,7 +416,6 @@ func TestStringFromFileEnv(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestDecodeOpaqueField(t *testing.T) {
@@ -451,8 +424,7 @@ Foo: bar
 Hello:
   World: 42
 `
-	config := viper.New()
-	config.SetConfigType("yaml")
+	config := New()
 	if err := config.ReadConfig(bytes.NewReader([]byte(yaml))); err != nil {
 		t.Fatalf("Error reading config: %s", err)
 	}
@@ -460,11 +432,46 @@ Hello:
 		Foo   string
 		Hello struct{ World int }
 	}
-	if err := EnhancedExactUnmarshal(config, &conf); err != nil {
-		t.Fatalf("Error unmashalling: %s", err)
+	if err := config.EnhancedExactUnmarshal(&conf); err != nil {
+		t.Fatalf("Error unmarshalling: %s", err)
 	}
 
 	if conf.Foo != "bar" || conf.Hello.World != 42 {
 		t.Fatalf("Incorrect decoding")
+	}
+}
+
+func TestBCCSPDecodeHookOverride(t *testing.T) {
+	type testConfig struct {
+		BCCSP *factory.FactoryOpts
+	}
+	yaml := `
+BCCSP:
+  Default: default-provider
+  SW:
+    Security: 999
+`
+
+	config := New()
+	config.SetEnvPrefix("VIPERUTIL")
+
+	overrideVar := "VIPERUTIL_BCCSP_SW_SECURITY"
+	os.Setenv(overrideVar, "1111")
+	defer os.Unsetenv(overrideVar)
+	if err := config.ReadConfig(strings.NewReader(yaml)); err != nil {
+		t.Fatalf("Error reading config: %s", err)
+	}
+
+	var tc testConfig
+	if err := config.EnhancedExactUnmarshal(&tc); err != nil {
+		t.Fatalf("Error unmarshaling: %s", err)
+	}
+
+	if tc.BCCSP == nil || tc.BCCSP.SwOpts == nil {
+		t.Fatalf("expected BCCSP.SW to be non-nil: %#v", tc)
+	}
+
+	if tc.BCCSP.SwOpts.SecLevel != 1111 {
+		t.Fatalf("expected BCCSP.SW.SecLevel to equal 1111 but was %v\n", tc.BCCSP.SwOpts.SecLevel)
 	}
 }

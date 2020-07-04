@@ -7,21 +7,20 @@ SPDX-License-Identifier: Apache-2.0
 package couchdb
 
 import (
+	"errors"
 	"testing"
 
+	storageapi "github.com/hyperledger/fabric/extensions/storage/api"
 	"github.com/stretchr/testify/require"
-
-	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 )
 
 func TestHandleCreateCouchDatabase(t *testing.T) {
-
-	sampleDB := &couchdb.CouchDatabase{DBName: "sample-test-run-db"}
-	handle := func(couchInstance *couchdb.CouchInstance, dbName string) (*couchdb.CouchDatabase, error) {
-		return sampleDB, nil
+	errExpected := errors.New("injected couch error")
+	handle := func(couchInstance storageapi.CouchInstance, dbName string) (storageapi.CouchDatabase, error) {
+		return nil, errExpected
 	}
-	db, err := HandleCreateCouchDatabase(handle)(nil, "")
-	require.Equal(t, sampleDB, db)
-	require.NoError(t, err)
 
+	db, err := HandleCreateCouchDatabase(handle)(nil, "")
+	require.EqualErrorf(t, err, errExpected.Error(), "expecting default handler to be called")
+	require.Nil(t, db)
 }

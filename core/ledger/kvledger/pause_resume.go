@@ -8,8 +8,10 @@ package kvledger
 
 import (
 	"github.com/hyperledger/fabric/common/ledger/util/leveldbhelper"
-	"github.com/hyperledger/fabric/core/ledger/kvledger/idstore"
+	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/msgs"
+	xstorageapi "github.com/hyperledger/fabric/extensions/storage/api"
+	xidstore "github.com/hyperledger/fabric/extensions/storage/idstore"
 	"github.com/pkg/errors"
 )
 
@@ -39,7 +41,11 @@ func pauseOrResumeChannel(rootFSPath, ledgerID string, status msgs.Status) error
 	}
 	defer fileLock.Unlock()
 
-	idStore, err := idstore.OpenIDStore(LedgerProviderPath(rootFSPath))
+	idStore, err := xidstore.OpenIDStore(LedgerProviderPath(rootFSPath), nil,
+		func(path string, _ *ledger.Config) (xstorageapi.IDStore, error) {
+			return openIDStore(path)
+		},
+	)
 	if err != nil {
 		return err
 	}

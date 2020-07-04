@@ -129,7 +129,7 @@ func TestPeersForEndorsement(t *testing.T) {
 			},
 		})
 		assert.Nil(t, desc)
-		assert.Equal(t, err.Error(), "cannot satisfy any principal combination")
+		assert.Equal(t, err.Error(), "no peer combination can satisfy the endorsement policy")
 	})
 
 	t.Run("DisjointViews", func(t *testing.T) {
@@ -222,7 +222,7 @@ func TestPeersForEndorsement(t *testing.T) {
 			},
 		})
 		assert.Nil(t, desc)
-		assert.Equal(t, "cannot satisfy any principal combination", err.Error())
+		assert.Equal(t, "required chaincodes are not installed on sufficient peers", err.Error())
 
 		// Scenario VI: Policy is found, there are enough peers to satisfy policy combinations,
 		// but some peers have the wrong chaincode version, and some don't even have it installed.
@@ -247,7 +247,7 @@ func TestPeersForEndorsement(t *testing.T) {
 			},
 		})
 		assert.Nil(t, desc)
-		assert.Equal(t, "cannot satisfy any principal combination", err.Error())
+		assert.Equal(t, "required chaincodes are not installed on sufficient peers", err.Error())
 	})
 
 	t.Run("NoChaincodeMetadataFromLedger", func(t *testing.T) {
@@ -686,8 +686,9 @@ func TestPop(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, slice, 1)
 	_, slice, err = popComparablePrincipalSets(slice)
+	assert.NoError(t, err)
 	assert.Len(t, slice, 0)
-	_, slice, err = popComparablePrincipalSets(slice)
+	_, _, err = popComparablePrincipalSets(slice)
 	assert.Error(t, err)
 	assert.Equal(t, "no principal sets remained after filtering", err.Error())
 }

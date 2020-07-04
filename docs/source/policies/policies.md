@@ -88,7 +88,7 @@ between organizations in the consortium.
 The policies in an application channel govern the ability to add or remove
 members from the channel. Application channels also govern which organizations
 are required to approve a chaincode before the chaincode is defined and
-committed to a channel using the Fabric chaincode lifecyle. When an application
+committed to a channel using the Fabric chaincode lifecycle. When an application
 channel is initially created, it inherits all the ordering service parameters
 from the orderer system channel by default. However, those parameters (and the
 policies governing them) can be customized in each channel.
@@ -100,7 +100,7 @@ which provide the ability to configure access to resources by associating those
 resources with existing policies. These "resources" could be functions on system
 chaincode (e.g., "GetBlockByNumber" on the "qscc" system chaincode) or other
 resources (e.g.,who can receive Block events). ACLs refer to policies
-defined in an application channel configuraton and extends them to control
+defined in an application channel configuration and extends them to control
 additional resources. The default set of Fabric ACLs is visible in the
 `configtx.yaml` file under the `Application: &ApplicationDefaults` section but
 they can and should be overridden in a production environment. The list of
@@ -182,13 +182,13 @@ sign offs use the `ImplicitMeta` syntax.
 ### Signature policies
 
 `Signature` policies define specific types of users who must sign in order for a
-policy to be satisfied such as `Org1.Peer OR Org2.Peer`. These policies are
+policy to be satisfied such as `OR('Org1.peer', 'Org2.peer')`. These policies are
 considered the most versatile because they allow for the construction of
 extremely specific rules like: “An admin of org A and 2 other admins, or 5 of 6
 organization admins”. The syntax supports arbitrary combinations of `AND`, `OR`
-and `NOutOf`. For example, a policy can be easily expressed by using `AND
-(Org1, Org2)` which means that a signature from at least one member in Org1 AND
-one member in Org2 is required for the policy to be satisfied.
+and `NOutOf`. For example, a policy can be easily expressed by using
+`AND('Org1.member', 'Org2.member')` which means that a signature from at least
+one member in Org1 AND one member in Org2 is required for the policy to be satisfied.
 
 ### ImplicitMeta policies
 
@@ -360,7 +360,7 @@ The new process allows multiple organizations to vote on how a chaincode will
 be operated before it can be used on a channel. This is significant because it is
 the combination of this new lifecycle process and the policies that are
 specified during that process that dictate the security across the network. More details on
-the flow are available in the [Fabric chaincode lifecyle](../chaincode_lifecycle.html)
+the flow are available in the [Fabric chaincode lifecycle](../chaincode_lifecycle.html)
 concept topic, but for purposes of this topic you should understand how policies are
 used in this flow. The new flow includes two steps where policies are specified:
 when chaincode is **approved** by organization members, and when it is **committed**

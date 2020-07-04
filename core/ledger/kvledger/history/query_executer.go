@@ -10,9 +10,9 @@ import (
 	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric-protos-go/ledger/queryresult"
 	commonledger "github.com/hyperledger/fabric/common/ledger"
-	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	"github.com/hyperledger/fabric/common/ledger/util/leveldbhelper"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
+	xledgerapi "github.com/hyperledger/fabric/extensions/ledger/api"
 	protoutil "github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 	"github.com/syndtr/goleveldb/leveldb/iterator"
@@ -21,13 +21,16 @@ import (
 // QueryExecutor is a query executor against the LevelDB history DB
 type QueryExecutor struct {
 	levelDB    *leveldbhelper.DBHandle
-	blockStore blkstorage.BlockStore
+	blockStore xledgerapi.BlockStore
 }
 
 // GetHistoryForKey implements method in interface `ledger.HistoryQueryExecutor`
 func (q *QueryExecutor) GetHistoryForKey(namespace string, key string) (commonledger.ResultsIterator, error) {
 	rangeScan := constructRangeScan(namespace, key)
-	dbItr := q.levelDB.GetIterator(rangeScan.startKey, rangeScan.endKey)
+	dbItr, err := q.levelDB.GetIterator(rangeScan.startKey, rangeScan.endKey)
+	if err != nil {
+		return nil, err
+	}
 
 	// By default, dbItr is in the orderer of oldest to newest and its cursor is at the beginning of the entries.
 	// Need to call Last() and Next() to move the cursor to the end of the entries so that we can iterate
@@ -44,7 +47,7 @@ type historyScanner struct {
 	namespace  string
 	key        string
 	dbItr      iterator.Iterator
-	blockStore blkstorage.BlockStore
+	blockStore xledgerapi.BlockStore
 }
 
 // Next iterates to the next key, in the order of newest to oldest, from history scanner.
@@ -91,7 +94,7 @@ func (scanner *historyScanner) Close() {
 
 // getTxIDandKeyWriteValueFromTran inspects a transaction for writes to a given key
 func getKeyModificationFromTran(tranEnvelope *common.Envelope, namespace string, key string) (commonledger.QueryResult, error) {
-	logger.Debugf("Entering getKeyModificationFromTran()\n", namespace, key)
+	logger.Debugf("Entering getKeyModificationFromTran %s:%s", namespace, key)
 
 	// extract action from the envelope
 	payload, err := protoutil.UnmarshalPayload(tranEnvelope.Payload)

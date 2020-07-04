@@ -223,20 +223,13 @@ func (csp *impl) Decrypt(k bccsp.Key, ciphertext []byte, opts bccsp.DecrypterOpt
 }
 
 // FindPKCS11Lib IS ONLY USED FOR TESTING
-// This is a convenience function. Useful to self-configure, for tests where usual configuration is not
-// available
+// This is a convenience function. Useful to self-configure, for tests where
+// usual configuration is not available.
 func FindPKCS11Lib() (lib, pin, label string) {
-	//FIXME: Till we workout the configuration piece, look for the libraries in the familiar places
-	lib = os.Getenv("PKCS11_LIB")
-	if lib == "" {
-		pin = "98765432"
-		label = "ForFabric"
+	if lib = os.Getenv("PKCS11_LIB"); lib == "" {
 		possibilities := []string{
-			"/usr/lib/softhsm/libsofthsm2.so",                            //Debian
-			"/usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so",           //Ubuntu
-			"/usr/lib/s390x-linux-gnu/softhsm/libsofthsm2.so",            //Ubuntu
-			"/usr/lib/powerpc64le-linux-gnu/softhsm/libsofthsm2.so",      //Power
-			"/usr/local/Cellar/softhsm/2.5.0/lib/softhsm/libsofthsm2.so", //MacOS
+			"/usr/lib/softhsm/libsofthsm2.so",                  //Debian
+			"/usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so", //Ubuntu
 		}
 		for _, path := range possibilities {
 			if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -244,9 +237,13 @@ func FindPKCS11Lib() (lib, pin, label string) {
 				break
 			}
 		}
-	} else {
-		pin = os.Getenv("PKCS11_PIN")
-		label = os.Getenv("PKCS11_LABEL")
 	}
+	if pin = os.Getenv("PKCS11_PIN"); pin == "" {
+		pin = "98765432"
+	}
+	if label = os.Getenv("PKCS11_LABEL"); label == "" {
+		label = "ForFabric"
+	}
+
 	return lib, pin, label
 }

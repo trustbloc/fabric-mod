@@ -17,7 +17,7 @@ its state.
 
 In this concept topic, we will explore chaincode through the eyes of a
 blockchain network operator rather than an application developer. Chaincode
-operators can use this topic as a guide to how to use the Fabric chainode
+operators can use this topic as a guide to how to use the Fabric chaincode
 lifecycle to deploy and manage chaincode on their network.
 
 ## Deploying a chaincode
@@ -82,7 +82,7 @@ automatically create a file in this format.
 - The chaincode needs to be packaged in a tar file, ending with a `.tar.gz` file
   extension.
 - The tar file needs to contain two files (no directory): a metadata file
-  "metadata.json" and another tar containing the chaincode files.
+  "metadata.json" and another tar "code.tar.gz" containing the chaincode files.
 - "metadata.json" contains JSON that specifies the
   chaincode language, code path, and package label. You can see an example of
   a metadata file below:
@@ -263,7 +263,7 @@ container on that peer.*
 ## Upgrade a chaincode
 
 You can upgrade a chaincode using the same Fabric lifecycle process as you used
-to install and start the chainocode. You can upgrade the chaincode binaries, or
+to install and start the chaincode. You can upgrade the chaincode binaries, or
 only update the chaincode policies. Follow these steps to upgrade a chaincode:
 
 1. **Repackage the chaincode:** You only need to complete this step if you are

@@ -1,6 +1,4 @@
-# Creating a channel
-
-In order to create and transfer assets on a Hyperledger Fabric network, an organization needs to join a channel. Channels are a private layer of communication between specific organizations. Each channel consists of a separate ledger that can only be read and written to by channel members, who are allowed to join their peers to the channel and receive new blocks of transactions from the ordering service. While the peers, nodes, and Certificate Authorities form the physical infrastructure of the network, channels are the process by which organizations connect with each other and interact. Channels are invisible to members of the network that are not channel members.
+# Creating a new channel
 
 You can use this tutorial to learn how to create new channels using the [configtxgen](../commands/configtxgen.html) CLI tool and then use the [peer channel](../commands/peerchannel.html) commands to join a channel with your peers. While this tutorial will leverage the Fabric test network to create the new channel, the steps in this tutorial can also be used by network operators in a production environment.
 
@@ -51,6 +49,8 @@ You can find the `configtx.yaml` file that is used to deploy the test network in
 - **Channel profiles** Each channel profile references information from other sections of the `configtx.yaml` file to build a channel configuration. The profiles are used the create the genesis block of the orderer system channel and the channels that will be used by peer organizations. To distinguish them from the system channel, the channels used by peer organizations are often referred to as application channels.
 
   The `configtxgen` tool uses `configtx.yaml` file to create a complete genesis block for the system channel. As a result, the system channel profile needs to specify the full system channel configuration. The channel profile used to create the channel creation transaction only needs to contain the additional configuration information required to create an application channel.
+
+You can visit the [Using configtx.yaml to create a channel genesis block](create_channel_genesis.html) tutorial to learn more about this file. For now, we will return to the operational aspects of creating the channel, though we will reference parts of this file in future steps.
 
 ## Start the network
 
@@ -157,7 +157,7 @@ export CORE_PEER_ADDRESS=localhost:7051
 
 You can now create the channel by using the following command:
 ```
-peer channel create -o localhost:7050  --ordererTLSHostnameOverride orderer.example.com -c channel1 -f ./channel-artifacts/channel1.tx --outputBlock ./channel-artifacts/channel1.block --tls true --cafile ${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
+peer channel create -o localhost:7050  --ordererTLSHostnameOverride orderer.example.com -c channel1 -f ./channel-artifacts/channel1.tx --outputBlock ./channel-artifacts/channel1.block --tls --cafile ${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
 ```
 
 The command above provides the path to the channel creation transaction file using the `-f` flag and uses the `-c` flag to specify the channel name. The `-o` flag is used to select the ordering node that will be used to create the channel. The `--cafile` is the path to the TLS certificate of the ordering node. When you run the `peer channel create` command, the `peer` CLI will generate the following response:
@@ -182,7 +182,7 @@ The `CORE_PEER_ADDRESS` environment variable has been set to target ``peer0.org1
 2020-03-06 17:49:10.060 EST [channelCmd] executeJoin -> INFO 002 Successfully submitted proposal to join channel
 ```
 
-You can verify that the peer has joined the chanel using the [peer channel getinfo](../commands/peerchannel.html#peer-channel-getinfo) command:
+You can verify that the peer has joined the channel using the [peer channel getinfo](../commands/peerchannel.html#peer-channel-getinfo) command:
 ```
 peer channel getinfo -c channel1
 ```

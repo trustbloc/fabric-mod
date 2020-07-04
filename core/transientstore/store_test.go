@@ -18,7 +18,6 @@ import (
 	"github.com/hyperledger/fabric-protos-go/ledger/rwset"
 	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric-protos-go/transientstore"
-	"github.com/hyperledger/fabric/common/ledger/util/leveldbhelper"
 	"github.com/hyperledger/fabric/common/policydsl"
 	commonutil "github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/ledger"
@@ -39,24 +38,31 @@ func TestMain(m *testing.M) {
 	os.Exit(rc)
 }
 
-func testStore(t *testing.T) (s *Store, cleanup func()) {
+type testEnv struct {
+	storeProvider StoreProvider
+	store         *Store
+	cleanup       func()
+}
+
+func (env *testEnv) initTestEnv(t *testing.T) {
 	tempdir, err := ioutil.TempDir("", "ts")
 	if err != nil {
 		t.Fatalf("Failed to create test directory: %s", err)
 	}
 
-	cleanup = func() {
+	env.cleanup = func() {
 		os.RemoveAll(tempdir)
 	}
 
-	sp, err := NewStoreProvider(tempdir)
+	env.storeProvider, err = NewStoreProvider(tempdir)
 	if err != nil {
 		t.Fatalf("Failed to open test store: %s", err)
 	}
-	s, err = sp.OpenStore("TestStore")
+	env.store, err = env.storeProvider.OpenStore("TestStore")
 	require.NoError(t, err)
-	return s, cleanup
 }
+
+var env testEnv
 
 func TestPurgeIndexKeyCodingEncoding(t *testing.T) {
 	assert := assert.New(t)
@@ -104,8 +110,9 @@ func TestRWSetKeyCodingEncoding(t *testing.T) {
 }
 
 func TestTransientStorePersistAndRetrieve(t *testing.T) {
-	testStore, cleanup := testStore(t)
-	defer cleanup()
+	env.initTestEnv(t)
+	defer env.cleanup()
+	testStore := env.store
 	assert := assert.New(t)
 	txid := "txid-1"
 	samplePvtRWSetWithConfig := samplePvtDataWithConfigInfo(t)
@@ -155,8 +162,9 @@ func TestTransientStorePersistAndRetrieve(t *testing.T) {
 }
 
 func TestTransientStorePersistAndRetrieveBothOldAndNewProto(t *testing.T) {
-	testStore, cleanup := testStore(t)
-	defer cleanup()
+	env.initTestEnv(t)
+	defer env.cleanup()
+	testStore := env.store
 	assert := assert.New(t)
 	txid := "txid-1"
 	var receivedAtBlockHeight uint64 = 10
@@ -211,8 +219,9 @@ func TestTransientStorePersistAndRetrieveBothOldAndNewProto(t *testing.T) {
 }
 
 func TestTransientStorePurgeByTxids(t *testing.T) {
-	testStore, cleanup := testStore(t)
-	defer cleanup()
+	env.initTestEnv(t)
+	defer env.cleanup()
+	testStore := env.store
 	assert := assert.New(t)
 
 	var txids []string
@@ -374,8 +383,9 @@ func TestTransientStorePurgeByTxids(t *testing.T) {
 }
 
 func TestTransientStorePurgeBelowHeight(t *testing.T) {
-	testStore, cleanup := testStore(t)
-	defer cleanup()
+	env.initTestEnv(t)
+	defer env.cleanup()
+	testStore := env.store
 	assert := assert.New(t)
 
 	txid := "txid-1"
@@ -489,8 +499,9 @@ func TestTransientStorePurgeBelowHeight(t *testing.T) {
 }
 
 func TestTransientStoreRetrievalWithFilter(t *testing.T) {
-	testStore, cleanup := testStore(t)
-	defer cleanup()
+	env.initTestEnv(t)
+	defer env.cleanup()
+	testStore := env.store
 
 	samplePvtSimResWithConfig := samplePvtDataWithConfigInfo(t)
 
@@ -660,7 +671,7 @@ func (s *Store) persistOldProto(txid string, blockHeight uint64,
 
 	logger.Debugf("Persisting private data to transient store for txid [%s] at block height [%d]", txid, blockHeight)
 
-	dbBatch := leveldbhelper.NewUpdateBatch()
+	dbBatch := s.db.NewUpdateBatch()
 
 	// Create compositeKey with appropriate prefix, txid, uuid and blockHeight
 	// Due to the fact that the txid may have multiple private write sets persisted from different
@@ -697,4 +708,23 @@ func (s *Store) persistOldProto(txid string, blockHeight uint64,
 	dbBatch.Put(compositeKeyPurgeIndexByTxid, emptyValue)
 
 	return s.db.WriteBatch(dbBatch, true)
+}
+
+func TestIteratorErrorCases(t *testing.T) {
+	env.initTestEnv(t)
+	defer env.cleanup()
+	testStore := env.store
+	env.storeProvider.Close()
+
+	errStr := "internal leveldb error while obtaining db iterator: leveldb: closed"
+	itr, err := testStore.GetTxPvtRWSetByTxid("tx1", nil)
+	require.EqualError(t, err, errStr)
+	require.Nil(t, itr)
+
+	minHt, err := testStore.GetMinTransientBlkHt()
+	require.EqualError(t, err, errStr)
+	require.Equal(t, uint64(0), minHt)
+
+	require.EqualError(t, testStore.PurgeBelowHeight(0), errStr)
+	require.EqualError(t, testStore.PurgeByTxids([]string{"tx1"}), errStr)
 }

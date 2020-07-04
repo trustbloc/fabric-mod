@@ -1064,23 +1064,23 @@ func TestCoordinatorStoreBlock(t *testing.T) {
 	store := newTransientStore(t)
 	defer store.tearDown()
 
-	assertPurged := func(txns ...string) {
+	assertPurged := func(txns ...string) bool {
 		for _, txn := range txns {
 			iterator, err := store.GetTxPvtRWSetByTxid(txn, nil)
 			if err != nil {
-				t.Fatalf("Failed iterating, got err %s", err)
 				iterator.Close()
-				return
+				t.Fatalf("Failed iterating, got err %s", err)
 			}
 			res, err := iterator.Next()
+			iterator.Close()
 			if err != nil {
 				t.Fatalf("Failed iterating, got err %s", err)
-				iterator.Close()
-				return
 			}
-			assert.Nil(t, res)
-			iterator.Close()
+			if res != nil {
+				return false
+			}
 		}
+		return true
 	}
 
 	fetcher := &fetcherMock{t: t}
@@ -1122,7 +1122,10 @@ func TestCoordinatorStoreBlock(t *testing.T) {
 	err = coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 	assertCommitHappened()
-	assertPurged("tx1", "tx2")
+	assertPurgeTxs := func() bool {
+		return assertPurged("tx1", "tx2")
+	}
+	require.Eventually(t, assertPurgeTxs, 2*time.Second, 100*time.Millisecond)
 
 	fmt.Println("Scenario II")
 	// Scenario II: Block we got doesn't have sufficient private data alongside it,
@@ -1147,7 +1150,10 @@ func TestCoordinatorStoreBlock(t *testing.T) {
 	err = coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 	assertCommitHappened()
-	assertPurged("tx1", "tx2")
+	assertPurgeTxs = func() bool {
+		return assertPurged("tx1", "tx2")
+	}
+	require.Eventually(t, assertPurgeTxs, 2*time.Second, 100*time.Millisecond)
 
 	fmt.Println("Scenario III")
 	// Scenario III: Block doesn't have sufficient private data alongside it,
@@ -1187,18 +1193,24 @@ func TestCoordinatorStoreBlock(t *testing.T) {
 	}, nil)
 	pvtData = pdFactory.addRWSet().addNSRWSet("ns1", "c1").create()
 	err = coordinator.StoreBlock(block, pvtData)
-	assertPurged("tx1", "tx2")
 	assert.NoError(t, err)
 	assertCommitHappened()
+	assertPurgeTxs = func() bool {
+		return assertPurged("tx1", "tx2")
+	}
+	require.Eventually(t, assertPurgeTxs, 2*time.Second, 100*time.Millisecond)
 
 	fmt.Println("Scenario IV")
 	// Scenario IV: Block came with more than sufficient private data alongside it, some of it is redundant.
 	pvtData = pdFactory.addRWSet().addNSRWSet("ns1", "c1", "c2", "c3").
 		addRWSet().addNSRWSet("ns2", "c1", "c3").addRWSet().addNSRWSet("ns1", "c4").create()
 	err = coordinator.StoreBlock(block, pvtData)
-	assertPurged("tx1", "tx2")
 	assert.NoError(t, err)
 	assertCommitHappened()
+	assertPurgeTxs = func() bool {
+		return assertPurged("tx1", "tx2")
+	}
+	require.Eventually(t, assertPurgeTxs, 2*time.Second, 100*time.Millisecond)
 
 	fmt.Println("Scenario V")
 	// Scenario V: Block we got has private data alongside it but coordinator cannot retrieve collection access
@@ -1262,9 +1274,12 @@ func TestCoordinatorStoreBlock(t *testing.T) {
 		CapabilityProvider: capabilityProvider,
 	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
 	err = coordinator.StoreBlock(block, nil)
-	assertPurged("tx3")
 	assert.NoError(t, err)
 	assertCommitHappened()
+	assertPurgeTxs = func() bool {
+		return assertPurged("tx3")
+	}
+	require.Eventually(t, assertPurgeTxs, 2*time.Second, 100*time.Millisecond)
 
 	fmt.Println("Scenario VII")
 	// Scenario VII: Block contains 2 transactions, and the peer is eligible for only tx3-ns3-c3.
@@ -1304,7 +1319,10 @@ func TestCoordinatorStoreBlock(t *testing.T) {
 	assert.NoError(t, err)
 	assertCommitHappened()
 	// In any case, all transactions in the block are purged from the transient store
-	assertPurged("tx3", "tx1")
+	assertPurgeTxs = func() bool {
+		return assertPurged("tx3", "tx1")
+	}
+	require.Eventually(t, assertPurgeTxs, 2*time.Second, 100*time.Millisecond)
 }
 
 func TestCoordinatorStoreBlockWhenPvtDataExistInLedger(t *testing.T) {
@@ -1584,8 +1602,6 @@ func TestCoordinatorGetBlocks(t *testing.T) {
 		Signature: signature,
 		Data:      data,
 	}
-	cs := createcollectionStore(peerSelfSignedData).thatAcceptsAll().withMSPIdentity(identity.GetMSPIdentifier())
-	committer := &mocks.Committer{}
 
 	store := newTransientStore(t)
 	defer store.tearDown()
@@ -1595,20 +1611,14 @@ func TestCoordinatorGetBlocks(t *testing.T) {
 	})
 
 	fetcher := &fetcherMock{t: t}
+
+	committer := &mocks.Committer{}
 	committer.On("DoesPvtDataInfoExistInLedger", mock.Anything).Return(false, nil)
 
 	capabilityProvider := &capabilitymock.CapabilityProvider{}
 	appCapability := &capabilitymock.AppCapabilities{}
 	capabilityProvider.On("Capabilities").Return(appCapability)
 	appCapability.On("StorePvtDataOfInvalidTx").Return(true)
-	coordinator := NewCoordinator(mspID, Support{
-		ChainID:            "testchannelid",
-		CollectionStore:    cs,
-		Committer:          committer,
-		Fetcher:            fetcher,
-		Validator:          &validatorMock{},
-		CapabilityProvider: capabilityProvider,
-	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
 
 	hash := util2.ComputeSHA256([]byte("rws-pre-image"))
 	bf := &blockFactory{
@@ -1618,7 +1628,7 @@ func TestCoordinatorGetBlocks(t *testing.T) {
 
 	// Green path - block and private data is returned, but the requester isn't eligible for all the private data,
 	// but only to a subset of it.
-	cs = createcollectionStore(peerSelfSignedData).thatAccepts(CollectionCriteria{
+	cs := createcollectionStore(peerSelfSignedData).thatAccepts(CollectionCriteria{
 		Namespace:  "ns1",
 		Collection: "c2",
 		Channel:    "testchannelid",
@@ -1629,7 +1639,7 @@ func TestCoordinatorGetBlocks(t *testing.T) {
 		PvtData: expectedCommittedPrivateData1,
 	}, nil)
 	committer.On("DoesPvtDataInfoExistInLedger", mock.Anything).Return(false, nil)
-	coordinator = NewCoordinator(mspID, Support{
+	coordinator := NewCoordinator(mspID, Support{
 		ChainID:            "testchannelid",
 		CollectionStore:    cs,
 		Committer:          committer,
@@ -1685,7 +1695,7 @@ func TestPurgeBelowHeight(t *testing.T) {
 			CollectionConfigs: make(map[string]*peer.CollectionConfigPackage),
 		})
 	}
-	assertPurged := func(purged bool) {
+	assertPurged := func(purged bool) bool {
 		numTx := 9
 		if purged {
 			numTx = 10
@@ -1694,23 +1704,25 @@ func TestPurgeBelowHeight(t *testing.T) {
 			txID := fmt.Sprintf("tx%d", i)
 			iterator, err := store.GetTxPvtRWSetByTxid(txID, nil)
 			if err != nil {
-				t.Fatalf("Failed iterating, got err %s", err)
 				iterator.Close()
-				return
+				t.Fatalf("Failed iterating, got err %s", err)
 			}
 			res, err := iterator.Next()
+			iterator.Close()
 			if err != nil {
 				t.Fatalf("Failed iterating, got err %s", err)
-				iterator.Close()
-				return
 			}
 			if (i < 6 || i == numTx) && purged {
-				assert.Nil(t, res)
-			} else {
-				assert.NotNil(t, res)
+				if res != nil {
+					return false
+				}
+				continue
 			}
-			iterator.Close()
+			if res == nil {
+				return false
+			}
 		}
+		return true
 	}
 
 	fetcher := &fetcherMock{t: t}
@@ -1747,11 +1759,17 @@ func TestPurgeBelowHeight(t *testing.T) {
 	block.Header.Number = 10
 	pvtData := pdFactory.addRWSet().addNSRWSet("ns1", "c1").create()
 	// test no blocks purged yet
-	assertPurged(false)
+	assertPurgedBlocks := func() bool {
+		return assertPurged(false)
+	}
+	require.Eventually(t, assertPurgedBlocks, 2*time.Second, 100*time.Millisecond)
 	err := coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 	// test first 6 blocks were purged
-	assertPurged(true)
+	assertPurgedBlocks = func() bool {
+		return assertPurged(true)
+	}
+	require.Eventually(t, assertPurgedBlocks, 2*time.Second, 100*time.Millisecond)
 }
 
 func TestCoordinatorStorePvtData(t *testing.T) {
@@ -1999,5 +2017,9 @@ func TestCoordinatorMetrics(t *testing.T) {
 		[]string{"channel", "testchannelid"},
 		testMetricProvider.FakePurgeDuration.WithArgsForCall(0),
 	)
-	assert.True(t, testMetricProvider.FakePurgeDuration.ObserveArgsForCall(0) > 0)
+
+	purgeDuration := func() bool {
+		return testMetricProvider.FakePurgeDuration.ObserveArgsForCall(0) > 0
+	}
+	assert.Eventually(t, purgeDuration, 2*time.Second, 100*time.Millisecond)
 }

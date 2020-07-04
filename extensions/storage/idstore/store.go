@@ -8,11 +8,13 @@ package idstore
 
 import (
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/ledger/kvledger/idstore"
 	storeapi "github.com/hyperledger/fabric/extensions/storage/api"
 )
 
+// OpenIDStoreHandler opens an ID store
+type OpenIDStoreHandler func(path string, ledgerconfig *ledger.Config) (storeapi.IDStore, error)
+
 // OpenIDStore open idstore
-func OpenIDStore(path string, ledgerconfig *ledger.Config) (storeapi.IDStore, error) {
-	return idstore.OpenIDStore(path)
+func OpenIDStore(path string, ledgerconfig *ledger.Config, defaultHandler OpenIDStoreHandler) (storeapi.IDStore, error) {
+	return defaultHandler(path, ledgerconfig)
 }

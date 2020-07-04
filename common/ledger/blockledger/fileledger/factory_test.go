@@ -15,26 +15,18 @@ import (
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	"github.com/hyperledger/fabric/common/ledger/blockledger"
 	"github.com/hyperledger/fabric/common/metrics/disabled"
+	extledgerapi "github.com/hyperledger/fabric/extensions/ledger/api"
 	"github.com/stretchr/testify/assert"
 )
 
 type mockBlockStoreProvider struct {
-	blockstore blkstorage.BlockStore
-	exists     bool
+	blockstore *blkstorage.BlockStore
 	list       []string
 	error      error
 }
 
-func (mbsp *mockBlockStoreProvider) CreateBlockStore(ledgerid string) (blkstorage.BlockStore, error) {
+func (mbsp *mockBlockStoreProvider) Open(ledgerid string) (extledgerapi.BlockStore, error) {
 	return mbsp.blockstore, mbsp.error
-}
-
-func (mbsp *mockBlockStoreProvider) OpenBlockStore(ledgerid string) (blkstorage.BlockStore, error) {
-	return mbsp.blockstore, mbsp.error
-}
-
-func (mbsp *mockBlockStoreProvider) Exists(ledgerid string) (bool, error) {
-	return mbsp.exists, mbsp.error
 }
 
 func (mbsp *mockBlockStoreProvider) List() ([]string, error) {

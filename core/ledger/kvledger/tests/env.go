@@ -17,8 +17,7 @@ import (
 	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/bccsp"
 	"github.com/hyperledger/fabric/bccsp/sw"
-	"github.com/hyperledger/fabric/common/ledger/blkstorage/fsblkstorage"
-	"github.com/hyperledger/fabric/common/ledger/util"
+	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	"github.com/hyperledger/fabric/common/metrics/disabled"
 	"github.com/hyperledger/fabric/core/chaincode/lifecycle"
 	"github.com/hyperledger/fabric/core/common/privdata"
@@ -26,11 +25,10 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
-	"github.com/hyperledger/fabric/core/ledger/mock"
-	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 	corepeer "github.com/hyperledger/fabric/core/peer"
 	"github.com/hyperledger/fabric/core/scc/lscc"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
+	"github.com/hyperledger/fabric/internal/fileutil"
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/msp/mgmt"
 	"github.com/hyperledger/fabric/protoutil"
@@ -52,14 +50,14 @@ type env struct {
 	initializer       *ledgermgmt.Initializer
 	ledgerMgr         *ledgermgmt.LedgerMgr
 	cleanupExtTestEnv func()
-	couchDB           *couchdb.Config
+	couchDB           *ledger.CouchDBConfig
 }
 
 func newEnv(t *testing.T) *env {
 	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
 	assert.NoError(t, err)
 	return newEnvWithInitializer(t, &ledgermgmt.Initializer{
-		Hasher: cryptoProvider,
+		HashProvider: cryptoProvider,
 		EbMetadataProvider: &externalbuilder.MetadataProvider{
 			DurablePath: "testdata",
 		},
@@ -73,7 +71,7 @@ func newEnvWithInitializer(t *testing.T, initializer *ledgermgmt.Initializer) *e
 	addr, _, destroy := xtestutil.SetupExtTestEnv()
 	if addr != "" {
 		initializer.Config.StateDBConfig = &ledger.StateDBConfig{
-			CouchDB: &couchdb.Config{
+			CouchDB: &ledger.CouchDBConfig{
 				Address:             addr,
 				MaxRetries:          3,
 				MaxRetriesOnStartup: 3,
@@ -184,13 +182,13 @@ func (e *env) verifyRebuilableDoesNotExist(flags rebuildable) {
 }
 
 func (e *env) verifyNonEmptyDirExists(path string) {
-	empty, err := util.DirEmpty(path)
+	empty, err := fileutil.DirEmpty(path)
 	e.assert.NoError(err)
 	e.assert.False(empty)
 }
 
 func (e *env) verifyDirDoesNotExist(path string) {
-	exists, _, err := util.FileExists(path)
+	exists, _, err := fileutil.FileExists(path)
 	e.assert.NoError(err)
 	e.assert.False(exists)
 }
@@ -203,16 +201,12 @@ func (e *env) closeLedgerMgmt() {
 	e.ledgerMgr.Close()
 }
 
-func (e *env) getLedgerRootPath() string {
-	return e.initializer.Config.RootFSPath
-}
-
 func (e *env) getLevelstateDBPath() string {
 	return kvledger.StateDBPath(e.initializer.Config.RootFSPath)
 }
 
 func (e *env) getBlockIndexDBPath() string {
-	return filepath.Join(kvledger.BlockStorePath(e.initializer.Config.RootFSPath), fsblkstorage.IndexDir)
+	return filepath.Join(kvledger.BlockStorePath(e.initializer.Config.RootFSPath), blkstorage.IndexDir)
 }
 
 func (e *env) getConfigHistoryDBPath() string {
@@ -281,13 +275,10 @@ func populateMissingsWithTestDefaults(t *testing.T, initializer *ledgermgmt.Init
 			PurgeInterval:   100,
 		}
 	}
-
-	if initializer.HealthCheckRegistry == nil {
-		initializer.HealthCheckRegistry = &mock.HealthCheckRegistry{}
-	}
-
-	if initializer.ChaincodeLifecycleEventProvider == nil {
-		initializer.ChaincodeLifecycleEventProvider = &mock.ChaincodeLifecycleEventProvider{}
+	if initializer.Config.SnapshotsConfig == nil {
+		initializer.Config.SnapshotsConfig = &ledger.SnapshotsConfig{
+			RootDir: filepath.Join(initializer.Config.RootFSPath, "snapshots"),
+		}
 	}
 }
 

@@ -4,7 +4,7 @@
 
 name: $(SourceBranchName)-$(Date:yyyyMMdd).$(Rev:r)
 variables:
-  GO_VERSION: 1.14.1
+  GO_VERSION: 1.14.4
   GOPATH: $(Agent.BuildDirectory)/go
 
 jobs:
@@ -33,5 +33,7 @@ jobs:
     - template: azp-dependencies-mod.yml
     - checkout: self
       path: 'go/src/github.com/hyperledger/fabric'
+    - script: ./ci/scripts/setup_hsm.sh
+      displayName: Install SoftHSM
     - script: make integration-test
       displayName: Run Integration Tests

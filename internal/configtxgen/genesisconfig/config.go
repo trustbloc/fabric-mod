@@ -15,11 +15,9 @@ import (
 
 	"github.com/hyperledger/fabric-protos-go/orderer/etcdraft"
 	"github.com/hyperledger/fabric/common/flogging"
-	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/common/viperutil"
 	cf "github.com/hyperledger/fabric/core/config"
 	"github.com/hyperledger/fabric/msp"
-	viper "github.com/spf13/viper2015"
 )
 
 const (
@@ -77,7 +75,6 @@ type TopLevel struct {
 	Application   *Application               `yaml:"Application"`
 	Orderer       *Orderer                   `yaml:"Orderer"`
 	Capabilities  map[string]map[string]bool `yaml:"Capabilities"`
-	Resources     *Resources                 `yaml:"Resources"`
 }
 
 // Profile encodes orderer/application configuration combinations for the
@@ -108,15 +105,8 @@ type Consortium struct {
 type Application struct {
 	Organizations []*Organization    `yaml:"Organizations"`
 	Capabilities  map[string]bool    `yaml:"Capabilities"`
-	Resources     *Resources         `yaml:"Resources"`
 	Policies      map[string]*Policy `yaml:"Policies"`
 	ACLs          map[string]string  `yaml:"ACLs"`
-}
-
-// Resources encodes the application-level resources configuration needed to
-// seed the resource tree
-type Resources struct {
-	DefaultModPolicy string
 }
 
 // Organization encodes the organization-level configuration needed in
@@ -208,15 +198,9 @@ var genesisDefaults = TopLevel{
 // Note, for environment overrides to work properly within a profile, Load
 // should be used instead.
 func LoadTopLevel(configPaths ...string) *TopLevel {
-	config := viper.New()
-	if len(configPaths) > 0 {
-		for _, p := range configPaths {
-			config.AddConfigPath(p)
-		}
-		config.SetConfigName("configtx")
-	} else {
-		cf.InitViper(config, "configtx")
-	}
+	config := viperutil.New()
+	config.AddConfigPaths(configPaths...)
+	config.SetConfigName("configtx")
 
 	err := config.ReadInConfig()
 	if err != nil {
@@ -238,15 +222,9 @@ func LoadTopLevel(configPaths ...string) *TopLevel {
 // a given profile. Config paths may optionally be provided and will be used
 // in place of the FABRIC_CFG_PATH env variable.
 func Load(profile string, configPaths ...string) *Profile {
-	config := viper.New()
-	if len(configPaths) > 0 {
-		for _, p := range configPaths {
-			config.AddConfigPath(p)
-		}
-		config.SetConfigName("configtx")
-	} else {
-		cf.InitViper(config, "configtx")
-	}
+	config := viperutil.New()
+	config.AddConfigPaths(configPaths...)
+	config.SetConfigName("configtx")
 
 	err := config.ReadInConfig()
 	if err != nil {
@@ -285,9 +263,6 @@ func (p *Profile) completeInitialization(configDir string) {
 		for _, org := range p.Application.Organizations {
 			org.completeInitialization(configDir)
 		}
-		if p.Application.Resources != nil {
-			p.Application.Resources.completeInitialization()
-		}
 	}
 
 	if p.Consortiums != nil {
@@ -304,17 +279,6 @@ func (p *Profile) completeInitialization(configDir string) {
 		}
 		// Some profiles will not define orderer parameters
 		p.Orderer.completeInitialization(configDir)
-	}
-}
-
-func (r *Resources) completeInitialization() {
-	for {
-		switch {
-		case r.DefaultModPolicy == "":
-			r.DefaultModPolicy = policies.ChannelApplicationAdmins
-		default:
-			return
-		}
 	}
 }
 
@@ -459,15 +423,15 @@ var cache = &configCache{
 // load loads the TopLevel config structure from configCache.
 // if not successful, it unmarshal a config file, and populate configCache
 // with marshaled TopLevel struct.
-func (c *configCache) load(config *viper.Viper, configPath string) (*TopLevel, error) {
+func (c *configCache) load(config *viperutil.ConfigParser, configPath string) (*TopLevel, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	conf := &TopLevel{}
 	serializedConf, ok := c.cache[configPath]
-	logger.Debug("Loading configuration from cache :%v", ok)
+	logger.Debugf("Loading configuration from cache: %t", ok)
 	if !ok {
-		err := viperutil.EnhancedExactUnmarshal(config, conf)
+		err := config.EnhancedExactUnmarshal(conf)
 		if err != nil {
 			return nil, fmt.Errorf("Error unmarshaling config into struct: %s", err)
 		}

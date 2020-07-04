@@ -7,12 +7,13 @@ SPDX-License-Identifier: Apache-2.0
 package stateleveldb
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/hyperledger/fabric/core/ledger/internal/version"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/commontests"
-	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBasicRW(t *testing.T) {
@@ -37,6 +38,14 @@ func TestIterator(t *testing.T) {
 	env := NewTestVDBEnv(t)
 	defer env.Cleanup()
 	commontests.TestIterator(t, env.DBProvider)
+	t.Run("test-iter-error-path", func(t *testing.T) {
+		db, err := env.DBProvider.GetDBHandle("testiterator", nil)
+		require.NoError(t, err)
+		env.DBProvider.Close()
+		itr, err := db.GetStateRangeScanIterator("ns1", "", "")
+		require.EqualError(t, err, "internal leveldb error while obtaining db iterator: leveldb: closed")
+		require.Nil(t, itr)
+	})
 }
 
 func TestDataKeyEncoding(t *testing.T) {
@@ -48,16 +57,16 @@ func testDataKeyEncoding(t *testing.T, dbName string, ns string, key string) {
 	dataKey := encodeDataKey(ns, key)
 	t.Logf("dataKey=%#v", dataKey)
 	ns1, key1 := decodeDataKey(dataKey)
-	assert.Equal(t, ns, ns1)
-	assert.Equal(t, key, key1)
+	require.Equal(t, ns, ns1)
+	require.Equal(t, key, key1)
 }
 
 // TestQueryOnLevelDB tests queries on levelDB.
 func TestQueryOnLevelDB(t *testing.T) {
 	env := NewTestVDBEnv(t)
 	defer env.Cleanup()
-	db, err := env.DBProvider.GetDBHandle("testquery")
-	assert.NoError(t, err)
+	db, err := env.DBProvider.GetDBHandle("testquery", nil)
+	require.NoError(t, err)
 	db.Open()
 	defer db.Close()
 	batch := statedb.NewUpdateBatch()
@@ -71,8 +80,8 @@ func TestQueryOnLevelDB(t *testing.T) {
 	// As queries are not supported in levelDB, call to ExecuteQuery()
 	// should return a error message
 	itr, err := db.ExecuteQuery("ns1", `{"selector":{"owner":"jerry"}}`)
-	assert.Error(t, err, "ExecuteQuery not supported for leveldb")
-	assert.Nil(t, itr)
+	require.Error(t, err, "ExecuteQuery not supported for leveldb")
+	require.Nil(t, itr)
 }
 
 func TestGetStateMultipleKeys(t *testing.T) {
@@ -91,15 +100,15 @@ func TestUtilityFunctions(t *testing.T) {
 	env := NewTestVDBEnv(t)
 	defer env.Cleanup()
 
-	db, err := env.DBProvider.GetDBHandle("testutilityfunctions")
-	assert.NoError(t, err)
+	db, err := env.DBProvider.GetDBHandle("testutilityfunctions", nil)
+	require.NoError(t, err)
 
 	// BytesKeySupported should be true for goleveldb
 	byteKeySupported := db.BytesKeySupported()
-	assert.True(t, byteKeySupported)
+	require.True(t, byteKeySupported)
 
 	// ValidateKeyValue should return nil for a valid key and value
-	assert.NoError(t, db.ValidateKeyValue("testKey", []byte("testValue")), "leveldb should accept all key-values")
+	require.NoError(t, db.ValidateKeyValue("testKey", []byte("testValue")), "leveldb should accept all key-values")
 }
 
 func TestValueAndMetadataWrites(t *testing.T) {
@@ -124,4 +133,133 @@ func TestApplyUpdatesWithNilHeight(t *testing.T) {
 	env := NewTestVDBEnv(t)
 	defer env.Cleanup()
 	commontests.TestApplyUpdatesWithNilHeight(t, env.DBProvider)
+}
+
+func TestDataExportImport(t *testing.T) {
+	// smaller batch size for testing to cover the boundary case of writing the final batch
+	maxDataImportBatchSize = 10
+	env := NewTestVDBEnv(t)
+	defer env.Cleanup()
+	commontests.TestDataExportImport(
+		t,
+		env.DBProvider,
+		byte(1),
+	)
+}
+
+func TestFullScanIteratorErrorPropagation(t *testing.T) {
+	var env *TestVDBEnv
+	var cleanup func()
+	var vdbProvider *VersionedDBProvider
+	var vdb *versionedDB
+
+	initEnv := func() {
+		env = NewTestVDBEnv(t)
+		vdbProvider = env.DBProvider
+		db, err := vdbProvider.GetDBHandle("TestFullScanIteratorErrorPropagation", nil)
+		require.NoError(t, err)
+		vdb = db.(*versionedDB)
+		cleanup = func() {
+			env.Cleanup()
+		}
+	}
+
+	reInitEnv := func() {
+		env.Cleanup()
+		initEnv()
+	}
+
+	initEnv()
+	defer cleanup()
+
+	// error from function GetFullScanIterator
+	vdbProvider.Close()
+	_, _, err := vdb.GetFullScanIterator(
+		func(string) bool {
+			return false
+		},
+	)
+	require.Contains(t, err.Error(), "internal leveldb error while obtaining db iterator:")
+
+	// error from function Next
+	reInitEnv()
+	itr, _, err := vdb.GetFullScanIterator(
+		func(string) bool {
+			return false
+		},
+	)
+	require.NoError(t, err)
+	itr.Close()
+	_, _, err = itr.Next()
+	require.Contains(t, err.Error(), "internal leveldb error while retrieving data from db iterator:")
+}
+
+func TestImportStateErrorPropagation(t *testing.T) {
+	var env *TestVDBEnv
+	var cleanup func()
+	var vdbProvider *VersionedDBProvider
+	var vdb *versionedDB
+
+	initEnv := func() {
+		env = NewTestVDBEnv(t)
+		vdbProvider = env.DBProvider
+		db, err := vdbProvider.GetDBHandle("TestImportStateErrorPropagation", nil)
+		require.NoError(t, err)
+		vdb = db.(*versionedDB)
+		cleanup = func() {
+			env.Cleanup()
+		}
+	}
+
+	t.Run("wrong-value-format", func(t *testing.T) {
+		initEnv()
+		defer cleanup()
+		err := vdb.ImportState(nil, fullScanIteratorValueFormat+byte(1))
+		require.EqualError(t, err, "value format [2] not supported. Expected value format [1]")
+	})
+
+	t.Run("error-reading-from-source", func(t *testing.T) {
+		initEnv()
+		defer cleanup()
+
+		err := vdb.ImportState(
+			&dummyFullScanIter{
+				err: errors.New("error while reading from source"),
+			},
+			fullScanIteratorValueFormat,
+		)
+
+		require.EqualError(t, err, "error while reading from source")
+	})
+
+	t.Run("error-writing-to-db", func(t *testing.T) {
+		initEnv()
+		defer cleanup()
+
+		vdbProvider.Close()
+		err := vdb.ImportState(
+			&dummyFullScanIter{
+				key: &statedb.CompositeKey{
+					Namespace: "ns",
+					Key:       "key",
+				},
+				value: []byte("value"),
+			},
+			fullScanIteratorValueFormat,
+		)
+		require.Contains(t, err.Error(), "error writing batch to leveldb")
+	})
+}
+
+type dummyFullScanIter struct {
+	err   error
+	key   *statedb.CompositeKey
+	value []byte
+}
+
+func (d *dummyFullScanIter) Next() (*statedb.CompositeKey, []byte, error) {
+	return d.key, d.value, d.err
+}
+
+func (d *dummyFullScanIter) Close() {
 }
