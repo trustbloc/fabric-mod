@@ -26,7 +26,6 @@ import (
 	"github.com/hyperledger/fabric/common/util"
 	"github.com/hyperledger/fabric/core/ledger"
 	lgr "github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/ledger/kvledger/msgs"
 	"github.com/hyperledger/fabric/core/ledger/mock"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/protoutil"
@@ -53,7 +52,7 @@ func TestLedgerProvider(t *testing.T) {
 
 	// verify formatKey is present in idStore
 	s := provider.idStore
-	val, err := s.Get(formatKey)
+	val, err := s.GetFormat()
 	require.NoError(t, err)
 	require.Equal(t, []byte(dataformat.CurrentFormat), val)
 
@@ -79,17 +78,15 @@ func TestLedgerProvider(t *testing.T) {
 
 		// check that the genesis block was persisted in the provider's db
 		s := provider.idStore
-		gbBytesInProviderStore, err := s.Get(encodeLedgerKey(ledgerid, ledgerKeyPrefix))
+		gb, err := s.GetGenesisBlock(ledgerid)
 		require.NoError(t, err)
-		gb := &common.Block{}
-		require.NoError(t, proto.Unmarshal(gbBytesInProviderStore, gb))
 		require.True(t, proto.Equal(gb, genesisBlocks[i]), "proto messages are not equal")
 
 		// check that ledger metadata keys were persisted in idStore with active status
-		val, err := s.Get(encodeLedgerKey(ledgerid, metadataKeyPrefix))
-		metadata := &msgs.LedgerMetadata{}
-		require.NoError(t, proto.Unmarshal(val, metadata))
-		require.Equal(t, msgs.Status_ACTIVE, metadata.Status)
+		active, exists, err := s.LedgerIDActive(ledgerid)
+		require.NoError(t, err)
+		require.True(t, exists)
+		require.True(t, active)
 	}
 	gb, _ := configtxtest.MakeGenesisBlock(constructTestLedgerID(2))
 	_, err = provider.Create(gb)
@@ -120,25 +117,26 @@ func TestGetActiveLedgerIDsIteratorError(t *testing.T) {
 	require.EqualError(t, err, "error getting ledger ids from idStore: leveldb: closed")
 }
 
-func TestLedgerMetataDataUnmarshalError(t *testing.T) {
-	conf, cleanup := testConfig(t)
-	defer cleanup()
-	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
-	defer provider.Close()
-
-	ledgerID := constructTestLedgerID(0)
-	genesisBlock, _ := configtxtest.MakeGenesisBlock(ledgerID)
-	provider.Create(genesisBlock)
-
-	// put invalid bytes for the metatdata key
-	provider.idStore.Put(encodeLedgerKey(ledgerID, metadataKeyPrefix), []byte("invalid"))
-
-	_, err := provider.List()
-	require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
-
-	_, err = provider.Open(ledgerID)
-	require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
-}
+// TODO: This test is not compatible with the couch implementation.
+//func TestLedgerMetataDataUnmarshalError(t *testing.T) {
+//	conf, cleanup := testConfig(t)
+//	defer cleanup()
+//	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
+//	defer provider.Close()
+//
+//	ledgerID := constructTestLedgerID(0)
+//	genesisBlock, _ := configtxtest.MakeGenesisBlock(ledgerID)
+//	provider.Create(genesisBlock)
+//
+//	// put invalid bytes for the metatdata key
+//	provider.idStore.db.Put(encodeLedgerKey(ledgerID, metadataKeyPrefix), []byte("invalid"))
+//
+//	_, err := provider.List()
+//	require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
+//
+//	_, err = provider.Open(ledgerID)
+//	require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
+//}
 
 func TestNewProviderIdStoreFormatError(t *testing.T) {
 	t.Skip("This test should be re-enabled after the couch DB ID store supports upgrade")
@@ -212,10 +210,8 @@ func TestLedgerProviderHistoryDBDisabled(t *testing.T) {
 
 		// check that the genesis block was persisted in the provider's db
 		s := provider.idStore
-		gbBytesInProviderStore, err := s.Get(encodeLedgerKey(ledgerid, ledgerKeyPrefix))
+		gb, err := s.GetGenesisBlock(ledgerid)
 		require.NoError(t, err)
-		gb := &common.Block{}
-		require.NoError(t, proto.Unmarshal(gbBytesInProviderStore, gb))
 		require.True(t, proto.Equal(gb, genesisBlocks[i]), "proto messages are not equal")
 	}
 	gb, _ := configtxtest.MakeGenesisBlock(constructTestLedgerID(2))

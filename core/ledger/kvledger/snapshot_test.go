@@ -28,6 +28,8 @@ import (
 )
 
 func TestGenerateSnapshot(t *testing.T) {
+	t.Skip("Re-enable this test when fabric-peer-ext implements BlockStore.ExportTxIds")
+
 	conf, cleanup := testConfig(t)
 	defer cleanup()
 	snapshotRootDir := conf.SnapshotsConfig.RootDir
@@ -193,6 +195,8 @@ func TestSnapshotsDirInitializingErrors(t *testing.T) {
 }
 
 func TestGenerateSnapshotErrors(t *testing.T) {
+	t.Skip("Re-enable this test when fabric-peer-ext implements BlockStore.ExportTxIds")
+
 	conf, cleanup := testConfig(t)
 	defer cleanup()
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})

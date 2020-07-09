@@ -24,16 +24,11 @@ type IDStore interface {
 	LedgerIDActive(ledgerID string) (active bool, exists bool, err error)
 	GetActiveLedgerIDs() ([]string, error)
 	UpdateLedgerStatus(ledgerID string, newStatus msgs.Status) error
+	GetFormat() ([]byte, error)
 	UpgradeFormat() error
+	GetGenesisBlock(ledgerID string) (*common.Block, error)
 	CheckUpgradeEligibility() (bool, error)
 	Close()
-	EncodeLedgerKey(ledgerID string, prefix []byte) []byte
-	DecodeLedgerID(key []byte, prefix []byte) string
-
-	// Get is used by unit-tests. It will panic if not in testing mode
-	Get(key []byte) ([]byte, error)
-	// Put is used by unit-tests. It will panic if not in testing mode
-	Put(key []byte, value []byte) error
 }
 
 // TransientStore is a transient store

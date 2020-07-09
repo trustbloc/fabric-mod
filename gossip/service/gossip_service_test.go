@@ -158,6 +158,9 @@ func TestJCMInterface(t *testing.T) {
 }
 
 func TestLeaderElectionWithDeliverClient(t *testing.T) {
+	clearResources := xtestutil.SetupResources()
+	defer clearResources()
+
 	//Test check if leader election works with mock deliver service instance
 	//Configuration set to use dynamic leader election
 	//10 peers started, added to channel and at the end we check if only for one peer
@@ -293,6 +296,8 @@ func TestWithStaticDeliverClientLeader(t *testing.T) {
 }
 
 func TestWithStaticDeliverClientNotLeader(t *testing.T) {
+	clearResources := xtestutil.SetupResources()
+	defer clearResources()
 
 	serviceConfig := &ServiceConfig{
 		UseLeaderElection:                false,
@@ -342,6 +347,8 @@ func TestWithStaticDeliverClientNotLeader(t *testing.T) {
 }
 
 func TestWithStaticDeliverClientBothStaticAndLeaderElection(t *testing.T) {
+	clearResources := xtestutil.SetupResources()
+	defer clearResources()
 
 	serviceConfig := &ServiceConfig{
 		UseLeaderElection:                true,

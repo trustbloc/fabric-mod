@@ -574,6 +574,10 @@ func (s *idStore) CheckUpgradeEligibility() (bool, error) {
 	return true, nil
 }
 
+// GetFormat returns the database format
+func (s *idStore) GetFormat() ([]byte, error) {
+	return s.db.Get(formatKey)
+}
 func (s *idStore) UpgradeFormat() error {
 	eligible, err := s.CheckUpgradeEligibility()
 	if err != nil {
@@ -726,6 +730,22 @@ func (s *idStore) GetActiveLedgerIDs() ([]string, error) {
 	return ids, nil
 }
 
+// GetGenesisBlock returns the genesis block for the given ledger ID
+func (s *idStore) GetGenesisBlock(ledgerID string) (*common.Block, error) {
+	bytes, err := s.db.Get(s.EncodeLedgerKey(ledgerID, ledgerKeyPrefix))
+	if err != nil {
+		return nil, err
+	}
+
+	b := &common.Block{}
+	err = proto.Unmarshal(bytes, b)
+	if err != nil {
+		return nil, err
+	}
+
+	return b, nil
+}
+
 func (s *idStore) Close() {
 	s.db.Close()
 }
@@ -736,14 +756,4 @@ func (s *idStore) EncodeLedgerKey(ledgerID string, prefix []byte) []byte {
 
 func (s *idStore) DecodeLedgerID(key []byte, prefix []byte) string {
 	return string(key[len(prefix):])
-}
-
-// Get is used only for testing
-func (s *idStore) Get(key []byte) ([]byte, error) {
-	return s.db.Get(key)
-}
-
-// Put is used only for testing
-func (s *idStore) Put(key, value []byte) error {
-	return s.db.Put(key, value, true)
 }

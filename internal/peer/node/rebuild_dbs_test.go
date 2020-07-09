@@ -20,6 +20,8 @@ import (
 )
 
 func TestRebuildDBsCmd(t *testing.T) {
+	t.Skip("Re-enable this test when upgrade is supported by fabric-peer-ext")
+
 	testPath := "/tmp/hyperledger/test"
 	os.RemoveAll(testPath)
 	viper.Set("peer.fileSystemPath", testPath)

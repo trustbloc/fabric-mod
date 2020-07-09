@@ -16,8 +16,8 @@ import (
 )
 
 // PauseChannel updates the channel status to inactive in ledgerProviders.
-func PauseChannel(rootFSPath, ledgerID string) error {
-	if err := pauseOrResumeChannel(rootFSPath, ledgerID, msgs.Status_INACTIVE); err != nil {
+func PauseChannel(config *ledger.Config, ledgerID string) error {
+	if err := pauseOrResumeChannel(config, ledgerID, msgs.Status_INACTIVE); err != nil {
 		return err
 	}
 	logger.Infof("The channel [%s] has been successfully paused", ledgerID)
@@ -25,23 +25,23 @@ func PauseChannel(rootFSPath, ledgerID string) error {
 }
 
 // ResumeChannel updates the channel status to active in ledgerProviders
-func ResumeChannel(rootFSPath, ledgerID string) error {
-	if err := pauseOrResumeChannel(rootFSPath, ledgerID, msgs.Status_ACTIVE); err != nil {
+func ResumeChannel(config *ledger.Config, ledgerID string) error {
+	if err := pauseOrResumeChannel(config, ledgerID, msgs.Status_ACTIVE); err != nil {
 		return err
 	}
 	logger.Infof("The channel [%s] has been successfully resumed", ledgerID)
 	return nil
 }
 
-func pauseOrResumeChannel(rootFSPath, ledgerID string, status msgs.Status) error {
-	fileLock := leveldbhelper.NewFileLock(fileLockPath(rootFSPath))
+func pauseOrResumeChannel(config *ledger.Config, ledgerID string, status msgs.Status) error {
+	fileLock := leveldbhelper.NewFileLock(fileLockPath(config.RootFSPath))
 	if err := fileLock.Lock(); err != nil {
 		return errors.Wrap(err, "as another peer node command is executing,"+
 			" wait for that command to complete its execution or terminate it before retrying")
 	}
 	defer fileLock.Unlock()
 
-	idStore, err := xidstore.OpenIDStore(LedgerProviderPath(rootFSPath), nil,
+	idStore, err := xidstore.OpenIDStore(LedgerProviderPath(config.RootFSPath), config,
 		func(path string, _ *ledger.Config) (xstorageapi.IDStore, error) {
 			return openIDStore(path)
 		},

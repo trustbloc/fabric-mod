@@ -43,9 +43,19 @@ func dirExists(path string) bool {
 // maintained with the source tree. This should only be used in a
 // test/development context.
 func GetDevConfigDir() string {
+	sampleConfigPath := os.Getenv("FABRIC_SAMPLECONFIG_PATH")
+	if sampleConfigPath != "" {
+		path, err := gopathDevConfigDir(sampleConfigPath)
+		if err != nil {
+			panic(err)
+		}
+
+		return path
+	}
+
 	path, err := gomodDevConfigDir()
 	if err != nil {
-		path, err = gopathDevConfigDir()
+		path, err = gopathDevConfigDir("src/github.com/hyperledger/fabric/sampleconfig")
 		if err != nil {
 			panic(err)
 		}
@@ -53,12 +63,8 @@ func GetDevConfigDir() string {
 	return path
 }
 
-func gopathDevConfigDir() (string, error) {
+func gopathDevConfigDir(sampleConfigPath string) (string, error) {
 	gopath := os.Getenv("GOPATH")
-	sampleConfigPath := os.Getenv("FABRIC_SAMPLECONFIG_PATH")
-	if sampleConfigPath == "" {
-		sampleConfigPath = "src/github.com/hyperledger/fabric/sampleconfig"
-	}
 
 	for _, p := range filepath.SplitList(gopath) {
 		devPath := filepath.Join(p, sampleConfigPath)
@@ -70,6 +76,7 @@ func gopathDevConfigDir() (string, error) {
 
 	return "", fmt.Errorf("unable to find sampleconfig directory on GOPATH")
 }
+
 func gomodDevConfigDir() (string, error) {
 	buf := bytes.NewBuffer(nil)
 	cmd := exec.Command("go", "env", "GOMOD")

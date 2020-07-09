@@ -104,6 +104,17 @@ type MockIDStore struct {
 	updateLedgerStatusReturnsOnCall map[int]struct {
 		result1 error
 	}
+	GetFormatStub        func() ([]byte, error)
+	getFormatMutex       sync.RWMutex
+	getFormatArgsForCall []struct{}
+	getFormatReturns     struct {
+		result1 []byte
+		result2 error
+	}
+	getFormatReturnsOnCall map[int]struct {
+		result1 []byte
+		result2 error
+	}
 	UpgradeFormatStub        func() error
 	upgradeFormatMutex       sync.RWMutex
 	upgradeFormatArgsForCall []struct{}
@@ -112,6 +123,19 @@ type MockIDStore struct {
 	}
 	upgradeFormatReturnsOnCall map[int]struct {
 		result1 error
+	}
+	GetGenesisBlockStub        func(ledgerID string) (*common.Block, error)
+	getGenesisBlockMutex       sync.RWMutex
+	getGenesisBlockArgsForCall []struct {
+		ledgerID string
+	}
+	getGenesisBlockReturns struct {
+		result1 *common.Block
+		result2 error
+	}
+	getGenesisBlockReturnsOnCall map[int]struct {
+		result1 *common.Block
+		result2 error
 	}
 	CheckUpgradeEligibilityStub        func() (bool, error)
 	checkUpgradeEligibilityMutex       sync.RWMutex
@@ -124,58 +148,9 @@ type MockIDStore struct {
 		result1 bool
 		result2 error
 	}
-	CloseStub                  func()
-	closeMutex                 sync.RWMutex
-	closeArgsForCall           []struct{}
-	EncodeLedgerKeyStub        func(ledgerID string, prefix []byte) []byte
-	encodeLedgerKeyMutex       sync.RWMutex
-	encodeLedgerKeyArgsForCall []struct {
-		ledgerID string
-		prefix   []byte
-	}
-	encodeLedgerKeyReturns struct {
-		result1 []byte
-	}
-	encodeLedgerKeyReturnsOnCall map[int]struct {
-		result1 []byte
-	}
-	DecodeLedgerIDStub        func(key []byte, prefix []byte) string
-	decodeLedgerIDMutex       sync.RWMutex
-	decodeLedgerIDArgsForCall []struct {
-		key    []byte
-		prefix []byte
-	}
-	decodeLedgerIDReturns struct {
-		result1 string
-	}
-	decodeLedgerIDReturnsOnCall map[int]struct {
-		result1 string
-	}
-	GetStub        func(key []byte) ([]byte, error)
-	getMutex       sync.RWMutex
-	getArgsForCall []struct {
-		key []byte
-	}
-	getReturns struct {
-		result1 []byte
-		result2 error
-	}
-	getReturnsOnCall map[int]struct {
-		result1 []byte
-		result2 error
-	}
-	PutStub        func(key []byte, value []byte) error
-	putMutex       sync.RWMutex
-	putArgsForCall []struct {
-		key   []byte
-		value []byte
-	}
-	putReturns struct {
-		result1 error
-	}
-	putReturnsOnCall map[int]struct {
-		result1 error
-	}
+	CloseStub        func()
+	closeMutex       sync.RWMutex
+	closeArgsForCall []struct{}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -557,6 +532,49 @@ func (fake *MockIDStore) UpdateLedgerStatusReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
+func (fake *MockIDStore) GetFormat() ([]byte, error) {
+	fake.getFormatMutex.Lock()
+	ret, specificReturn := fake.getFormatReturnsOnCall[len(fake.getFormatArgsForCall)]
+	fake.getFormatArgsForCall = append(fake.getFormatArgsForCall, struct{}{})
+	fake.recordInvocation("GetFormat", []interface{}{})
+	fake.getFormatMutex.Unlock()
+	if fake.GetFormatStub != nil {
+		return fake.GetFormatStub()
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fake.getFormatReturns.result1, fake.getFormatReturns.result2
+}
+
+func (fake *MockIDStore) GetFormatCallCount() int {
+	fake.getFormatMutex.RLock()
+	defer fake.getFormatMutex.RUnlock()
+	return len(fake.getFormatArgsForCall)
+}
+
+func (fake *MockIDStore) GetFormatReturns(result1 []byte, result2 error) {
+	fake.GetFormatStub = nil
+	fake.getFormatReturns = struct {
+		result1 []byte
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *MockIDStore) GetFormatReturnsOnCall(i int, result1 []byte, result2 error) {
+	fake.GetFormatStub = nil
+	if fake.getFormatReturnsOnCall == nil {
+		fake.getFormatReturnsOnCall = make(map[int]struct {
+			result1 []byte
+			result2 error
+		})
+	}
+	fake.getFormatReturnsOnCall[i] = struct {
+		result1 []byte
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *MockIDStore) UpgradeFormat() error {
 	fake.upgradeFormatMutex.Lock()
 	ret, specificReturn := fake.upgradeFormatReturnsOnCall[len(fake.upgradeFormatArgsForCall)]
@@ -595,6 +613,57 @@ func (fake *MockIDStore) UpgradeFormatReturnsOnCall(i int, result1 error) {
 	fake.upgradeFormatReturnsOnCall[i] = struct {
 		result1 error
 	}{result1}
+}
+
+func (fake *MockIDStore) GetGenesisBlock(ledgerID string) (*common.Block, error) {
+	fake.getGenesisBlockMutex.Lock()
+	ret, specificReturn := fake.getGenesisBlockReturnsOnCall[len(fake.getGenesisBlockArgsForCall)]
+	fake.getGenesisBlockArgsForCall = append(fake.getGenesisBlockArgsForCall, struct {
+		ledgerID string
+	}{ledgerID})
+	fake.recordInvocation("GetGenesisBlock", []interface{}{ledgerID})
+	fake.getGenesisBlockMutex.Unlock()
+	if fake.GetGenesisBlockStub != nil {
+		return fake.GetGenesisBlockStub(ledgerID)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fake.getGenesisBlockReturns.result1, fake.getGenesisBlockReturns.result2
+}
+
+func (fake *MockIDStore) GetGenesisBlockCallCount() int {
+	fake.getGenesisBlockMutex.RLock()
+	defer fake.getGenesisBlockMutex.RUnlock()
+	return len(fake.getGenesisBlockArgsForCall)
+}
+
+func (fake *MockIDStore) GetGenesisBlockArgsForCall(i int) string {
+	fake.getGenesisBlockMutex.RLock()
+	defer fake.getGenesisBlockMutex.RUnlock()
+	return fake.getGenesisBlockArgsForCall[i].ledgerID
+}
+
+func (fake *MockIDStore) GetGenesisBlockReturns(result1 *common.Block, result2 error) {
+	fake.GetGenesisBlockStub = nil
+	fake.getGenesisBlockReturns = struct {
+		result1 *common.Block
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *MockIDStore) GetGenesisBlockReturnsOnCall(i int, result1 *common.Block, result2 error) {
+	fake.GetGenesisBlockStub = nil
+	if fake.getGenesisBlockReturnsOnCall == nil {
+		fake.getGenesisBlockReturnsOnCall = make(map[int]struct {
+			result1 *common.Block
+			result2 error
+		})
+	}
+	fake.getGenesisBlockReturnsOnCall[i] = struct {
+		result1 *common.Block
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *MockIDStore) CheckUpgradeEligibility() (bool, error) {
@@ -656,234 +725,6 @@ func (fake *MockIDStore) CloseCallCount() int {
 	return len(fake.closeArgsForCall)
 }
 
-func (fake *MockIDStore) EncodeLedgerKey(ledgerID string, prefix []byte) []byte {
-	var prefixCopy []byte
-	if prefix != nil {
-		prefixCopy = make([]byte, len(prefix))
-		copy(prefixCopy, prefix)
-	}
-	fake.encodeLedgerKeyMutex.Lock()
-	ret, specificReturn := fake.encodeLedgerKeyReturnsOnCall[len(fake.encodeLedgerKeyArgsForCall)]
-	fake.encodeLedgerKeyArgsForCall = append(fake.encodeLedgerKeyArgsForCall, struct {
-		ledgerID string
-		prefix   []byte
-	}{ledgerID, prefixCopy})
-	fake.recordInvocation("EncodeLedgerKey", []interface{}{ledgerID, prefixCopy})
-	fake.encodeLedgerKeyMutex.Unlock()
-	if fake.EncodeLedgerKeyStub != nil {
-		return fake.EncodeLedgerKeyStub(ledgerID, prefix)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fake.encodeLedgerKeyReturns.result1
-}
-
-func (fake *MockIDStore) EncodeLedgerKeyCallCount() int {
-	fake.encodeLedgerKeyMutex.RLock()
-	defer fake.encodeLedgerKeyMutex.RUnlock()
-	return len(fake.encodeLedgerKeyArgsForCall)
-}
-
-func (fake *MockIDStore) EncodeLedgerKeyArgsForCall(i int) (string, []byte) {
-	fake.encodeLedgerKeyMutex.RLock()
-	defer fake.encodeLedgerKeyMutex.RUnlock()
-	return fake.encodeLedgerKeyArgsForCall[i].ledgerID, fake.encodeLedgerKeyArgsForCall[i].prefix
-}
-
-func (fake *MockIDStore) EncodeLedgerKeyReturns(result1 []byte) {
-	fake.EncodeLedgerKeyStub = nil
-	fake.encodeLedgerKeyReturns = struct {
-		result1 []byte
-	}{result1}
-}
-
-func (fake *MockIDStore) EncodeLedgerKeyReturnsOnCall(i int, result1 []byte) {
-	fake.EncodeLedgerKeyStub = nil
-	if fake.encodeLedgerKeyReturnsOnCall == nil {
-		fake.encodeLedgerKeyReturnsOnCall = make(map[int]struct {
-			result1 []byte
-		})
-	}
-	fake.encodeLedgerKeyReturnsOnCall[i] = struct {
-		result1 []byte
-	}{result1}
-}
-
-func (fake *MockIDStore) DecodeLedgerID(key []byte, prefix []byte) string {
-	var keyCopy []byte
-	if key != nil {
-		keyCopy = make([]byte, len(key))
-		copy(keyCopy, key)
-	}
-	var prefixCopy []byte
-	if prefix != nil {
-		prefixCopy = make([]byte, len(prefix))
-		copy(prefixCopy, prefix)
-	}
-	fake.decodeLedgerIDMutex.Lock()
-	ret, specificReturn := fake.decodeLedgerIDReturnsOnCall[len(fake.decodeLedgerIDArgsForCall)]
-	fake.decodeLedgerIDArgsForCall = append(fake.decodeLedgerIDArgsForCall, struct {
-		key    []byte
-		prefix []byte
-	}{keyCopy, prefixCopy})
-	fake.recordInvocation("DecodeLedgerID", []interface{}{keyCopy, prefixCopy})
-	fake.decodeLedgerIDMutex.Unlock()
-	if fake.DecodeLedgerIDStub != nil {
-		return fake.DecodeLedgerIDStub(key, prefix)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fake.decodeLedgerIDReturns.result1
-}
-
-func (fake *MockIDStore) DecodeLedgerIDCallCount() int {
-	fake.decodeLedgerIDMutex.RLock()
-	defer fake.decodeLedgerIDMutex.RUnlock()
-	return len(fake.decodeLedgerIDArgsForCall)
-}
-
-func (fake *MockIDStore) DecodeLedgerIDArgsForCall(i int) ([]byte, []byte) {
-	fake.decodeLedgerIDMutex.RLock()
-	defer fake.decodeLedgerIDMutex.RUnlock()
-	return fake.decodeLedgerIDArgsForCall[i].key, fake.decodeLedgerIDArgsForCall[i].prefix
-}
-
-func (fake *MockIDStore) DecodeLedgerIDReturns(result1 string) {
-	fake.DecodeLedgerIDStub = nil
-	fake.decodeLedgerIDReturns = struct {
-		result1 string
-	}{result1}
-}
-
-func (fake *MockIDStore) DecodeLedgerIDReturnsOnCall(i int, result1 string) {
-	fake.DecodeLedgerIDStub = nil
-	if fake.decodeLedgerIDReturnsOnCall == nil {
-		fake.decodeLedgerIDReturnsOnCall = make(map[int]struct {
-			result1 string
-		})
-	}
-	fake.decodeLedgerIDReturnsOnCall[i] = struct {
-		result1 string
-	}{result1}
-}
-
-func (fake *MockIDStore) Get(key []byte) ([]byte, error) {
-	var keyCopy []byte
-	if key != nil {
-		keyCopy = make([]byte, len(key))
-		copy(keyCopy, key)
-	}
-	fake.getMutex.Lock()
-	ret, specificReturn := fake.getReturnsOnCall[len(fake.getArgsForCall)]
-	fake.getArgsForCall = append(fake.getArgsForCall, struct {
-		key []byte
-	}{keyCopy})
-	fake.recordInvocation("Get", []interface{}{keyCopy})
-	fake.getMutex.Unlock()
-	if fake.GetStub != nil {
-		return fake.GetStub(key)
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fake.getReturns.result1, fake.getReturns.result2
-}
-
-func (fake *MockIDStore) GetCallCount() int {
-	fake.getMutex.RLock()
-	defer fake.getMutex.RUnlock()
-	return len(fake.getArgsForCall)
-}
-
-func (fake *MockIDStore) GetArgsForCall(i int) []byte {
-	fake.getMutex.RLock()
-	defer fake.getMutex.RUnlock()
-	return fake.getArgsForCall[i].key
-}
-
-func (fake *MockIDStore) GetReturns(result1 []byte, result2 error) {
-	fake.GetStub = nil
-	fake.getReturns = struct {
-		result1 []byte
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *MockIDStore) GetReturnsOnCall(i int, result1 []byte, result2 error) {
-	fake.GetStub = nil
-	if fake.getReturnsOnCall == nil {
-		fake.getReturnsOnCall = make(map[int]struct {
-			result1 []byte
-			result2 error
-		})
-	}
-	fake.getReturnsOnCall[i] = struct {
-		result1 []byte
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *MockIDStore) Put(key []byte, value []byte) error {
-	var keyCopy []byte
-	if key != nil {
-		keyCopy = make([]byte, len(key))
-		copy(keyCopy, key)
-	}
-	var valueCopy []byte
-	if value != nil {
-		valueCopy = make([]byte, len(value))
-		copy(valueCopy, value)
-	}
-	fake.putMutex.Lock()
-	ret, specificReturn := fake.putReturnsOnCall[len(fake.putArgsForCall)]
-	fake.putArgsForCall = append(fake.putArgsForCall, struct {
-		key   []byte
-		value []byte
-	}{keyCopy, valueCopy})
-	fake.recordInvocation("Put", []interface{}{keyCopy, valueCopy})
-	fake.putMutex.Unlock()
-	if fake.PutStub != nil {
-		return fake.PutStub(key, value)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fake.putReturns.result1
-}
-
-func (fake *MockIDStore) PutCallCount() int {
-	fake.putMutex.RLock()
-	defer fake.putMutex.RUnlock()
-	return len(fake.putArgsForCall)
-}
-
-func (fake *MockIDStore) PutArgsForCall(i int) ([]byte, []byte) {
-	fake.putMutex.RLock()
-	defer fake.putMutex.RUnlock()
-	return fake.putArgsForCall[i].key, fake.putArgsForCall[i].value
-}
-
-func (fake *MockIDStore) PutReturns(result1 error) {
-	fake.PutStub = nil
-	fake.putReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *MockIDStore) PutReturnsOnCall(i int, result1 error) {
-	fake.PutStub = nil
-	if fake.putReturnsOnCall == nil {
-		fake.putReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.putReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
 func (fake *MockIDStore) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -903,20 +744,16 @@ func (fake *MockIDStore) Invocations() map[string][][]interface{} {
 	defer fake.getActiveLedgerIDsMutex.RUnlock()
 	fake.updateLedgerStatusMutex.RLock()
 	defer fake.updateLedgerStatusMutex.RUnlock()
+	fake.getFormatMutex.RLock()
+	defer fake.getFormatMutex.RUnlock()
 	fake.upgradeFormatMutex.RLock()
 	defer fake.upgradeFormatMutex.RUnlock()
+	fake.getGenesisBlockMutex.RLock()
+	defer fake.getGenesisBlockMutex.RUnlock()
 	fake.checkUpgradeEligibilityMutex.RLock()
 	defer fake.checkUpgradeEligibilityMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
-	fake.encodeLedgerKeyMutex.RLock()
-	defer fake.encodeLedgerKeyMutex.RUnlock()
-	fake.decodeLedgerIDMutex.RLock()
-	defer fake.decodeLedgerIDMutex.RUnlock()
-	fake.getMutex.RLock()
-	defer fake.getMutex.RUnlock()
-	fake.putMutex.RLock()
-	defer fake.putMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

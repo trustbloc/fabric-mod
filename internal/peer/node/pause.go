@@ -30,7 +30,6 @@ var pauseChannelCmd = &cobra.Command{
 			return errors.New("Must supply channel ID")
 		}
 
-		config := ledgerConfig()
-		return kvledger.PauseChannel(config.RootFSPath, channelID)
+		return kvledger.PauseChannel(ledgerConfig(), channelID)
 	},
 }
