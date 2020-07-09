@@ -35,10 +35,10 @@ import (
 	"github.com/hyperledger/fabric/core/handlers/validation/builtin"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/rwsetutil"
-	ledgerutils "github.com/hyperledger/fabric/core/ledger/util"
 	mocktxvalidator "github.com/hyperledger/fabric/core/mocks/txvalidator"
 	"github.com/hyperledger/fabric/core/scc/lscc"
 	supportmocks "github.com/hyperledger/fabric/discovery/support/mocks"
+	"github.com/hyperledger/fabric/internal/pkg/txflags"
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/msp/mgmt"
 	msptesttools "github.com/hyperledger/fabric/msp/mgmt/testtools"
@@ -70,6 +70,7 @@ func createRWset(t *testing.T, ccnames ...string) []byte {
 	rwset, err := rwsetBuilder.GetTxSimulationResults()
 	assert.NoError(t, err)
 	rwsetBytes, err := rwset.GetPubSimulationBytes()
+	assert.NoError(t, err)
 	return rwsetBytes
 }
 
@@ -138,13 +139,13 @@ func getEnvWithSigner(ccID string, event []byte, res []byte, sig msp.SigningIden
 }
 
 func assertInvalid(block *common.Block, t *testing.T, code peer.TxValidationCode) {
-	txsFilter := ledgerutils.TxValidationFlags(block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER])
+	txsFilter := txflags.ValidationFlags(block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER])
 	assert.True(t, txsFilter.IsInvalid(0))
 	assert.True(t, txsFilter.IsSetTo(0, code))
 }
 
 func assertValid(block *common.Block, t *testing.T) {
-	txsFilter := ledgerutils.TxValidationFlags(block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER])
+	txsFilter := txflags.ValidationFlags(block.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER])
 	assert.False(t, txsFilter.IsInvalid(0))
 }
 
@@ -553,6 +554,7 @@ func TestParallelValidation(t *testing.T) {
 		rwset, err := rwsetBuilder.GetTxSimulationResults()
 		assert.NoError(t, err)
 		rwsetBytes, err := rwset.GetPubSimulationBytes()
+		assert.NoError(t, err)
 		tx := getEnvWithSigner(ccID, nil, rwsetBytes, sig, t)
 		blockData = append(blockData, protoutil.MarshalOrPanic(tx))
 	}
@@ -565,7 +567,7 @@ func TestParallelValidation(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Block metadata array position to store serialized bit array filter of invalid transactions
-	txsFilter := ledgerutils.TxValidationFlags(b.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER])
+	txsFilter := txflags.ValidationFlags(b.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER])
 	// tx validity
 	for txNum := 0; txNum < txCnt; txNum += 1 {
 		switch uint(txNum / 10) {
@@ -1052,7 +1054,7 @@ func TestDuplicateTxId(t *testing.T) {
 	assertion.NoError(err)
 
 	// We expect the tx to be invalid because of a duplicate txid
-	txsfltr := ledgerutils.TxValidationFlags(b.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER])
+	txsfltr := txflags.ValidationFlags(b.Metadata.Metadata[common.BlockMetadataIndex_TRANSACTIONS_FILTER])
 	assertion.True(txsfltr.IsInvalid(0))
 	assertion.True(txsfltr.Flag(0) == peer.TxValidationCode_DUPLICATE_TXID)
 }
@@ -1267,8 +1269,4 @@ func TestMain(m *testing.M) {
 	}
 
 	os.Exit(m.Run())
-}
-
-func ToHex(q uint64) string {
-	return "0x" + strconv.FormatUint(q, 16)
 }

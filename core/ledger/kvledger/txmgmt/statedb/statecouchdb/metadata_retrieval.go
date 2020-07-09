@@ -8,17 +8,15 @@ package statecouchdb
 
 import (
 	"fmt"
-
-	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 )
 
 // nsMetadataRetriever implements `batch` interface and wraps the function `retrieveNsMetadata`
 // for allowing parallel execution of this function for different namespaces
 type nsMetadataRetriever struct {
 	ns              string
-	db              *couchdb.CouchDatabase
+	db              *CouchDatabase
 	keys            []string
-	executionResult []*couchdb.DocMetadata
+	executionResult []*DocMetadata
 }
 
 // subNsMetadataRetriever implements `batch` interface and wraps the function
@@ -30,7 +28,7 @@ type nsMetadataRetriever struct {
 type subNsMetadataRetriever nsMetadataRetriever
 
 // retrievedMetadata retrieves the metadata for a collection of `namespace-keys` combination
-func (vdb *VersionedDB) retrieveMetadata(nsKeysMap map[string][]string) (map[string][]*couchdb.DocMetadata, error) {
+func (vdb *VersionedDB) retrieveMetadata(nsKeysMap map[string][]string) (map[string][]*DocMetadata, error) {
 	// construct one batch per namespace
 	nsMetadataRetrievers := []batch{}
 	for ns, keys := range nsKeysMap {
@@ -44,7 +42,7 @@ func (vdb *VersionedDB) retrieveMetadata(nsKeysMap map[string][]string) (map[str
 		return nil, err
 	}
 	// accumulate results from each batch
-	executionResults := make(map[string][]*couchdb.DocMetadata)
+	executionResults := make(map[string][]*DocMetadata)
 	for _, r := range nsMetadataRetrievers {
 		nsMetadataRetriever := r.(*nsMetadataRetriever)
 		executionResults[nsMetadataRetriever.ns] = nsMetadataRetriever.executionResult
@@ -53,7 +51,7 @@ func (vdb *VersionedDB) retrieveMetadata(nsKeysMap map[string][]string) (map[str
 }
 
 // retrieveNsMetadata retrieves metadata for a given namespace
-func retrieveNsMetadata(db *couchdb.CouchDatabase, keys []string) ([]*couchdb.DocMetadata, error) {
+func retrieveNsMetadata(db *CouchDatabase, keys []string) ([]*DocMetadata, error) {
 	// construct one batch per group of keys based on maxBatchSize
 	maxBatchSize := db.CouchInstance.MaxBatchUpdateSize()
 	batches := []batch{}
@@ -71,7 +69,7 @@ func retrieveNsMetadata(db *couchdb.CouchDatabase, keys []string) ([]*couchdb.Do
 		return nil, err
 	}
 	// accumulate results from each batch
-	var executionResults []*couchdb.DocMetadata
+	var executionResults []*DocMetadata
 	for _, b := range batches {
 		executionResults = append(executionResults, b.(*subNsMetadataRetriever).executionResult...)
 	}

@@ -52,7 +52,7 @@ type Initializer struct {
 	MetricsProvider                 metrics.Provider
 	HealthCheckRegistry             ledger.HealthCheckRegistry
 	Config                          *ledger.Config
-	Hasher                          ledger.Hasher
+	HashProvider                    ledger.HashProvider
 	EbMetadataProvider              MetadataProvider
 	CollDataProvider                storeapi.Provider
 }
@@ -74,12 +74,12 @@ func NewLedgerMgr(initializer *Initializer) *LedgerMgr {
 			HealthCheckRegistry:             initializer.HealthCheckRegistry,
 			Config:                          initializer.Config,
 			CustomTxProcessors:              initializer.CustomTxProcessors,
-			Hasher:                          initializer.Hasher,
+			HashProvider:                    initializer.HashProvider,
 			CollDataProvider:                initializer.CollDataProvider,
 		},
 	)
 	if err != nil {
-		panic(fmt.Sprintf("Error in instantiating ledger provider: %s", err))
+		panic(fmt.Sprintf("Error in instantiating ledger provider: %+v", err))
 	}
 	ledgerMgr := &LedgerMgr{
 		openedLedgers:      make(map[string]ledger.PeerLedger),

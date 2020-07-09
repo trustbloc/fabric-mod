@@ -4,8 +4,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-set -e
-set -o pipefail
+set -eo pipefail
 
 base_dir="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -21,7 +20,8 @@ serial_packages=(
 
 # packages which need to be tested with build tag pkcs11
 pkcs11_packages=(
-    "github.com/hyperledger/fabric/bccsp/..."
+    "github.com/hyperledger/fabric/bccsp/factory"
+    "github.com/hyperledger/fabric/bccsp/pkcs11"
 )
 
 # packages that are only tested when they (or their deps) change
@@ -128,8 +128,6 @@ serial_test_packages() {
     filter=$(package_filter "${serial_packages[@]}")
     if [ -n "$filter" ]; then
         join_by $'\n' "$@" | grep -E "$filter" || true
-    else
-        join_by $'\n' "$@"
     fi
 }
 
@@ -154,7 +152,7 @@ run_tests() {
         local -a serial
         while IFS= read -r pkg; do serial+=("$pkg"); done < <(serial_test_packages "$@")
         if [ "${#serial[@]}" -ne 0 ]; then
-            go test "${flags[@]}" -tags "$GO_TAGS" "${serial[@]}" -short -p 1 -timeout=90m -failfast
+            go test "${flags[@]}" -failfast -tags "$GO_TAGS" "${serial[@]}" -short -p 1 -timeout=20m
         fi
 
         local -a parallel
@@ -173,11 +171,6 @@ run_tests_with_coverage() {
 }
 
 main() {
-    # explicit exclusions for ppc and s390x
-    if [ "$(uname -m)" == "ppc64le" ] || [ "$(uname -m)" == "s390x" ]; then
-        excluded_packages+=("github.com/hyperledger/fabric/core/chaincode/platforms/java")
-    fi
-
     # default behavior is to run all tests
     local -a package_spec=("${TEST_PKGS:-github.com/hyperledger/fabric/...}")
 

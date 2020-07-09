@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package externalbuilder_test
 
 import (
+	"encoding/json"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -236,6 +237,27 @@ var _ = Describe("Instance", func() {
 		})
 	})
 
+	Describe("Duration", func() {
+		It("validates that marshalled Duration is unmarshalled correctly", func() {
+			validateUnmarshalling := func(d time.Duration) {
+				duration := externalbuilder.Duration{d}
+
+				marshalled, err := json.Marshal(duration)
+
+				var unmarshalled externalbuilder.Duration
+				err = json.Unmarshal(marshalled, &unmarshalled)
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(unmarshalled).To(Equal(duration))
+			}
+
+			validateUnmarshalling(10 * time.Millisecond)
+			validateUnmarshalling(10 * time.Second)
+			validateUnmarshalling(10 * time.Minute)
+			validateUnmarshalling(10 * time.Hour)
+		})
+	})
+
 	Describe("Start", func() {
 		It("invokes the builder's run command and sets the run status", func() {
 			err := instance.Start(&ccintf.PeerConnection{
@@ -268,7 +290,7 @@ var _ = Describe("Instance", func() {
 			Consistently(errCh).ShouldNot(Receive())
 
 			err = instance.Stop()
-			Expect(err).ToNot(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred())
 			Eventually(errCh).Should(Receive(MatchError("signal: terminated")))
 		})
 
@@ -286,7 +308,7 @@ var _ = Describe("Instance", func() {
 				Consistently(errCh).ShouldNot(Receive())
 
 				err = instance.Stop()
-				Expect(err).ToNot(HaveOccurred())
+				Expect(err).NotTo(HaveOccurred())
 				Eventually(errCh).Should(Receive(MatchError("signal: killed")))
 			})
 		})

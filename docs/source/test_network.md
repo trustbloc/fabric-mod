@@ -21,7 +21,7 @@ current master branch, it is possible that you will encounter errors.
 ## Before you begin
 
 Before you can run the test network, you need to clone the `fabric-samples`
-repository and download the Fabric images. Make sure that that you have installed
+repository and download the Fabric images. Make sure that you have installed
 the [Prerequisites](prereqs.html) and [Installed the Samples, Binaries and Docker Images](install.html).
 
 ## Bring up the test network
@@ -329,7 +329,7 @@ Chaincodes are invoked when a network member wants to transfer or change an
 asset on the ledger. Use the following command to change the owner of a car on
 the ledger by invoking the fabcar chaincode:
 ```
-peer chaincode invoke -o localhost:7050 --ordererTLSHostnameOverride orderer.example.com --tls true --cafile ${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem -C mychannel -n fabcar --peerAddresses localhost:7051 --tlsRootCertFiles ${PWD}/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt --peerAddresses localhost:9051 --tlsRootCertFiles ${PWD}/organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls/ca.crt -c '{"function":"changeCarOwner","Args":["CAR9","Dave"]}'
+peer chaincode invoke -o localhost:7050 --ordererTLSHostnameOverride orderer.example.com --tls --cafile ${PWD}/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem -C mychannel -n fabcar --peerAddresses localhost:7051 --tlsRootCertFiles ${PWD}/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt --peerAddresses localhost:9051 --tlsRootCertFiles ${PWD}/organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls/ca.crt -c '{"function":"changeCarOwner","Args":["CAR9","Dave"]}'
 ```
 
 If the command is successful, you should see the following response:
@@ -401,7 +401,7 @@ the [commercial paper tutorial](tutorial/commercial_paper.html) to explore a
 use case in which two organizations use a blockchain network to trade commercial
 paper.
 
-You can find the the complete list of Fabric tutorials on the [tutorials](tutorials.html)
+You can find the complete list of Fabric tutorials on the [tutorials](tutorials.html)
 page.
 
 ## Bring up the network with Certificate Authorities
@@ -503,12 +503,12 @@ organizations/peerOrganizations/org1.example.com/users/Admin@org1.example.com/
     ├── IssuerPublicKey
     ├── IssuerRevocationPublicKey
     ├── cacerts
-    │   └── localhost-7054-ca-org1.pem
+    │   └── localhost-7054-ca-org1.pem
     ├── config.yaml
     ├── keystore
-    │   └── 58e81e6f1ee8930df46841bf88c22a08ae53c1332319854608539ee78ed2fd65_sk
+    │   └── 58e81e6f1ee8930df46841bf88c22a08ae53c1332319854608539ee78ed2fd65_sk
     ├── signcerts
-    │   └── cert.pem
+    │   └── cert.pem
     └── user
 ```
 You can find the certificate of the admin user in the `signcerts` folder and the
@@ -564,7 +564,7 @@ below provide a guided tour of what happens when you issue the command of
 - If you issue the `deployCC` command, `./network.sh` runs the ``deployCC.sh``
   script to install the **fabcar** chaincode on both peers and then define then
   chaincode on the channel. Once the chaincode definition is committed to the
-  channel, the peer cli initializes the chainocde using the `Init` and invokes
+  channel, the peer cli initializes the chaincode using the `Init` and invokes
   the chaincode to put initial data on the ledger.
 
 ## Troubleshooting

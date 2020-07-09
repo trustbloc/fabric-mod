@@ -15,15 +15,18 @@ type metadataHint struct {
 	bookkeeper *leveldbhelper.DBHandle
 }
 
-func newMetadataHint(bookkeeper *leveldbhelper.DBHandle) *metadataHint {
+func newMetadataHint(bookkeeper *leveldbhelper.DBHandle) (*metadataHint, error) {
 	cache := map[string]bool{}
-	itr := bookkeeper.GetIterator(nil, nil)
+	itr, err := bookkeeper.GetIterator(nil, nil)
+	if err != nil {
+		return nil, err
+	}
 	defer itr.Release()
 	for itr.Next() {
 		namespace := string(itr.Key())
 		cache[namespace] = true
 	}
-	return &metadataHint{cache, bookkeeper}
+	return &metadataHint{cache, bookkeeper}, nil
 }
 
 func (h *metadataHint) metadataEverUsedFor(namespace string) bool {
@@ -31,7 +34,7 @@ func (h *metadataHint) metadataEverUsedFor(namespace string) bool {
 }
 
 func (h *metadataHint) setMetadataUsedFlag(updates *UpdateBatch) {
-	batch := leveldbhelper.NewUpdateBatch()
+	batch := h.bookkeeper.NewUpdateBatch()
 	for ns := range filterNamespacesThatHasMetadata(updates) {
 		if h.cache[ns] {
 			continue

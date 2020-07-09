@@ -8,18 +8,17 @@ package ledger
 
 import (
 	"github.com/hyperledger/fabric-protos-go/common"
-	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	"github.com/hyperledger/fabric/extensions/ledger/api"
 )
 
 //NewKVLedgerExtension returns peer ledger extension implementation using block store provided
-func NewKVLedgerExtension(store blkstorage.BlockStore) api.PeerLedgerExtension {
+func NewKVLedgerExtension(store api.BlockStore) api.PeerLedgerExtension {
 	return &kvLedger{store}
 }
 
 //kvLedger is implementation of Peer Ledger extension
 type kvLedger struct {
-	blockStore blkstorage.BlockStore
+	blockStore api.BlockStore
 }
 
 // CheckpointBlock updates checkpoint info of underlying blockstore with given block

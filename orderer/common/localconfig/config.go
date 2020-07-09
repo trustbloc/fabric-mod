@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -16,7 +15,6 @@ import (
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/viperutil"
 	coreconfig "github.com/hyperledger/fabric/core/config"
-	viper "github.com/spf13/viper2015"
 )
 
 // Prefix for environment variables.
@@ -30,13 +28,14 @@ var logger = flogging.MustGetLogger("localconfig")
 // modify the default mapping, see the "Unmarshal"
 // section of https://github.com/spf13/viper for more info.
 type TopLevel struct {
-	General    General
-	FileLedger FileLedger
-	Kafka      Kafka
-	Debug      Debug
-	Consensus  interface{}
-	Operations Operations
-	Metrics    Metrics
+	General              General
+	FileLedger           FileLedger
+	Kafka                Kafka
+	Debug                Debug
+	Consensus            interface{}
+	Operations           Operations
+	Metrics              Metrics
+	ChannelParticipation ChannelParticipation
 }
 
 // General contains config which should be common among all orderer types.
@@ -185,13 +184,13 @@ type Debug struct {
 	DeliverTraceDir   string
 }
 
-// Operations configures the operations endpont for the orderer.
+// Operations configures the operations endpoint for the orderer.
 type Operations struct {
 	ListenAddress string
 	TLS           TLS
 }
 
-// Operations confiures the metrics provider for the orderer.
+// Metrics configures the metrics provider for the orderer.
 type Metrics struct {
 	Provider string
 	Statsd   Statsd
@@ -203,6 +202,13 @@ type Statsd struct {
 	Address       string
 	WriteInterval time.Duration
 	Prefix        string
+}
+
+// ChannelParticipation provides the channel participation API configuration for the orderer.
+// Channel participation uses the same ListenAddress and TLS settings of the Operations service.
+type ChannelParticipation struct {
+	Enabled       bool
+	RemoveStorage bool // Whether to permanently remove storage on channel removal.
 }
 
 // Defaults carries the default orderer configuration values.
@@ -280,6 +286,10 @@ var Defaults = TopLevel{
 	Metrics: Metrics{
 		Provider: "disabled",
 	},
+	ChannelParticipation: ChannelParticipation{
+		Enabled:       false,
+		RemoveStorage: false,
+	},
 }
 
 // Load parses the orderer YAML file and environment, producing
@@ -302,12 +312,9 @@ var cache = &configCache{}
 func (c *configCache) load() (*TopLevel, error) {
 	var uconf TopLevel
 
-	config := viper.New()
-	coreconfig.InitViper(config, "orderer")
+	config := viperutil.New()
+	config.SetConfigName("orderer")
 	config.SetEnvPrefix(Prefix)
-	config.AutomaticEnv()
-	replacer := strings.NewReplacer(".", "_")
-	config.SetEnvKeyReplacer(replacer)
 
 	if err := config.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("Error reading configuration: %s", err)
@@ -317,7 +324,7 @@ func (c *configCache) load() (*TopLevel, error) {
 	defer c.mutex.Unlock()
 	serializedConf, ok := c.cache[config.ConfigFileUsed()]
 	if !ok {
-		err := viperutil.EnhancedExactUnmarshal(config, &uconf)
+		err := config.EnhancedExactUnmarshal(&uconf)
 		if err != nil {
 			return nil, fmt.Errorf("Error unmarshaling config into struct: %s", err)
 		}

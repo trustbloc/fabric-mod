@@ -111,7 +111,7 @@ type Support struct {
 // CoordinatorConfig encapsulates the config that is passed to a new coordinator
 type CoordinatorConfig struct {
 	// TransientBlockRetention indicates the number of blocks to retain in the transient store
-	// when purging below height on commiting every TransientBlockRetention-th block
+	// when purging below height on committing every TransientBlockRetention-th block
 	TransientBlockRetention uint64
 	// PullRetryThreshold indicates the max duration an attempted fetch from a remote peer will retry
 	// for before giving up and leaving the private data as missing
@@ -242,7 +242,7 @@ func (c *coordinator) StoreBlock(block *common.Block, privateDataSets util.PvtDa
 	}
 
 	// Purge transactions
-	retrievedPvtdata.Purge()
+	go retrievedPvtdata.Purge()
 
 	return nil
 }
@@ -446,7 +446,7 @@ func getTxInfoFromTransactionBytes(envBytes []byte) (*txInfo, error) {
 
 	if chdr.Type != int32(common.HeaderType_ENDORSER_TRANSACTION) {
 		err := errors.New("header type is not an endorser transaction")
-		logger.Warningf("Invalid transaction type: %s", err)
+		logger.Debugf("Invalid transaction type: %s", err)
 		return nil, err
 	}
 

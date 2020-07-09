@@ -9,12 +9,12 @@ package statecouchdb
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/hyperledger/fabric/core/ledger/internal/version"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
-	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/version"
-	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 	"github.com/pkg/errors"
 )
 
@@ -66,62 +66,68 @@ func (v jsonValue) toBytes() ([]byte, error) {
 	return jsonBytes, err
 }
 
-func couchDocToKeyValue(doc *couchdb.CouchDoc) (*keyValue, error) {
-	// initialize the return value
-	var returnValue []byte
-	var err error
-	// create a generic map unmarshal the json
-	jsonResult := make(map[string]interface{})
-	decoder := json.NewDecoder(bytes.NewBuffer(doc.JSONValue))
-	decoder.UseNumber()
-	if err = decoder.Decode(&jsonResult); err != nil {
-		return nil, err
-	}
-	// verify the version field exists
-	if _, fieldFound := jsonResult[versionField]; !fieldFound {
-		return nil, errors.Errorf("version field %s was not found", versionField)
-	}
-	key := jsonResult[idField].(string)
-	// create the return version from the version field in the JSON
-
-	returnVersion, returnMetadata, err := decodeVersionAndMetadata(jsonResult[versionField].(string))
+func couchDocToKeyValue(doc *CouchDoc) (*keyValue, error) {
+	docFields, err := validateAndRetrieveFields(doc)
 	if err != nil {
 		return nil, err
 	}
-	var revision string
-	if jsonResult[revField] != nil {
-		revision = jsonResult[revField].(string)
-	}
-
-	// remove the _id, _rev and version fields
-	delete(jsonResult, idField)
-	delete(jsonResult, revField)
-	delete(jsonResult, versionField)
-
-	// handle binary or json data
-	if doc.Attachments != nil { // binary attachment
-		// get binary data from attachment
-		for _, attachment := range doc.Attachments {
-			if attachment.Name == binaryWrapper {
-				returnValue = attachment.AttachmentBytes
-			}
-		}
-	} else {
-		// marshal the returned JSON data.
-		if returnValue, err = json.Marshal(jsonResult); err != nil {
-			return nil, err
-		}
+	version, metadata, err := decodeVersionAndMetadata(docFields.versionAndMetadata)
+	if err != nil {
+		return nil, err
 	}
 	return &keyValue{
-		key, revision,
+		docFields.id, docFields.revision,
 		&statedb.VersionedValue{
-			Value:    returnValue,
-			Metadata: returnMetadata,
-			Version:  returnVersion},
+			Value:    docFields.value,
+			Version:  version,
+			Metadata: metadata,
+		},
 	}, nil
 }
 
-func keyValToCouchDoc(kv *keyValue) (*couchdb.CouchDoc, error) {
+type couchDocFields struct {
+	id                 string
+	revision           string
+	value              []byte
+	versionAndMetadata string
+}
+
+func validateAndRetrieveFields(doc *CouchDoc) (*couchDocFields, error) {
+	jsonDoc := make(jsonValue)
+	decoder := json.NewDecoder(bytes.NewBuffer(doc.JSONValue))
+	decoder.UseNumber()
+	if err := decoder.Decode(&jsonDoc); err != nil {
+		return nil, err
+	}
+
+	docFields := &couchDocFields{}
+	docFields.id = jsonDoc[idField].(string)
+	if jsonDoc[revField] != nil {
+		docFields.revision = jsonDoc[revField].(string)
+	}
+	if jsonDoc[versionField] == nil {
+		return nil, fmt.Errorf("version field %s was not found", versionField)
+	}
+	docFields.versionAndMetadata = jsonDoc[versionField].(string)
+
+	delete(jsonDoc, idField)
+	delete(jsonDoc, revField)
+	delete(jsonDoc, versionField)
+
+	var err error
+	if doc.Attachments == nil {
+		docFields.value, err = json.Marshal(jsonDoc)
+		return docFields, err
+	}
+	for _, attachment := range doc.Attachments {
+		if attachment.Name == binaryWrapper {
+			docFields.value = attachment.AttachmentBytes
+		}
+	}
+	return docFields, err
+}
+
+func keyValToCouchDoc(kv *keyValue) (*CouchDoc, error) {
 	type kvType int32
 	const (
 		kvTypeDelete = iota
@@ -154,7 +160,7 @@ func keyValToCouchDoc(kv *keyValue) (*couchdb.CouchDoc, error) {
 	if err != nil {
 		return nil, err
 	}
-	// add the (version + metadata), id, revision, and delete marker (if needed)
+	// add the (version + metadata), ID, revision, and delete marker (if needed)
 	jsonMap[versionField] = verAndMetadata
 	jsonMap[idField] = key
 	if kv.revision != "" {
@@ -167,13 +173,13 @@ func keyValToCouchDoc(kv *keyValue) (*couchdb.CouchDoc, error) {
 	if err != nil {
 		return nil, err
 	}
-	couchDoc := &couchdb.CouchDoc{JSONValue: jsonBytes}
+	couchDoc := &CouchDoc{JSONValue: jsonBytes}
 	if kvtype == kvTypeAttachment {
-		attachment := &couchdb.AttachmentInfo{}
+		attachment := &AttachmentInfo{}
 		attachment.AttachmentBytes = value
 		attachment.ContentType = "application/octet-stream"
 		attachment.Name = binaryWrapper
-		attachments := append([]*couchdb.AttachmentInfo{}, attachment)
+		attachments := append([]*AttachmentInfo{}, attachment)
 		couchDoc.Attachments = attachments
 	}
 	return couchDoc, nil
@@ -185,7 +191,18 @@ type couchSavepointData struct {
 	TxNum    uint64 `json:"TxNum"`
 }
 
-func encodeSavepoint(height *version.Height) (*couchdb.CouchDoc, error) {
+type channelMetadata struct {
+	ChannelName string `json:"ChannelName"`
+	// namespace to namespaceDBInfo mapping
+	NamespaceDBsInfo map[string]*namespaceDBInfo `json:"NamespaceDBsInfo"`
+}
+
+type namespaceDBInfo struct {
+	Namespace string `json:"Namespace"`
+	DBName    string `json:"DBName"`
+}
+
+func encodeSavepoint(height *version.Height) (*CouchDoc, error) {
 	var err error
 	var savepointDoc couchSavepointData
 	// construct savepoint document
@@ -197,10 +214,10 @@ func encodeSavepoint(height *version.Height) (*couchdb.CouchDoc, error) {
 		logger.Errorf("%+v", err)
 		return nil, err
 	}
-	return &couchdb.CouchDoc{JSONValue: savepointDocJSON, Attachments: nil}, nil
+	return &CouchDoc{JSONValue: savepointDocJSON, Attachments: nil}, nil
 }
 
-func decodeSavepoint(couchDoc *couchdb.CouchDoc) (*version.Height, error) {
+func decodeSavepoint(couchDoc *CouchDoc) (*version.Height, error) {
 	savepointDoc := &couchSavepointData{}
 	if err := json.Unmarshal(couchDoc.JSONValue, &savepointDoc); err != nil {
 		err = errors.Wrap(err, "failed to unmarshal savepoint data")
@@ -210,11 +227,31 @@ func decodeSavepoint(couchDoc *couchdb.CouchDoc) (*version.Height, error) {
 	return &version.Height{BlockNum: savepointDoc.BlockNum, TxNum: savepointDoc.TxNum}, nil
 }
 
+func encodeChannelMetadata(metadataDoc *channelMetadata) (*CouchDoc, error) {
+	metadataJSON, err := json.Marshal(metadataDoc)
+	if err != nil {
+		err = errors.Wrap(err, "failed to marshal channel metadata")
+		logger.Errorf("%+v", err)
+		return nil, err
+	}
+	return &CouchDoc{JSONValue: metadataJSON, Attachments: nil}, nil
+}
+
+func decodeChannelMetadata(couchDoc *CouchDoc) (*channelMetadata, error) {
+	metadataDoc := &channelMetadata{}
+	if err := json.Unmarshal(couchDoc.JSONValue, &metadataDoc); err != nil {
+		err = errors.Wrap(err, "failed to unmarshal channel metadata")
+		logger.Errorf("%+v", err)
+		return nil, err
+	}
+	return metadataDoc, nil
+}
+
 type dataformatInfo struct {
 	Version string `json:"Version"`
 }
 
-func encodeDataformatInfo(dataFormatVersion string) (*couchdb.CouchDoc, error) {
+func encodeDataformatInfo(dataFormatVersion string) (*CouchDoc, error) {
 	var err error
 	dataformatInfo := &dataformatInfo{
 		Version: dataFormatVersion,
@@ -225,10 +262,10 @@ func encodeDataformatInfo(dataFormatVersion string) (*couchdb.CouchDoc, error) {
 		logger.Errorf("%+v", err)
 		return nil, err
 	}
-	return &couchdb.CouchDoc{JSONValue: dataformatInfoJSON, Attachments: nil}, nil
+	return &CouchDoc{JSONValue: dataformatInfoJSON, Attachments: nil}, nil
 }
 
-func decodeDataformatInfo(couchDoc *couchdb.CouchDoc) (string, error) {
+func decodeDataformatInfo(couchDoc *CouchDoc) (string, error) {
 	dataformatInfo := &dataformatInfo{}
 	if err := json.Unmarshal(couchDoc.JSONValue, dataformatInfo); err != nil {
 		err = errors.Wrapf(err, "failed to unmarshal json [%#v] into dataformatInfo", couchDoc.JSONValue)

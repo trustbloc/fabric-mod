@@ -114,7 +114,8 @@ func TestInitGossipService(t *testing.T) {
 	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
 	assert.NoError(t, err)
 
-	msptesttools.LoadMSPSetupForTesting()
+	err = msptesttools.LoadMSPSetupForTesting()
+	require.NoError(t, err)
 	signer := mgmt.GetLocalSigningIdentityOrPanic(cryptoProvider)
 
 	messageCryptoService := peergossip.NewMCS(&mocks.ChannelPolicyManagerGetter{}, signer, mgmt.NewDeserializersManager(cryptoProvider), cryptoProvider)
@@ -154,11 +155,9 @@ func TestInitGossipService(t *testing.T) {
 // Make sure *joinChannelMessage implements the api.JoinChannelMessage
 func TestJCMInterface(t *testing.T) {
 	_ = api.JoinChannelMessage(&joinChannelMessage{})
-	t.Parallel()
 }
 
 func TestLeaderElectionWithDeliverClient(t *testing.T) {
-	t.Parallel()
 	//Test check if leader election works with mock deliver service instance
 	//Configuration set to use dynamic leader election
 	//10 peers started, added to channel and at the end we check if only for one peer
@@ -464,7 +463,6 @@ func (li *mockLedgerInfo) Close() {
 }
 
 func TestLeaderElectionWithRealGossip(t *testing.T) {
-	t.Parallel()
 	// Spawn 10 gossip instances with single channel and inside same organization
 	// Run leader election on top of each gossip instance and check that only one leader chosen
 	// Create another channel includes sub-set of peers over same gossip instances {1,3,5,7}
@@ -753,6 +751,8 @@ func newGossipInstance(serviceConfig *ServiceConfig, port int, id int, gRPCServe
 		AliveExpirationTimeout:       discovery.DefAliveExpirationTimeout,
 		AliveExpirationCheckInterval: discovery.DefAliveExpirationCheckInterval,
 		ReconnectInterval:            time.Duration(1) * time.Second,
+		MaxConnectionAttempts:        discovery.DefMaxConnectionAttempts,
+		MsgExpirationFactor:          discovery.DefMsgExpirationFactor,
 	}
 	selfID := api.PeerIdentityType(conf.InternalEndpoint)
 	cryptoService := &naiveCryptoService{}
@@ -765,6 +765,7 @@ func newGossipInstance(serviceConfig *ServiceConfig, port int, id int, gRPCServe
 		selfID,
 		secureDialOpts,
 		metrics,
+		nil,
 	)
 	go gRPCServer.Start()
 
@@ -931,12 +932,13 @@ func TestChannelConfig(t *testing.T) {
 	assert.NoError(t, err)
 
 	mockSignerSerializer := &mocks.SignerSerializer{}
-	mockSignerSerializer.SerializeReturns(api.PeerIdentityType("peer-identity"), nil)
+	mockSignerSerializer.SerializeReturns(api.PeerIdentityType(string(orgInChannelA)), nil)
 	secAdv := peergossip.NewSecurityAdvisor(mgmt.NewDeserializersManager(cryptoProvider))
 	gossipConfig, err := gossip.GlobalConfig(endpoint, nil)
 	assert.NoError(t, err)
 
 	grpcClient, err := comm.NewGRPCClient(comm.ClientConfig{})
+	assert.NoError(t, err)
 
 	gossipService, err := New(
 		mockSignerSerializer,
@@ -974,11 +976,15 @@ func TestChannelConfig(t *testing.T) {
 		orgs: map[string]channelconfig.ApplicationOrg{
 			string(orgInChannelA): &appGrp{
 				mspID:       string(orgInChannelA),
-				anchorPeers: []*peer.AnchorPeer{},
+				anchorPeers: []*peer.AnchorPeer{{Host: "localhost", Port: 2001}},
 			},
 		},
 	}
 	gService.JoinChan(jcm, gossipcommon.ChannelID("A"))
+	// use mock secAdv so that gService.secAdv.OrgByPeerIdentity can return the matched identity
+	gService.secAdv = &secAdvMock{}
 	gService.updateAnchors(mc)
 	assert.True(t, gService.amIinChannel(string(orgInChannelA), mc))
+	assert.True(t, gService.anchorPeerTracker.IsAnchorPeer("localhost:2001"))
+	assert.False(t, gService.anchorPeerTracker.IsAnchorPeer("localhost:5000"))
 }

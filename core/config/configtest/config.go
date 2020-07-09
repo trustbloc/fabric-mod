@@ -7,8 +7,13 @@ SPDX-License-Identifier: Apache-2.0
 package configtest
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	viper "github.com/spf13/viper2015"
@@ -38,6 +43,17 @@ func dirExists(path string) bool {
 // maintained with the source tree. This should only be used in a
 // test/development context.
 func GetDevConfigDir() string {
+	path, err := gomodDevConfigDir()
+	if err != nil {
+		path, err = gopathDevConfigDir()
+		if err != nil {
+			panic(err)
+		}
+	}
+	return path
+}
+
+func gopathDevConfigDir() (string, error) {
 	gopath := os.Getenv("GOPATH")
 	sampleConfigPath := os.Getenv("FABRIC_SAMPLECONFIG_PATH")
 	if sampleConfigPath == "" {
@@ -47,11 +63,38 @@ func GetDevConfigDir() string {
 	for _, p := range filepath.SplitList(gopath) {
 		devPath := filepath.Join(p, sampleConfigPath)
 		if dirExists(devPath) {
-			return devPath
+			fmt.Printf("========= Using sample config dir from GOPATH: %s", devPath)
+			return devPath, nil
 		}
 	}
 
-	panic("unable to find sampleconfig directory on gopath")
+	return "", fmt.Errorf("unable to find sampleconfig directory on GOPATH")
+}
+func gomodDevConfigDir() (string, error) {
+	buf := bytes.NewBuffer(nil)
+	cmd := exec.Command("go", "env", "GOMOD")
+	cmd.Stdout = buf
+
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("========= Error running go env GOMOD command: %s", err)
+		return "", err
+	}
+
+	modFile := strings.TrimSpace(buf.String())
+	if modFile == "" {
+		fmt.Printf("========= Go mod file not found: %s", buf)
+		return "", errors.New("not a module or not in module mode")
+	}
+
+	devPath := filepath.Join(filepath.Dir(modFile), "sampleconfig")
+	if !dirExists(devPath) {
+		fmt.Printf("========= Sample config dir from Go mod not found: %s", devPath)
+		return "", fmt.Errorf("%s does not exist", devPath)
+	}
+
+	fmt.Printf("========= Using sample config dir from Go mod: %s", devPath)
+
+	return devPath, nil
 }
 
 // GetDevMspDir gets the path to the sampleconfig/msp tree that is maintained

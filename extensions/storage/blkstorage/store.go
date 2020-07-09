@@ -8,17 +8,17 @@ package blkstorage
 
 import (
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
-	"github.com/hyperledger/fabric/common/ledger/blkstorage/fsblkstorage"
 	"github.com/hyperledger/fabric/common/metrics"
 	"github.com/hyperledger/fabric/core/ledger"
+	extledgerapi "github.com/hyperledger/fabric/extensions/ledger/api"
 )
 
 //NewProvider is redirect hook for fabric/fsblkstorage NewProvider()
-func NewProvider(conf *fsblkstorage.Conf, indexConfig *blkstorage.IndexConfig, ledgerconfig *ledger.Config, metricsProvider metrics.Provider) (blkstorage.BlockStoreProvider, error) {
-	return fsblkstorage.NewProvider(conf, indexConfig, metricsProvider)
+func NewProvider(conf *blkstorage.Conf, indexConfig *blkstorage.IndexConfig, _ *ledger.Config, metricsProvider metrics.Provider) (extledgerapi.BlockStoreProvider, error) {
+	return blkstorage.NewProvider(conf, indexConfig, metricsProvider)
 }
 
 //NewConf is redirect hook for fabric/fsblkstorage NewConf()
-func NewConf(blockStorageDir string, maxBlockfileSize int) *fsblkstorage.Conf {
-	return fsblkstorage.NewConf(blockStorageDir, maxBlockfileSize)
+func NewConf(blockStorageDir string, maxBlockfileSize int) *blkstorage.Conf {
+	return blkstorage.NewConf(blockStorageDir, maxBlockfileSize)
 }

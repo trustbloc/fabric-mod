@@ -11,7 +11,6 @@ import (
 
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
-	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 )
 
 //SetupExtTestEnv creates new extension test environment,
@@ -39,7 +38,7 @@ func TestLedgerConf() *ledger.Config {
 	conf := &ledger.Config{
 		RootFSPath: "",
 		StateDBConfig: &ledger.StateDBConfig{
-			CouchDB: &couchdb.Config{},
+			CouchDB: &ledger.CouchDBConfig{},
 		},
 		PrivateDataConfig: &ledger.PrivateDataConfig{},
 		HistoryDBConfig:   &ledger.HistoryDBConfig{},

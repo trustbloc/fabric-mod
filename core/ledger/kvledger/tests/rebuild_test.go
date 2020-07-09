@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hyperledger/fabric/common/ledger/util"
+	"github.com/hyperledger/fabric/internal/fileutil"
 )
 
 func TestRebuildComponents(t *testing.T) {
@@ -49,7 +49,7 @@ func TestRebuildComponents(t *testing.T) {
 	t.Run("rebuild statedb and block index",
 		func(t *testing.T) {
 			flag := rebuildableStatedb | rebuildableBlockIndex
-			_, err := util.DirEmpty(filepath.Join(env.getLedgerRootPath(), "ledgersData", "chains"))
+			_, err := fileutil.DirEmpty(filepath.Join(env.initializer.Config.RootFSPath, "ledgersData", "chains"))
 			if err != nil && strings.Contains(err.Error(), "no such file or directory") {
 				//couch db index, no need to attempt to delete index file
 				flag = rebuildableStatedb

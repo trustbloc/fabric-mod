@@ -28,6 +28,7 @@ import (
 	"github.com/hyperledger/fabric/common/crypto/tlsgen"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/orderer/common/cluster"
+	orderer_types "github.com/hyperledger/fabric/orderer/common/types"
 	"github.com/hyperledger/fabric/orderer/consensus/etcdraft"
 	"github.com/hyperledger/fabric/orderer/consensus/etcdraft/mocks"
 	consensusmocks "github.com/hyperledger/fabric/orderer/consensus/mocks"
@@ -192,7 +193,7 @@ var _ = Describe("Chain", func() {
 
 		campaign := func(c *etcdraft.Chain, observeC <-chan raft.SoftState) {
 			Eventually(func() <-chan raft.SoftState {
-				c.Consensus(&orderer.ConsensusRequest{Payload: protoutil.MarshalOrPanic(&raftpb.Message{Type: raftpb.MsgTimeoutNow})}, 0)
+				c.Consensus(&orderer.ConsensusRequest{Payload: protoutil.MarshalOrPanic(&raftpb.Message{Type: raftpb.MsgTimeoutNow, To: 1})}, 0)
 				return observeC
 			}, LongEventualTimeout).Should(Receive(StateEqual(1, raft.StateLeader)))
 		}
@@ -202,6 +203,9 @@ var _ = Describe("Chain", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			chain.Start()
+			cRel, status := chain.StatusReport()
+			Expect(cRel).To(Equal(orderer_types.ClusterRelationMember))
+			Expect(status).To(Equal(orderer_types.StatusActive))
 
 			// When the Raft node bootstraps, it produces a ConfChange
 			// to add itself, which needs to be consumed with Ready().
@@ -3225,6 +3229,10 @@ type chain struct {
 	stepLock sync.Mutex
 	step     stepFunc
 
+	// msgBuffer serializes ingress messages for a chain
+	// so they are delivered in the same order
+	msgBuffer chan *msg
+
 	support      *consensusmocks.FakeConsenterSupport
 	cutter       *mockblockcutter.Receiver
 	configurator *mocks.FakeConfigurator
@@ -3249,6 +3257,11 @@ type chain struct {
 	*etcdraft.Chain
 
 	cryptoProvider bccsp.BCCSP
+}
+
+type msg struct {
+	req    *orderer.ConsensusRequest
+	sender uint64
 }
 
 func newChain(
@@ -3323,6 +3336,7 @@ func newChain(
 		ledgerHeight:   1,
 		fakeFields:     fakeFields,
 		cryptoProvider: cryptoProvider,
+		msgBuffer:      make(chan *msg, 500),
 	}
 
 	// receives normal blocks and metadata and appends it into
@@ -3387,6 +3401,13 @@ func newChain(
 		defer c.ledgerLock.RUnlock()
 		return c.ledger[number]
 	}
+
+	// consume ingress messages for chain
+	go func() {
+		for msg := range c.msgBuffer {
+			c.Consensus(msg.req, msg.sender)
+		}
+	}()
 
 	return c
 }
@@ -3480,7 +3501,7 @@ func (n *network) connected(id uint64) bool {
 func (n *network) addChain(c *chain) {
 	n.connect(c.id) // chain is connected by default
 
-	c.step = func(dest uint64, msg *orderer.ConsensusRequest) error {
+	c.step = func(dest uint64, req *orderer.ConsensusRequest) error {
 		if !n.linked(c.id, dest) {
 			return errors.Errorf("connection refused")
 		}
@@ -3492,10 +3513,7 @@ func (n *network) addChain(c *chain) {
 		n.RLock()
 		target := n.chains[dest]
 		n.RUnlock()
-		go func() {
-			defer GinkgoRecover()
-			target.Consensus(msg, c.id)
-		}()
+		target.msgBuffer <- &msg{req: req, sender: c.id}
 		return nil
 	}
 
@@ -3731,7 +3749,7 @@ func (n *network) elect(id uint64) {
 
 	// Send node an artificial MsgTimeoutNow to emulate leadership transfer.
 	fmt.Fprintf(GinkgoWriter, "Send artificial MsgTimeoutNow to elect node %d\n", id)
-	candidate.Consensus(&orderer.ConsensusRequest{Payload: protoutil.MarshalOrPanic(&raftpb.Message{Type: raftpb.MsgTimeoutNow})}, 0)
+	candidate.Consensus(&orderer.ConsensusRequest{Payload: protoutil.MarshalOrPanic(&raftpb.Message{Type: raftpb.MsgTimeoutNow, To: id})}, 0)
 	Eventually(candidate.observe, LongEventualTimeout).Should(Receive(StateEqual(id, raft.StateLeader)))
 
 	n.Lock()
@@ -3819,10 +3837,6 @@ func getSeedBlock() *common.Block {
 
 func StateEqual(lead uint64, state raft.StateType) types.GomegaMatcher {
 	return Equal(raft.SoftState{Lead: lead, RaftState: state})
-}
-
-func BeLeader() types.GomegaMatcher {
-	return &StateMatcher{expect: raft.StateLeader}
 }
 
 func BeFollower() types.GomegaMatcher {

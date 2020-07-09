@@ -12,15 +12,14 @@ import (
 	"sync"
 
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
-	"github.com/hyperledger/fabric/core/ledger/util/couchdb"
 	"github.com/pkg/errors"
 )
 
 type committer struct {
-	db             *couchdb.CouchDatabase
+	db             *CouchDatabase
 	batchUpdateMap map[string]*batchableDocument
 	namespace      string
-	cacheKVs       statedb.CacheKVs
+	cacheKVs       cacheKVs
 	cacheEnabled   bool
 }
 
@@ -35,8 +34,8 @@ func (c *committer) addToCacheUpdate(kv *keyValue) {
 		return
 	}
 
-	c.cacheKVs[kv.key] = &statedb.CacheValue{
-		VersionBytes:   kv.Version.ToBytes(),
+	c.cacheKVs[kv.key] = &CacheValue{
+		Version:        kv.Version.ToBytes(),
 		Value:          kv.Value,
 		Metadata:       kv.Metadata,
 		AdditionalInfo: []byte(kv.revision),
@@ -112,14 +111,14 @@ func (vdb *VersionedDB) buildCommittersForNs(ns string, nsUpdates map[string]*st
 	}
 	committers := make([]*committer, numCommitters)
 
-	cacheEnabled := vdb.cache.Enabled(ns)
+	cacheEnabled := vdb.cache.enabled(ns)
 
 	for i := 0; i < numCommitters; i++ {
 		committers[i] = &committer{
 			db:             db,
 			batchUpdateMap: make(map[string]*batchableDocument),
 			namespace:      ns,
-			cacheKVs:       make(statedb.CacheKVs),
+			cacheKVs:       make(cacheKVs),
 			cacheEnabled:   cacheEnabled,
 		}
 	}
@@ -173,7 +172,7 @@ func (vdb *VersionedDB) executeCommitter(committers []*committer) error {
 
 // commitUpdates commits the given updates to couchdb
 func (c *committer) commitUpdates() error {
-	docs := []*couchdb.CouchDoc{}
+	docs := []*CouchDoc{}
 	for _, update := range c.batchUpdateMap {
 		docs = append(docs, &update.CouchDoc)
 	}
@@ -188,7 +187,7 @@ func (c *committer) commitUpdates() error {
 	// iterate through the response from CouchDB by document
 	for _, resp := range responses {
 		// If the document returned an error, retry the individual document
-		if resp.Ok == true {
+		if resp.Ok {
 			c.updateRevisionInCacheUpdate(resp.ID, resp.Rev)
 			continue
 		}
@@ -268,13 +267,13 @@ func (vdb *VersionedDB) getRevisions(ns string, nsUpdates map[string]*statedb.Ve
 }
 
 func (vdb *VersionedDB) addMissingRevisionsFromCache(ns string, keys []string, revs map[string]string) ([]string, error) {
-	if !vdb.cache.Enabled(ns) {
+	if !vdb.cache.enabled(ns) {
 		return keys, nil
 	}
 
 	var missingKeys []string
 	for _, k := range keys {
-		cv, err := vdb.cache.GetState(vdb.chainName, ns, k)
+		cv, err := vdb.cache.getState(vdb.chainName, ns, k)
 		if err != nil {
 			return nil, err
 		}
@@ -307,6 +306,6 @@ func (vdb *VersionedDB) addMissingRevisionsFromDB(ns string, missingKeys []strin
 
 //batchableDocument defines a document for a batch
 type batchableDocument struct {
-	CouchDoc couchdb.CouchDoc
+	CouchDoc CouchDoc
 	Deleted  bool
 }
