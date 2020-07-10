@@ -76,8 +76,8 @@ func TestPluginLoadingFailure(t *testing.T) {
 				"CORE_OPERATIONS_TLS_ENABLED=false",
 				fmt.Sprintf("CORE_LEDGER_STATE_STATEDATABASE=%s", xtestutil.TestLedgerConf().StateDBConfig.StateDatabase),
 				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=%s", addr),
-				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=%s", ""),
-				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=%s", ""),
+				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=%s", "admin"),
+				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=%s", "adminpw"),
 				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_MAXRETRIES=%d", 3),
 				fmt.Sprintf("CORE_LEDGER_STATE_COUCHDBCONFIG_MAXRETRIESONSTARTUP=%v", 1),
 			}

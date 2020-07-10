@@ -109,7 +109,7 @@ func TestKVLedgerBlockStorage(t *testing.T) {
 	require.True(t, proto.Equal(b0, gb), "proto messages are not equal")
 
 	b1, _ = ledger.GetBlockByNumber(1)
-	require.Equal(t, block1, b1)
+	require.True(t, proto.Equal(b1, block1), "proto messages are not equal")
 
 	// get the tran id from the 2nd block, then use it to test GetTransactionByID()
 	txEnvBytes2 := block1.Data.Data[0]
@@ -241,17 +241,17 @@ func TestKVLedgerBlockStorageWithPvtdata(t *testing.T) {
 	}, bcInfo)
 
 	pvtdataAndBlock, _ := ledger.GetPvtDataAndBlockByNum(0, nil)
-	require.Equal(t, gb, pvtdataAndBlock.Block)
+	require.True(t, proto.Equal(gb, pvtdataAndBlock.Block))
 	require.Nil(t, pvtdataAndBlock.PvtData)
 
 	pvtdataAndBlock, _ = ledger.GetPvtDataAndBlockByNum(1, nil)
-	require.Equal(t, block1, pvtdataAndBlock.Block)
+	require.True(t, proto.Equal(block1, pvtdataAndBlock.Block))
 	require.NotNil(t, pvtdataAndBlock.PvtData)
 	require.True(t, pvtdataAndBlock.PvtData[0].Has("ns1", "coll1"))
 	require.True(t, pvtdataAndBlock.PvtData[0].Has("ns1", "coll2"))
 
 	pvtdataAndBlock, _ = ledger.GetPvtDataAndBlockByNum(2, nil)
-	require.Equal(t, block2, pvtdataAndBlock.Block)
+	require.True(t, proto.Equal(block2, pvtdataAndBlock.Block))
 	require.Nil(t, pvtdataAndBlock.PvtData)
 }
 
@@ -640,7 +640,7 @@ func TestPvtDataAPIs(t *testing.T) {
 	filter.Add("ns-1", "coll-1")
 	blockAndPvtdata, err = lgr.GetPvtDataAndBlockByNum(4, filter)
 	require.NoError(t, err)
-	require.Equal(t, sampleData[3].Block, blockAndPvtdata.Block)
+	require.True(t, proto.Equal(sampleData[3].Block, blockAndPvtdata.Block))
 	// two transactions should be present
 	require.Equal(t, 2, len(blockAndPvtdata.PvtData))
 	// both tran number 4 and 6 should have only one collection because of filter

@@ -77,6 +77,8 @@ func newEnvWithInitializer(t *testing.T, initializer *ledgermgmt.Initializer) *e
 				MaxRetriesOnStartup: 3,
 				RequestTimeout:      10 * time.Second,
 				RedoLogPath:         filepath.Join(initializer.Config.RootFSPath, "couchdbRedoLogs"),
+				Username:            "admin",
+				Password:            "adminpw",
 			},
 		}
 	}
