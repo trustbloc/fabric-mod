@@ -12,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 )
 
 const (

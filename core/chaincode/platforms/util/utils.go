@@ -16,7 +16,7 @@ import (
 	docker "github.com/fsouza/go-dockerclient"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/common/metadata"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 )
 
 var logger = flogging.MustGetLogger("chaincode.platform.util")

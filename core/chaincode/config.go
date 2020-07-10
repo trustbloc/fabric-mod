@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/hyperledger/fabric/common/flogging"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 )
 
 const (

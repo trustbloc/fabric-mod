@@ -26,7 +26,7 @@ import (
 	"github.com/hyperledger/fabric/core/chaincode/platforms/util"
 	"github.com/hyperledger/fabric/internal/ccmetadata"
 	"github.com/pkg/errors"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 )
 
 // Platform for chaincodes written in Go

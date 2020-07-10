@@ -14,7 +14,7 @@ import (
 	"github.com/hyperledger/fabric/internal/peer/common"
 	"github.com/hyperledger/fabric/internal/pkg/identity"
 	"github.com/pkg/errors"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 )
 
 // ClientConnections holds the clients for connecting to the various
@@ -39,6 +39,7 @@ type ClientConnectionsInput struct {
 	PeerAddresses         []string
 	TLSRootCertFiles      []string
 	ConnectionProfilePath string
+	TargetPeer            string
 	TLSEnabled            bool
 }
 
@@ -114,23 +115,9 @@ func (c *ClientConnections) setPeerClients(input *ClientConnectionsInput) error 
 
 func (c *ClientConnections) validatePeerConnectionParameters(input *ClientConnectionsInput) error {
 	if input.ConnectionProfilePath != "" {
-		networkConfig, err := common.GetConfig(input.ConnectionProfilePath)
+		err := input.parseConnectionProfile()
 		if err != nil {
 			return err
-		}
-		if len(networkConfig.Channels[input.ChannelID].Peers) != 0 {
-			input.PeerAddresses = []string{}
-			input.TLSRootCertFiles = []string{}
-			for peer, peerChannelConfig := range networkConfig.Channels[input.ChannelID].Peers {
-				if peerChannelConfig.EndorsingPeer {
-					peerConfig, ok := networkConfig.Peers[peer]
-					if !ok {
-						return errors.Errorf("peer '%s' is defined in the channel config but doesn't have associated peer config", peer)
-					}
-					input.PeerAddresses = append(input.PeerAddresses, peerConfig.URL)
-					input.TLSRootCertFiles = append(input.TLSRootCertFiles, peerConfig.TLSCACerts.Path)
-				}
-			}
 		}
 	}
 
@@ -151,6 +138,49 @@ func (c *ClientConnections) validatePeerConnectionParameters(input *ClientConnec
 	if len(input.TLSRootCertFiles) != len(input.PeerAddresses) {
 		return errors.Errorf("number of peer addresses (%d) does not match the number of TLS root cert files (%d)", len(input.PeerAddresses), len(input.TLSRootCertFiles))
 	}
+
+	return nil
+}
+
+func (c *ClientConnectionsInput) parseConnectionProfile() error {
+	networkConfig, err := common.GetConfig(c.ConnectionProfilePath)
+	if err != nil {
+		return err
+	}
+
+	c.PeerAddresses = []string{}
+	c.TLSRootCertFiles = []string{}
+
+	if c.ChannelID == "" {
+		if c.TargetPeer == "" {
+			return errors.New("--targetPeer must be specified for channel-less operation using connection profile")
+		}
+		return c.appendPeerConfig(networkConfig, c.TargetPeer)
+	}
+
+	if len(networkConfig.Channels[c.ChannelID].Peers) == 0 {
+		return nil
+	}
+
+	for peer, peerChannelConfig := range networkConfig.Channels[c.ChannelID].Peers {
+		if peerChannelConfig.EndorsingPeer {
+			err := c.appendPeerConfig(networkConfig, peer)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (c *ClientConnectionsInput) appendPeerConfig(n *common.NetworkConfig, peer string) error {
+	peerConfig, ok := n.Peers[peer]
+	if !ok {
+		return errors.Errorf("peer '%s' doesn't have associated peer config", peer)
+	}
+	c.PeerAddresses = append(c.PeerAddresses, peerConfig.URL)
+	c.TLSRootCertFiles = append(c.TLSRootCertFiles, peerConfig.TLSCACerts.Path)
 
 	return nil
 }
@@ -184,7 +214,7 @@ func (c *ClientConnections) setOrdererClient() error {
 			return errors.WithMessagef(err, "error getting channel (%s) orderer endpoint", channelID)
 		}
 		if len(orderingEndpoints) == 0 {
-			return errors.Errorf("no orderer endpoints retrieved for channel %s", channelID)
+			return errors.Errorf("no orderer endpoints retrieved for channel %s, pass orderer endpoint with -o flag instead", channelID)
 		}
 
 		logger.Infof("Retrieved channel (%s) orderer endpoint: %s", channelID, orderingEndpoints[0])

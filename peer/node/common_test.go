@@ -14,7 +14,7 @@ import (
 	"github.com/hyperledger/fabric/core/config/configtest"
 	"github.com/hyperledger/fabric/internal/peer/common"
 	"github.com/spf13/cobra"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 

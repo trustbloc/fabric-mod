@@ -15,7 +15,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/pvtdatastorage"
 	"github.com/hyperledger/fabric/extensions/testutil"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 )
 

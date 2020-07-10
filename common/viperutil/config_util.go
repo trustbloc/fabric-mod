@@ -7,7 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package viperutil
 
 import (
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -52,9 +51,6 @@ type ConfigParser struct {
 	configName  string
 	configFile  string
 
-	// env variable prefix
-	envPrefix string
-
 	// parsed config
 	config map[string]interface{}
 }
@@ -69,32 +65,19 @@ func New() *ConfigParser {
 // AddConfigPaths keeps a list of path to search the relevant
 // config file. Multiple paths can be provided.
 func (c *ConfigParser) AddConfigPaths(cfgPaths ...string) {
-	if len(cfgPaths) > 0 {
-		for _, p := range cfgPaths {
-			c.configPaths = append(c.configPaths, p)
-		}
-	}
+	c.configPaths = append(c.configPaths, cfgPaths...)
 }
 
-// SetConfigName initializes config file name. The extension is not included.
+// SetConfigName provides the configuration file name stem. The upper-cased
+// version of this value also serves as the environment variable override
+// prefix.
 func (c *ConfigParser) SetConfigName(in string) {
 	c.configName = in
 }
 
-// SetConfigFile sets the full config file name.
-// In this case, configPaths search shall not be done.
-func (c *ConfigParser) SetConfigFile(in string) {
-	c.configFile = in
-}
-
 // ConfigFileUsed returns the used configFile.
-func (c *ConfigParser) ConfigFileUsed() string { return c.configFile }
-
-// SetEnvPrefix initializes the envPrefix.
-// For example, if "peer" is set here, all environment variable
-// searches shall be prefixed with "PEER_"
-func (c *ConfigParser) SetEnvPrefix(in string) {
-	c.envPrefix = in
+func (c *ConfigParser) ConfigFileUsed() string {
+	return c.configFile
 }
 
 // Search for the existence of filename for all supported extensions
@@ -139,10 +122,10 @@ func (c *ConfigParser) getConfigFile() string {
 // ReadInConfig reads and unmarshals the config file.
 func (c *ConfigParser) ReadInConfig() error {
 	cf := c.getConfigFile()
-	logger.Debugf("Attempting to open the config file : %s", cf)
+	logger.Debugf("Attempting to open the config file: %s", cf)
 	file, err := os.Open(cf)
 	if err != nil {
-		logger.Errorf("Unable to open the config file : %s", cf)
+		logger.Errorf("Unable to open the config file: %s", cf)
 		return err
 	}
 	defer file.Close()
@@ -152,25 +135,24 @@ func (c *ConfigParser) ReadInConfig() error {
 
 // ReadConfig parses the buffer and initializes the config.
 func (c *ConfigParser) ReadConfig(in io.Reader) error {
-	dec := yaml.NewDecoder(in)
-	return dec.Decode(c.config)
+	return yaml.NewDecoder(in).Decode(c.config)
 }
 
-// Get value for the key by searching
-// environment variables
-func (c *ConfigParser) getFromEnv(key string) interface{} {
+// Get value for the key by searching environment variables.
+func (c *ConfigParser) getFromEnv(key string) string {
 	envKey := key
-	if c.envPrefix != "" {
-		envKey = strings.ToUpper(c.envPrefix + "_" + envKey)
+	if c.configName != "" {
+		envKey = c.configName + "_" + envKey
 	}
+	envKey = strings.ToUpper(envKey)
 	envKey = strings.ReplaceAll(envKey, ".", "_")
 	return os.Getenv(envKey)
 }
 
 // Prototype declaration for getFromEnv function.
-type envGetter func(key string) interface{}
+type envGetter func(key string) string
 
-func getKeysRecursively(base string, getKey envGetter, nodeKeys map[string]interface{}, oType reflect.Type) map[string]interface{} {
+func getKeysRecursively(base string, getenv envGetter, nodeKeys map[string]interface{}, oType reflect.Type) map[string]interface{} {
 	subTypes := map[string]reflect.Type{}
 
 	if oType != nil && oType.Kind() == reflect.Struct {
@@ -192,66 +174,45 @@ func getKeysRecursively(base string, getKey envGetter, nodeKeys map[string]inter
 	}
 
 	result := make(map[string]interface{})
-	for key := range nodeKeys {
+	for key, val := range nodeKeys {
 		fqKey := base + key
 
-		var val interface{}
-		val = nodeKeys[key]
 		// overwrite val, if an environment is available
-		if envVal := getKey(fqKey); envVal != "" {
-			val = envVal
+		if override := getenv(fqKey); override != "" {
+			val = override
 		}
-		if m, ok := val.(map[interface{}]interface{}); ok {
-			logger.Debugf("Found map[interface{}]interface{} value for %s", fqKey)
-			tmp := make(map[string]interface{})
-			for ik, iv := range m {
-				cik, ok := ik.(string)
-				if !ok {
-					panic("Non string key-entry")
-				}
-				tmp[cik] = iv
-			}
-			result[key] = getKeysRecursively(fqKey+".", getKey, tmp, subTypes[key])
-		} else if m, ok := val.(map[string]interface{}); ok {
-			logger.Debugf("Found map[string]interface{} value for %s", fqKey)
-			result[key] = getKeysRecursively(fqKey+".", getKey, m, subTypes[key])
-		} else if m, ok := unmarshalJSON(val); ok {
-			logger.Debugf("Found real value for %s setting to map[string]string %v", fqKey, m)
-			result[key] = m
-		} else {
-			if val == nil {
-				var fileVal interface{}
-				fileSubKey := fqKey + ".File"
-				if envVal := getKey(fileSubKey); envVal != "" {
-					fileVal = envVal
-				}
-				if fileVal != nil {
-					result[key] = map[string]interface{}{"File": fileVal}
-					continue
-				}
-			}
-			logger.Debugf("Found real value for %s setting to %T %v", fqKey, val, val)
-			result[key] = val
 
+		switch val := val.(type) {
+		case map[string]interface{}:
+			logger.Debugf("Found map[string]interface{} value for %s", fqKey)
+			result[key] = getKeysRecursively(fqKey+".", getenv, val, subTypes[key])
+
+		case map[interface{}]interface{}:
+			logger.Debugf("Found map[interface{}]interface{} value for %s", fqKey)
+			result[key] = getKeysRecursively(fqKey+".", getenv, toMapStringInterface(val), subTypes[key])
+
+		case nil:
+			if override := getenv(fqKey + ".File"); override != "" {
+				result[key] = map[string]interface{}{"File": override}
+			}
+
+		default:
+			result[key] = val
 		}
 	}
 	return result
 }
 
-func unmarshalJSON(val interface{}) (map[string]string, bool) {
-	mp := map[string]string{}
-
-	s, ok := val.(string)
-	if !ok {
-		logger.Debugf("Unmarshal JSON: value is not a string: %v", val)
-		return nil, false
+func toMapStringInterface(m map[interface{}]interface{}) map[string]interface{} {
+	result := map[string]interface{}{}
+	for k, v := range m {
+		k, ok := k.(string)
+		if !ok {
+			panic(fmt.Sprintf("Non string %v, %v: key-entry: %v", k, v, k))
+		}
+		result[k] = v
 	}
-	err := json.Unmarshal([]byte(s), &mp)
-	if err != nil {
-		logger.Debugf("Unmarshal JSON: value cannot be unmarshalled: %s", err)
-		return nil, false
-	}
-	return mp, true
+	return result
 }
 
 // customDecodeHook adds the additional functions of parsing durations from strings

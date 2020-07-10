@@ -16,7 +16,7 @@ import (
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/core/config/configtest"
 	"github.com/hyperledger/fabric/msp"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 )
 
 var configLogger = flogging.MustGetLogger("config")

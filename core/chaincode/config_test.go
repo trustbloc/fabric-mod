@@ -12,7 +12,7 @@ import (
 	"github.com/hyperledger/fabric/core/chaincode"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 )
 
 var _ = Describe("Config", func() {

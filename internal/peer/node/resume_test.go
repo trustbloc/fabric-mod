@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 )
 

@@ -32,7 +32,7 @@ import (
 	"github.com/hyperledger/fabric/msp"
 	"github.com/hyperledger/fabric/msp/mgmt"
 	"github.com/hyperledger/fabric/protoutil"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type rebuildable uint8
@@ -46,7 +46,7 @@ const (
 )
 
 type env struct {
-	assert            *assert.Assertions
+	assert            *require.Assertions
 	initializer       *ledgermgmt.Initializer
 	ledgerMgr         *ledgermgmt.LedgerMgr
 	cleanupExtTestEnv func()
@@ -55,7 +55,7 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	return newEnvWithInitializer(t, &ledgermgmt.Initializer{
 		HashProvider: cryptoProvider,
 		EbMetadataProvider: &externalbuilder.MetadataProvider{
@@ -83,7 +83,7 @@ func newEnvWithInitializer(t *testing.T, initializer *ledgermgmt.Initializer) *e
 		}
 	}
 	return &env{
-		assert:            assert.New(t),
+		assert:            require.New(t),
 		initializer:       initializer,
 		cleanupExtTestEnv: destroy,
 		couchDB:           xtestutil.TestLedgerConf().StateDBConfig.CouchDB,
@@ -237,7 +237,7 @@ func populateMissingsWithTestDefaults(t *testing.T, initializer *ledgermgmt.Init
 			return mgmt.GetManagerForChain(chainID)
 		}
 		cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		mspID := "test-mspid"
 		membershipInfoProvider := privdata.NewMembershipInfoProvider(mspID, createSelfSignedData(cryptoProvider), identityDeserializerFactory)
 		initializer.MembershipInfoProvider = membershipInfoProvider

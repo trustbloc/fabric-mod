@@ -21,8 +21,8 @@ import (
 	"github.com/hyperledger/fabric/internal/peer/common"
 	"github.com/hyperledger/fabric/msp"
 	"github.com/spf13/cobra"
-	viper "github.com/spf13/viper2015"
-	"github.com/stretchr/testify/assert"
+	"github.com/spf13/viper"
+	"github.com/stretchr/testify/require"
 )
 
 func TestInitConfig(t *testing.T) {
@@ -65,58 +65,62 @@ func TestInitConfig(t *testing.T) {
 func TestInitCryptoMissingDir(t *testing.T) {
 	dir := path.Join(os.TempDir(), util.GenerateUUID())
 	err := common.InitCrypto(dir, "SampleOrg", msp.ProviderTypeToString(msp.FABRIC))
-	assert.Error(t, err, "Should not be able to initialize crypto with non-existing directory")
-	assert.Contains(t, err.Error(), fmt.Sprintf("specified path \"%s\" does not exist", dir))
+	require.Error(t, err, "Should not be able to initialize crypto with non-existing directory")
+	require.Contains(t, err.Error(), fmt.Sprintf("specified path \"%s\" does not exist", dir))
 }
 
 func TestInitCryptoFileNotDir(t *testing.T) {
 	file := path.Join(os.TempDir(), util.GenerateUUID())
 	err := ioutil.WriteFile(file, []byte{}, 0644)
-	assert.Nil(t, err, "Failed to create test file")
+	require.Nil(t, err, "Failed to create test file")
 	defer os.Remove(file)
 	err = common.InitCrypto(file, "SampleOrg", msp.ProviderTypeToString(msp.FABRIC))
-	assert.Error(t, err, "Should not be able to initialize crypto with a file instead of a directory")
-	assert.Contains(t, err.Error(), fmt.Sprintf("specified path \"%s\" is not a directory", file))
+	require.Error(t, err, "Should not be able to initialize crypto with a file instead of a directory")
+	require.Contains(t, err.Error(), fmt.Sprintf("specified path \"%s\" is not a directory", file))
 }
 
 func TestInitCrypto(t *testing.T) {
 	mspConfigPath := configtest.GetDevMspDir()
 	localMspId := "SampleOrg"
 	err := common.InitCrypto(mspConfigPath, localMspId, msp.ProviderTypeToString(msp.FABRIC))
-	assert.NoError(t, err, "Unexpected error [%s] calling InitCrypto()", err)
+	require.NoError(t, err, "Unexpected error [%s] calling InitCrypto()", err)
 	localMspId = ""
 	err = common.InitCrypto(mspConfigPath, localMspId, msp.ProviderTypeToString(msp.FABRIC))
-	assert.Error(t, err, fmt.Sprintf("Expected error [%s] calling InitCrypto()", err))
+	require.Error(t, err, fmt.Sprintf("Expected error [%s] calling InitCrypto()", err))
 }
 
 func TestSetBCCSPKeystorePath(t *testing.T) {
 	cfgKey := "peer.BCCSP.SW.FileKeyStore.KeyStore"
 	cfgPath := "./testdata"
-	absPath, _ := filepath.Abs(cfgPath)
+	absPath, err := filepath.Abs(cfgPath)
+	require.NoError(t, err)
+
 	keystorePath := "/msp/keystore"
+	defer os.Unsetenv("FABRIC_CFG_PATH")
 
 	os.Setenv("FABRIC_CFG_PATH", cfgPath)
 	viper.Reset()
-	_ = common.InitConfig("notset")
+	err = common.InitConfig("notset")
 	common.SetBCCSPKeystorePath()
 	t.Log(viper.GetString(cfgKey))
-	assert.Equal(t, "", viper.GetString(cfgKey))
+	require.Equal(t, "", viper.GetString(cfgKey))
+	require.Nil(t, viper.Get(cfgKey))
 
 	viper.Reset()
-	_ = common.InitConfig("absolute")
+	err = common.InitConfig("absolute")
+	require.NoError(t, err)
 	common.SetBCCSPKeystorePath()
 	t.Log(viper.GetString(cfgKey))
-	assert.Equal(t, keystorePath, viper.GetString(cfgKey))
+	require.Equal(t, keystorePath, viper.GetString(cfgKey))
 
 	viper.Reset()
-	_ = common.InitConfig("relative")
+	err = common.InitConfig("relative")
+	require.NoError(t, err)
 	common.SetBCCSPKeystorePath()
 	t.Log(viper.GetString(cfgKey))
-	assert.Equal(t, filepath.Join(absPath, keystorePath),
-		viper.GetString(cfgKey))
+	require.Equal(t, filepath.Join(absPath, keystorePath), viper.GetString(cfgKey))
 
 	viper.Reset()
-	os.Unsetenv("FABRIC_CFG_PATH")
 }
 
 func TestCheckLogLevel(t *testing.T) {
@@ -194,20 +198,20 @@ func TestInitCmd(t *testing.T) {
 	// test that InitCmd doesn't remove existing loggers from the logger levels map
 	flogging.MustGetLogger("test")
 	flogging.ActivateSpec("test=error")
-	assert.Equal(t, "error", flogging.LoggerLevel("test"))
+	require.Equal(t, "error", flogging.LoggerLevel("test"))
 	flogging.MustGetLogger("chaincode")
-	assert.Equal(t, flogging.DefaultLevel(), flogging.LoggerLevel("chaincode"))
+	require.Equal(t, flogging.DefaultLevel(), flogging.LoggerLevel("chaincode"))
 	flogging.MustGetLogger("test.test2")
 	flogging.ActivateSpec("test.test2=warn")
-	assert.Equal(t, "warn", flogging.LoggerLevel("test.test2"))
+	require.Equal(t, "warn", flogging.LoggerLevel("test.test2"))
 
 	origEnvValue := os.Getenv("FABRIC_LOGGING_SPEC")
 	os.Setenv("FABRIC_LOGGING_SPEC", "chaincode=debug:test.test2=fatal:abc=error")
 	common.InitCmd(&cobra.Command{}, nil)
-	assert.Equal(t, "debug", flogging.LoggerLevel("chaincode"))
-	assert.Equal(t, "info", flogging.LoggerLevel("test"))
-	assert.Equal(t, "fatal", flogging.LoggerLevel("test.test2"))
-	assert.Equal(t, "error", flogging.LoggerLevel("abc"))
+	require.Equal(t, "debug", flogging.LoggerLevel("chaincode"))
+	require.Equal(t, "info", flogging.LoggerLevel("test"))
+	require.Equal(t, "fatal", flogging.LoggerLevel("test.test2"))
+	require.Equal(t, "error", flogging.LoggerLevel("abc"))
 	os.Setenv("FABRIC_LOGGING_SPEC", origEnvValue)
 }
 

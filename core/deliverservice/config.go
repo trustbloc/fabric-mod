@@ -16,7 +16,7 @@ import (
 	"github.com/hyperledger/fabric/internal/pkg/peer/orderers"
 
 	"github.com/pkg/errors"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 )
 
 const (

@@ -8,7 +8,7 @@ package library
 
 import (
 	"github.com/mitchellh/mapstructure"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 )
 
 // Config configures the factory methods

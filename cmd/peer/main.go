@@ -19,7 +19,7 @@ import (
 	"github.com/hyperledger/fabric/internal/peer/node"
 	"github.com/hyperledger/fabric/internal/peer/version"
 	"github.com/spf13/cobra"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 )
 
 // The main command describes the service and

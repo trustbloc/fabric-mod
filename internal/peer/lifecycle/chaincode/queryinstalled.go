@@ -21,7 +21,7 @@ import (
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 )
 
 // InstalledQuerier holds the dependencies needed to query
@@ -50,10 +50,10 @@ func QueryInstalledCmd(i *InstalledQuerier, cryptoProvider bccsp.BCCSP) *cobra.C
 				ccInput := &ClientConnectionsInput{
 					CommandName:           cmd.Name(),
 					EndorserRequired:      true,
-					ChannelID:             channelID,
 					PeerAddresses:         peerAddresses,
 					TLSRootCertFiles:      tlsRootCertFiles,
 					ConnectionProfilePath: connectionProfilePath,
+					TargetPeer:            targetPeer,
 					TLSEnabled:            viper.GetBool("peer.tls.enabled"),
 				}
 
@@ -85,6 +85,7 @@ func QueryInstalledCmd(i *InstalledQuerier, cryptoProvider bccsp.BCCSP) *cobra.C
 		"peerAddresses",
 		"tlsRootCertFiles",
 		"connectionProfile",
+		"targetPeer",
 		"output",
 	}
 	attachFlags(chaincodeQueryInstalledCmd, flagList)

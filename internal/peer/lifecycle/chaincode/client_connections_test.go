@@ -10,13 +10,13 @@ import (
 	"testing"
 
 	"github.com/hyperledger/fabric/bccsp/sw"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewClientConnections(t *testing.T) {
-	assert := assert.New(t)
+	require := require.New(t)
 	cryptoProvider, err := sw.NewDefaultSecurityLevelWithKeystore(sw.NewDummyKeyStore())
-	assert.Nil(err)
+	require.Nil(err)
 
 	t.Run("bad connection profile", func(t *testing.T) {
 		input := &ClientConnectionsInput{
@@ -26,23 +26,23 @@ func TestNewClientConnections(t *testing.T) {
 		}
 
 		c, err := NewClientConnections(input, cryptoProvider)
-		assert.Nil(c)
-		assert.Error(err)
-		assert.Contains(err.Error(), "failed to validate peer connection parameters: error unmarshaling YAML")
+		require.Nil(c)
+		require.Error(err)
+		require.Contains(err.Error(), "failed to validate peer connection parameters: error unmarshaling YAML")
 	})
 
 	t.Run("uneven connection profile", func(t *testing.T) {
 		input := &ClientConnectionsInput{
-			CommandName:           "install",
+			CommandName:           "commit",
 			ChannelID:             "mychannel",
 			EndorserRequired:      true,
 			ConnectionProfilePath: "testdata/connectionprofile-uneven.yaml",
 		}
 
 		c, err := NewClientConnections(input, cryptoProvider)
-		assert.Nil(c)
-		assert.Error(err)
-		assert.EqualError(err, "failed to validate peer connection parameters: peer 'peer0.org2.example.com' is defined in the channel config but doesn't have associated peer config")
+		require.Nil(c)
+		require.Error(err)
+		require.EqualError(err, "failed to validate peer connection parameters: peer 'peer0.org2.example.com' doesn't have associated peer config")
 	})
 
 	t.Run("good connection profile - two peers", func(t *testing.T) {
@@ -54,9 +54,9 @@ func TestNewClientConnections(t *testing.T) {
 		}
 
 		c, err := NewClientConnections(input, cryptoProvider)
-		assert.Nil(c)
-		assert.Error(err)
-		assert.Contains(err.Error(), "failed to retrieve endorser client")
+		require.Nil(c)
+		require.Error(err)
+		require.Contains(err.Error(), "failed to retrieve endorser client")
 	})
 
 	t.Run("more than one peer not allowed", func(t *testing.T) {
@@ -67,9 +67,9 @@ func TestNewClientConnections(t *testing.T) {
 		}
 
 		c, err := NewClientConnections(input, cryptoProvider)
-		assert.Nil(c)
-		assert.Error(err)
-		assert.EqualError(err, "failed to validate peer connection parameters: 'install' command supports one peer. 2 peers provided")
+		require.Nil(c)
+		require.Error(err)
+		require.EqualError(err, "failed to validate peer connection parameters: 'install' command supports one peer. 2 peers provided")
 	})
 
 	t.Run("more TLS root cert files than peer addresses and TLS enabled", func(t *testing.T) {
@@ -82,9 +82,9 @@ func TestNewClientConnections(t *testing.T) {
 		}
 
 		c, err := NewClientConnections(input, cryptoProvider)
-		assert.Nil(c)
-		assert.Error(err)
-		assert.EqualError(err, "failed to validate peer connection parameters: number of peer addresses (1) does not match the number of TLS root cert files (2)")
+		require.Nil(c)
+		require.Error(err)
+		require.EqualError(err, "failed to validate peer connection parameters: number of peer addresses (1) does not match the number of TLS root cert files (2)")
 	})
 
 	t.Run("failure connecting to endorser - TLS enabled", func(t *testing.T) {
@@ -97,9 +97,9 @@ func TestNewClientConnections(t *testing.T) {
 		}
 
 		c, err := NewClientConnections(input, cryptoProvider)
-		assert.Nil(c)
-		assert.Error(err)
-		assert.Contains(err.Error(), "failed to retrieve endorser client")
+		require.Nil(c)
+		require.Error(err)
+		require.Contains(err.Error(), "failed to retrieve endorser client")
 	})
 
 	t.Run("failure connecting to endorser - TLS disabled", func(t *testing.T) {
@@ -112,9 +112,9 @@ func TestNewClientConnections(t *testing.T) {
 		}
 
 		c, err := NewClientConnections(input, cryptoProvider)
-		assert.Nil(c)
-		assert.Error(err)
-		assert.Contains(err.Error(), "failed to retrieve endorser client")
+		require.Nil(c)
+		require.Error(err)
+		require.Contains(err.Error(), "failed to retrieve endorser client")
 	})
 
 	t.Run("no endorser clients - programming bug", func(t *testing.T) {
@@ -124,9 +124,51 @@ func TestNewClientConnections(t *testing.T) {
 		}
 
 		c, err := NewClientConnections(input, cryptoProvider)
-		assert.Nil(c)
-		assert.Error(err)
-		assert.Contains(err.Error(), "no endorser clients retrieved")
+		require.Nil(c)
+		require.Error(err)
+		require.Contains(err.Error(), "no endorser clients retrieved")
+	})
+
+	t.Run("install using connection profile", func(t *testing.T) {
+		input := &ClientConnectionsInput{
+			CommandName:           "install",
+			EndorserRequired:      true,
+			ConnectionProfilePath: "testdata/connectionprofile.yaml",
+			TargetPeer:            "peer0.org2.example.com",
+		}
+
+		c, err := NewClientConnections(input, cryptoProvider)
+		require.Nil(c)
+		require.Error(err)
+		require.Contains(err.Error(), "failed to retrieve endorser client")
+	})
+
+	t.Run("install using connection profile - no target peer specified", func(t *testing.T) {
+		input := &ClientConnectionsInput{
+			CommandName:           "install",
+			EndorserRequired:      true,
+			ConnectionProfilePath: "testdata/connectionprofile.yaml",
+			TargetPeer:            "",
+		}
+
+		c, err := NewClientConnections(input, cryptoProvider)
+		require.Nil(c)
+		require.Error(err)
+		require.Contains(err.Error(), "failed to validate peer connection parameters: --targetPeer must be specified for channel-less operation using connection profile")
+	})
+
+	t.Run("install using connection profile - target peer doesn't exist", func(t *testing.T) {
+		input := &ClientConnectionsInput{
+			CommandName:           "install",
+			EndorserRequired:      true,
+			ConnectionProfilePath: "testdata/connectionprofile.yaml",
+			TargetPeer:            "not-a-peer",
+		}
+
+		c, err := NewClientConnections(input, cryptoProvider)
+		require.Nil(c)
+		require.Error(err)
+		require.Contains(err.Error(), "failed to validate peer connection parameters: peer 'not-a-peer' doesn't have associated peer config")
 	})
 
 	t.Run("failure connecting to orderer", func(t *testing.T) {
@@ -138,8 +180,8 @@ func TestNewClientConnections(t *testing.T) {
 		}
 
 		c, err := NewClientConnections(input, cryptoProvider)
-		assert.Nil(c)
-		assert.Error(err)
-		assert.Contains(err.Error(), "cannot obtain orderer endpoint, empty endorser list")
+		require.Nil(c)
+		require.Error(err)
+		require.Contains(err.Error(), "cannot obtain orderer endpoint, empty endorser list")
 	})
 }

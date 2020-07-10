@@ -52,7 +52,7 @@ var _ = Describe("Health", func() {
 	AfterEach(func() {
 		if process != nil {
 			process.Signal(syscall.SIGTERM)
-			Eventually(process.Wait, network.EventuallyTimeout).Should(Receive())
+			Eventually(process.Wait(), network.EventuallyTimeout).Should(Receive())
 		}
 		if network != nil {
 			network.Cleanup()
@@ -87,7 +87,7 @@ var _ = Describe("Health", func() {
 			process = ginkgomon.Invoke(peerRunner)
 			Eventually(process.Ready(), network.EventuallyTimeout).Should(BeClosed())
 
-			authClient, _ = PeerOperationalClients(network, peer)
+			authClient, _ = nwo.PeerOperationalClients(network, peer)
 			healthURL = fmt.Sprintf("https://127.0.0.1:%d/healthz", network.PeerPort(peer, nwo.OperationsPort))
 		})
 
@@ -162,23 +162,23 @@ var _ = Describe("Health", func() {
 			Eventually(oProcess.Ready(), network.EventuallyTimeout).Should(BeClosed())
 
 			orderer := network.Orderers[0]
-			authClient, _ = OrdererOperationalClients(network, orderer)
+			authClient, _ = nwo.OrdererOperationalClients(network, orderer)
 			healthURL = fmt.Sprintf("https://127.0.0.1:%d/healthz", network.OrdererPort(orderer, nwo.OperationsPort))
 		})
 
 		AfterEach(func() {
 			if zProcess != nil {
 				zProcess.Signal(syscall.SIGTERM)
-				Eventually(zProcess.Wait, network.EventuallyTimeout).Should(Receive())
+				Eventually(zProcess.Wait(), network.EventuallyTimeout).Should(Receive())
 			}
 			if oProcess != nil {
 				oProcess.Signal(syscall.SIGTERM)
-				Eventually(oProcess.Wait, network.EventuallyTimeout).Should(Receive())
+				Eventually(oProcess.Wait(), network.EventuallyTimeout).Should(Receive())
 			}
 			for _, k := range kProcess {
 				if k != nil {
 					k.Signal(syscall.SIGTERM)
-					Eventually(k.Wait, network.EventuallyTimeout).Should(Receive())
+					Eventually(k.Wait(), network.EventuallyTimeout).Should(Receive())
 				}
 			}
 		})
@@ -194,7 +194,7 @@ var _ = Describe("Health", func() {
 				By("returning a 200 when one of the three brokers goes offline", func() {
 					k := kProcess[1]
 					k.Signal(syscall.SIGTERM)
-					Eventually(k.Wait, network.EventuallyTimeout).Should(Receive())
+					Eventually(k.Wait(), network.EventuallyTimeout).Should(Receive())
 
 					var statusCode int
 					var status *healthz.HealthStatus
@@ -208,7 +208,7 @@ var _ = Describe("Health", func() {
 				By("returning a 503 when two of the three brokers go offline", func() {
 					k := kProcess[0]
 					k.Signal(syscall.SIGTERM)
-					Eventually(k.Wait, network.EventuallyTimeout).Should(Receive())
+					Eventually(k.Wait(), network.EventuallyTimeout).Should(Receive())
 
 					var statusCode int
 					var status *healthz.HealthStatus

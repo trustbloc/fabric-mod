@@ -18,7 +18,7 @@ import (
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 )
 
 // Reader defines the interface needed for reading a file.
@@ -64,10 +64,10 @@ func InstallCmd(i *Installer, cryptoProvider bccsp.BCCSP) *cobra.Command {
 				ccInput := &ClientConnectionsInput{
 					CommandName:           cmd.Name(),
 					EndorserRequired:      true,
-					ChannelID:             channelID,
 					PeerAddresses:         peerAddresses,
 					TLSRootCertFiles:      tlsRootCertFiles,
 					ConnectionProfilePath: connectionProfilePath,
+					TargetPeer:            targetPeer,
 					TLSEnabled:            viper.GetBool("peer.tls.enabled"),
 				}
 				c, err := NewClientConnections(ccInput, cryptoProvider)
@@ -91,6 +91,7 @@ func InstallCmd(i *Installer, cryptoProvider bccsp.BCCSP) *cobra.Command {
 		"peerAddresses",
 		"tlsRootCertFiles",
 		"connectionProfile",
+		"targetPeer",
 	}
 	attachFlags(chaincodeInstallCmd, flagList)
 

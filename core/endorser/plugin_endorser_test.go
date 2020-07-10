@@ -26,8 +26,8 @@ import (
 	transientstoreext "github.com/hyperledger/fabric/extensions/storage/transientstore"
 	"github.com/hyperledger/fabric/gossip/privdata"
 	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -87,9 +87,9 @@ func TestPluginEndorserNotFound(t *testing.T) {
 		PluginMapper: pluginMapper,
 	})
 	endorsement, prpBytes, err := pluginEndorser.EndorseWithPlugin("notfound", "", nil, nil)
-	assert.Nil(t, endorsement)
-	assert.Nil(t, prpBytes)
-	assert.Contains(t, err.Error(), "plugin with name notfound wasn't found")
+	require.Nil(t, endorsement)
+	require.Nil(t, prpBytes)
+	require.Contains(t, err.Error(), "plugin with name notfound wasn't found")
 }
 
 func TestPluginEndorserGreenPath(t *testing.T) {
@@ -116,9 +116,9 @@ func TestPluginEndorserGreenPath(t *testing.T) {
 
 	// Scenario I: Call the endorsement for the first time
 	endorsement, prpBytes, err := pluginEndorser.EndorseWithPlugin("plugin", "mychannel", nil, nil)
-	assert.NoError(t, err)
-	assert.Equal(t, expectedSignature, endorsement.Signature)
-	assert.Equal(t, expectedProposalResponsePayload, prpBytes)
+	require.NoError(t, err)
+	require.Equal(t, expectedSignature, endorsement.Signature)
+	require.Equal(t, expectedProposalResponsePayload, prpBytes)
 	// Ensure both state and SigningIdentityFetcher were passed to Init()
 	plugin.AssertCalled(t, "Init", &endorser.ChannelState{QueryCreator: queryCreator, TransientStore: &transientstore.Store{}}, sif)
 
@@ -127,9 +127,9 @@ func TestPluginEndorserGreenPath(t *testing.T) {
 	// was used to service the request.
 	// Also - check that the Init() wasn't called more than once on the plugin.
 	endorsement, prpBytes, err = pluginEndorser.EndorseWithPlugin("plugin", "mychannel", nil, nil)
-	assert.NoError(t, err)
-	assert.Equal(t, expectedSignature, endorsement.Signature)
-	assert.Equal(t, expectedProposalResponsePayload, prpBytes)
+	require.NoError(t, err)
+	require.Equal(t, expectedSignature, endorsement.Signature)
+	require.Equal(t, expectedProposalResponsePayload, prpBytes)
 	pluginFactory.AssertNumberOfCalls(t, "New", 1)
 	plugin.AssertNumberOfCalls(t, "Init", 1)
 
@@ -139,9 +139,9 @@ func TestPluginEndorserGreenPath(t *testing.T) {
 	pluginFactory.On("New").Return(plugin).Once()
 	plugin.On("Init", mock.Anything).Return(nil).Once()
 	endorsement, prpBytes, err = pluginEndorser.EndorseWithPlugin("plugin", "", nil, nil)
-	assert.NoError(t, err)
-	assert.Equal(t, expectedSignature, endorsement.Signature)
-	assert.Equal(t, expectedProposalResponsePayload, prpBytes)
+	require.NoError(t, err)
+	require.Equal(t, expectedSignature, endorsement.Signature)
+	require.Equal(t, expectedProposalResponsePayload, prpBytes)
 	plugin.AssertCalled(t, "Init", sif)
 }
 
@@ -167,9 +167,9 @@ func TestPluginEndorserErrors(t *testing.T) {
 	t.Run("PluginInitializationFailure", func(t *testing.T) {
 		plugin.On("Init", mock.Anything, mock.Anything).Return(errors.New("plugin initialization failed")).Once()
 		endorsement, prpBytes, err := pluginEndorser.EndorseWithPlugin("plugin", "mychannel", nil, nil)
-		assert.Nil(t, endorsement)
-		assert.Nil(t, prpBytes)
-		assert.Contains(t, err.Error(), "plugin initialization failed")
+		require.Nil(t, endorsement)
+		require.Nil(t, prpBytes)
+		require.Contains(t, err.Error(), "plugin initialization failed")
 	})
 
 }
@@ -244,10 +244,10 @@ func TestTransientStore(t *testing.T) {
 	})
 
 	_, prpBytes, err := pluginEndorser.EndorseWithPlugin("plugin", "mychannel", nil, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	txrws := &rwset.TxPvtReadWriteSet{}
 	err = proto.Unmarshal(prpBytes, txrws)
-	assert.NoError(t, err)
-	assert.True(t, proto.Equal(rws, txrws))
+	require.NoError(t, err)
+	require.True(t, proto.Equal(rws, txrws))
 }

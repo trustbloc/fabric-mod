@@ -31,7 +31,7 @@ import (
 	"github.com/hyperledger/fabric/core/config"
 	"github.com/hyperledger/fabric/internal/pkg/comm"
 	"github.com/pkg/errors"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 )
 
 // ExternalBuilder represents the configuration structure of

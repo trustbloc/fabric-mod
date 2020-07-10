@@ -11,9 +11,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"io/ioutil"
-	"net"
 	"os"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -39,7 +37,7 @@ var _ = Describe("ConfigTx", func() {
 
 	BeforeEach(func() {
 		var err error
-		testDir, err = ioutil.TempDir("", "config")
+		testDir, err = ioutil.TempDir("", "configtx")
 		Expect(err).NotTo(HaveOccurred())
 
 		client, err = docker.NewClientFromEnv()
@@ -155,7 +153,7 @@ var _ = Describe("ConfigTx", func() {
 		oConfig.BatchTimeout = 2 * time.Second
 		err = o.SetConfiguration(oConfig)
 		Expect(err).NotTo(HaveOccurred())
-		host, port := ordererHostPort(network, orderer)
+		host, port := OrdererHostPort(network, orderer)
 		err = o.Organization(orderer.Organization).SetEndpoint(configtx.Address{Host: host, Port: port + 1})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -165,8 +163,8 @@ var _ = Describe("ConfigTx", func() {
 
 		By("creating a detached signature for the orderer")
 		signingIdentity := configtx.SigningIdentity{
-			Certificate: parseOrdererAdminX509Certificate(network, orderer),
-			PrivateKey:  parseOrdererAdminPrivateKey(network, orderer),
+			Certificate: parseCertificate(network.OrdererUserCert(orderer, "Admin")),
+			PrivateKey:  parsePrivateKey(network.OrdererUserKey(orderer, "Admin")),
 			MSPID:       network.Organization(orderer.Organization).MSPID,
 		}
 		signature, err := signingIdentity.CreateConfigSignature(configUpdate)
@@ -219,8 +217,8 @@ var _ = Describe("ConfigTx", func() {
 		signatures := make([]*common.ConfigSignature, len(testPeers))
 		for i, p := range testPeers {
 			signingIdentity := configtx.SigningIdentity{
-				Certificate: parsePeerAdminX509Certificate(network, p),
-				PrivateKey:  parsePeerAdminPrivateKey(network, p),
+				Certificate: parseCertificate(network.PeerUserCert(p, "Admin")),
+				PrivateKey:  parsePrivateKey(network.PeerUserKey(p, "Admin")),
 				MSPID:       network.Organization(p.Organization).MSPID,
 			}
 			signingIdentities[i] = signingIdentity
@@ -257,7 +255,7 @@ var _ = Describe("ConfigTx", func() {
 			peerOrg := c.Application().Organization(peer.Organization)
 
 			By("adding the anchor peer for " + peer.Organization)
-			host, port := peerHostPort(network, peer)
+			host, port := PeerHostPort(network, peer)
 			err = peerOrg.AddAnchorPeer(configtx.Address{Host: host, Port: port})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -267,8 +265,8 @@ var _ = Describe("ConfigTx", func() {
 
 			By("creating a detached signature")
 			signingIdentity := configtx.SigningIdentity{
-				Certificate: parsePeerAdminX509Certificate(network, peer),
-				PrivateKey:  parsePeerAdminPrivateKey(network, peer),
+				Certificate: parseCertificate(network.PeerUserCert(peer, "Admin")),
+				PrivateKey:  parsePrivateKey(network.PeerUserKey(peer, "Admin")),
 				MSPID:       network.Organization(peer.Organization).MSPID,
 			}
 			signature, err := signingIdentity.CreateConfigSignature(configUpdate)
@@ -297,33 +295,9 @@ var _ = Describe("ConfigTx", func() {
 	})
 })
 
-func parsePeerAdminX509Certificate(n *nwo.Network, p *nwo.Peer) *x509.Certificate {
-	return parseCertificate(n.PeerUserCert(p, "Admin"))
-}
-
-func parseOrdererAdminX509Certificate(n *nwo.Network, o *nwo.Orderer) *x509.Certificate {
-	return parseCertificate(n.OrdererUserCert(o, "Admin"))
-}
-
-func parseCertificate(filename string) *x509.Certificate {
-	certBytes, err := ioutil.ReadFile(filename)
-	Expect(err).NotTo(HaveOccurred())
-	pemBlock, _ := pem.Decode(certBytes)
-	cert, err := x509.ParseCertificate(pemBlock.Bytes)
-	Expect(err).NotTo(HaveOccurred())
-	return cert
-}
-
-func parsePeerAdminPrivateKey(n *nwo.Network, p *nwo.Peer) crypto.PrivateKey {
-	return parsePrivateKey(n.PeerUserKey(p, "Admin"))
-}
-
-func parseOrdererAdminPrivateKey(n *nwo.Network, o *nwo.Orderer) crypto.PrivateKey {
-	return parsePrivateKey(n.OrdererUserKey(o, "Admin"))
-}
-
-func parsePrivateKey(filename string) crypto.PrivateKey {
-	pkBytes, err := ioutil.ReadFile(filename)
+// parsePrivateKey loads the PEM-encoded private key at the specified path.
+func parsePrivateKey(path string) crypto.PrivateKey {
+	pkBytes, err := ioutil.ReadFile(path)
 	Expect(err).NotTo(HaveOccurred())
 	pemBlock, _ := pem.Decode(pkBytes)
 	privateKey, err := x509.ParsePKCS8PrivateKey(pemBlock.Bytes)
@@ -331,18 +305,13 @@ func parsePrivateKey(filename string) crypto.PrivateKey {
 	return privateKey
 }
 
-func peerHostPort(n *nwo.Network, p *nwo.Peer) (string, int) {
-	return splitHostPort(n.PeerAddress(p, nwo.ListenPort))
-}
-
-func ordererHostPort(n *nwo.Network, o *nwo.Orderer) (string, int) {
-	return splitHostPort(n.OrdererAddress(o, nwo.ListenPort))
-}
-
-func splitHostPort(address string) (string, int) {
-	host, port, err := net.SplitHostPort(address)
+// parseCertificate loads the PEM-encoded x509 certificate at the specified
+// path.
+func parseCertificate(path string) *x509.Certificate {
+	certBytes, err := ioutil.ReadFile(path)
 	Expect(err).NotTo(HaveOccurred())
-	portInt, err := strconv.Atoi(port)
+	pemBlock, _ := pem.Decode(certBytes)
+	cert, err := x509.ParseCertificate(pemBlock.Bytes)
 	Expect(err).NotTo(HaveOccurred())
-	return host, portInt
+	return cert
 }

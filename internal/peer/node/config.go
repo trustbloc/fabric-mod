@@ -11,7 +11,7 @@ import (
 
 	coreconfig "github.com/hyperledger/fabric/core/config"
 	"github.com/hyperledger/fabric/core/ledger"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 )
 
 func ledgerConfig() *ledger.Config {

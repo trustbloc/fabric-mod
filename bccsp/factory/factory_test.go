@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/hyperledger/fabric/bccsp/pkcs11"
-	viper "github.com/spf13/viper2015"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 )
 
@@ -62,7 +62,7 @@ BCCSP:
 	cfgVariations := []*FactoryOpts{
 		{},
 		{ProviderName: "SW"},
-		{ProviderName: "SW", SwOpts: &SwOpts{HashFamily: "SHA2", SecLevel: 256, Ephemeral: true}},
+		{ProviderName: "SW", SwOpts: &SwOpts{HashFamily: "SHA2", SecLevel: 256}},
 		yamlBCCSP,
 	}
 

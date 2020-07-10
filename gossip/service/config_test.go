@@ -12,8 +12,8 @@ import (
 	"github.com/hyperledger/fabric/gossip/election"
 
 	"github.com/hyperledger/fabric/gossip/service"
-	viper "github.com/spf13/viper2015"
-	"github.com/stretchr/testify/assert"
+	"github.com/spf13/viper"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGlobalConfig(t *testing.T) {
@@ -51,5 +51,5 @@ func TestGlobalConfig(t *testing.T) {
 		SkipPullingInvalidTransactionsDuringCommit: false,
 	}
 
-	assert.Equal(t, coreConfig, expectedConfig)
+	require.Equal(t, coreConfig, expectedConfig)
 }

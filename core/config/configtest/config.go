@@ -16,8 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	viper "github.com/spf13/viper2015"
-	"github.com/stretchr/testify/assert"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 )
 
@@ -123,12 +122,12 @@ func SetDevFabricConfigPath(t *testing.T) (cleanup func()) {
 	if resetFabricCfgPath {
 		return func() {
 			err := os.Setenv("FABRIC_CFG_PATH", oldFabricCfgPath)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		}
 	}
 
 	return func() {
 		err := os.Unsetenv("FABRIC_CFG_PATH")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 }
