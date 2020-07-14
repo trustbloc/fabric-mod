@@ -15,12 +15,13 @@ import (
 
 	"github.com/hyperledger/fabric/core/config"
 	"github.com/hyperledger/fabric/core/ledger/kvledger"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	viper "github.com/spf13/viper2015"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestRebuildDBsCmd(t *testing.T) {
-	t.Skip("Re-enable this test when upgrade is supported by fabric-peer-ext")
+	xtestutil.SkipExt(t, "This test is only valid for LevelDB ID store")
 
 	testPath := "/tmp/hyperledger/test"
 	os.RemoveAll(testPath)

@@ -137,17 +137,6 @@ type MockIDStore struct {
 		result1 *common.Block
 		result2 error
 	}
-	CheckUpgradeEligibilityStub        func() (bool, error)
-	checkUpgradeEligibilityMutex       sync.RWMutex
-	checkUpgradeEligibilityArgsForCall []struct{}
-	checkUpgradeEligibilityReturns     struct {
-		result1 bool
-		result2 error
-	}
-	checkUpgradeEligibilityReturnsOnCall map[int]struct {
-		result1 bool
-		result2 error
-	}
 	CloseStub        func()
 	closeMutex       sync.RWMutex
 	closeArgsForCall []struct{}
@@ -666,49 +655,6 @@ func (fake *MockIDStore) GetGenesisBlockReturnsOnCall(i int, result1 *common.Blo
 	}{result1, result2}
 }
 
-func (fake *MockIDStore) CheckUpgradeEligibility() (bool, error) {
-	fake.checkUpgradeEligibilityMutex.Lock()
-	ret, specificReturn := fake.checkUpgradeEligibilityReturnsOnCall[len(fake.checkUpgradeEligibilityArgsForCall)]
-	fake.checkUpgradeEligibilityArgsForCall = append(fake.checkUpgradeEligibilityArgsForCall, struct{}{})
-	fake.recordInvocation("CheckUpgradeEligibility", []interface{}{})
-	fake.checkUpgradeEligibilityMutex.Unlock()
-	if fake.CheckUpgradeEligibilityStub != nil {
-		return fake.CheckUpgradeEligibilityStub()
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fake.checkUpgradeEligibilityReturns.result1, fake.checkUpgradeEligibilityReturns.result2
-}
-
-func (fake *MockIDStore) CheckUpgradeEligibilityCallCount() int {
-	fake.checkUpgradeEligibilityMutex.RLock()
-	defer fake.checkUpgradeEligibilityMutex.RUnlock()
-	return len(fake.checkUpgradeEligibilityArgsForCall)
-}
-
-func (fake *MockIDStore) CheckUpgradeEligibilityReturns(result1 bool, result2 error) {
-	fake.CheckUpgradeEligibilityStub = nil
-	fake.checkUpgradeEligibilityReturns = struct {
-		result1 bool
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *MockIDStore) CheckUpgradeEligibilityReturnsOnCall(i int, result1 bool, result2 error) {
-	fake.CheckUpgradeEligibilityStub = nil
-	if fake.checkUpgradeEligibilityReturnsOnCall == nil {
-		fake.checkUpgradeEligibilityReturnsOnCall = make(map[int]struct {
-			result1 bool
-			result2 error
-		})
-	}
-	fake.checkUpgradeEligibilityReturnsOnCall[i] = struct {
-		result1 bool
-		result2 error
-	}{result1, result2}
-}
-
 func (fake *MockIDStore) Close() {
 	fake.closeMutex.Lock()
 	fake.closeArgsForCall = append(fake.closeArgsForCall, struct{}{})
@@ -750,8 +696,6 @@ func (fake *MockIDStore) Invocations() map[string][][]interface{} {
 	defer fake.upgradeFormatMutex.RUnlock()
 	fake.getGenesisBlockMutex.RLock()
 	defer fake.getGenesisBlockMutex.RUnlock()
-	fake.checkUpgradeEligibilityMutex.RLock()
-	defer fake.checkUpgradeEligibilityMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
