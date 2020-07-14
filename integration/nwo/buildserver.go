@@ -11,9 +11,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
-	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -77,51 +74,13 @@ func (a *artifact) build(args ...string) error {
 		return nil
 	}
 
-	var output string
-	var err error
-
-	p, err := filepath.Abs(a.input)
+	output, err := gexec.Build(a.input, args...)
 	if err != nil {
 		return err
 	}
 
-	_, err = os.Stat(path.Join(p, "go.mod"))
-	if os.IsNotExist(err) {
-		output, err = gexec.Build(a.input, args...)
-	} else {
-		output, err = buildGOModule(p, args...)
-	}
-
-	if err != nil {
-		return err
-	}
 	a.output = output
 	return nil
-}
-
-func buildGOModule(p string, args ...string) (string, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		err := os.Chdir(wd)
-		if err != nil {
-			panic(fmt.Sprintf("unable to switch back to working dir [%s]", wd))
-		}
-	}()
-
-	err = os.Chdir(p)
-	if err != nil {
-		return "", err
-	}
-
-	outputDir, err := gexec.Build(".", args...)
-	if err != nil {
-		return "", err
-	}
-
-	return path.Join(outputDir, path.Base(p)), nil
 }
 
 type buildHandler struct {

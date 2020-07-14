@@ -47,7 +47,7 @@ var _ = Describe("Gossip State Transfer and Membership", func() {
 
 		nwprocs = &networkProcesses{
 			network:       network,
-			peerRunners:   map[string]ifrit.Runner{},
+			peerRunners:   map[string]*ginkgomon.Runner{},
 			peerProcesses: map[string]ifrit.Process{},
 		}
 
@@ -134,7 +134,7 @@ var _ = Describe("Gossip State Transfer and Membership", func() {
 
 		By("confirming peer0Org1 was elected to be a leader")
 		expectedMsg := "Elected as a leader, starting delivery service for channel testchannel"
-		Eventually(nwprocs.peerRunners[peer0Org1.ID()].(*nwo.GroupRunner).Err("peers"), network.EventuallyTimeout).Should(gbytes.Say(expectedMsg))
+		Eventually(nwprocs.peerRunners[peer0Org1.ID()].Err(), network.EventuallyTimeout).Should(gbytes.Say(expectedMsg))
 
 		sendTransactionsAndSyncUpPeers(nwprocs, orderer, basePeerForTransactions, channelName, peer1Org1, peer1Org2)
 
@@ -146,7 +146,7 @@ var _ = Describe("Gossip State Transfer and Membership", func() {
 		stopPeers(nwprocs, peer0Org1, peer1Org2)
 
 		By("confirming peer1Org1 was elected to be a leader")
-		Eventually(nwprocs.peerRunners[peer1Org1.ID()].(*nwo.GroupRunner).Err("peers"), network.EventuallyTimeout).Should(gbytes.Say(expectedMsg))
+		Eventually(nwprocs.peerRunners[peer1Org1.ID()].Err(), network.EventuallyTimeout).Should(gbytes.Say(expectedMsg))
 
 		// Note that with the static leader in Org2 down, the static follower peer0Org2 will also get blocks via state transfer
 		// This effectively tests leader election as well, since the newly elected leader in Org1 (peer1Org1) will be the only peer
@@ -181,8 +181,6 @@ var _ = Describe("Gossip State Transfer and Membership", func() {
 		})
 
 		It("updates membership when peers in the same org are stopped and restarted", func() {
-			Skip("re-enable this test")
-
 			peer0Org1 := network.Peer("Org1", "peer0")
 			peer1Org1 := network.Peer("Org1", "peer1")
 
@@ -216,8 +214,6 @@ var _ = Describe("Gossip State Transfer and Membership", func() {
 		})
 
 		It("updates peer membership when peers in another org are stopped and restarted", func() {
-			Skip("re-enable this test")
-
 			peer0Org1, peer1Org1 := network.Peer("Org1", "peer0"), network.Peer("Org1", "peer1")
 			peer0Org2, peer1Org2 := network.Peer("Org2", "peer0"), network.Peer("Org2", "peer1")
 
@@ -272,7 +268,7 @@ type networkProcesses struct {
 	ordererRunner  *ginkgomon.Runner
 	ordererProcess ifrit.Process
 
-	peerRunners   map[string]ifrit.Runner
+	peerRunners   map[string]*ginkgomon.Runner
 	peerProcesses map[string]ifrit.Process
 }
 
@@ -361,7 +357,7 @@ func assertPeerMembershipUpdate(network *nwo.Network, peer *nwo.Peer, peersToRes
 
 	By("verifying expected log message from expiration callback")
 	runner := nwprocs.peerRunners[peer.ID()]
-	Eventually(runner.(*nwo.GroupRunner).Err("peers"), network.EventuallyTimeout).Should(gbytes.Say(expectedMsgFromExpirationCallback))
+	Eventually(runner.Err(), network.EventuallyTimeout).Should(gbytes.Say(expectedMsgFromExpirationCallback))
 
 	By("restarting peers")
 	startPeers(nwprocs, false, peersToRestart...)

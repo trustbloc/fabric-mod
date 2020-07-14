@@ -523,7 +523,6 @@ var _ = Describe("Kafka2RaftMigration", func() {
 		// It then restarts the orderers onto a Raft-based system, and verifies that the
 		// newly restarted orderers perform as expected.
 		It("executes bootstrap to raft - multi node", func() {
-			Skip("TODO: Re-enable this test")
 			//=== Step 1: Config update on system channel, MAINTENANCE ===
 			By("1) Config update on system channel, State=MAINTENANCE")
 			config, updatedConfig := prepareTransition(network, peer, o1, syschannel,

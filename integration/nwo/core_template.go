@@ -169,6 +169,8 @@ chaincode:
   golang:
     runtime: $(DOCKER_NS)/fabric-baseos:$(PROJECT_VERSION)
     dynamicLink: false
+  car:
+    runtime: $(DOCKER_NS)/fabric-baseos:$(PROJECT_VERSION)
   java:
     runtime: $(DOCKER_NS)/fabric-javaenv:latest
   node:
@@ -200,7 +202,7 @@ ledger:
   state:
     stateDatabase: goleveldb
     couchDBConfig:
-      couchDBAddress: 127.0.0.1:{{ .PeerPort Peer "CouchDB" }}
+      couchDBAddress: 127.0.0.1:5984
       username:
       password:
       maxRetries: 3
