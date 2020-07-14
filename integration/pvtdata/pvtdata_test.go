@@ -21,7 +21,6 @@ import (
 	"syscall"
 	"time"
 
-	docker "github.com/fsouza/go-dockerclient"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	. "github.com/onsi/ginkgo"
@@ -29,6 +28,7 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 
+	docker "github.com/fsouza/go-dockerclient"
 	cb "github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric-protos-go/ledger/rwset"
 	"github.com/hyperledger/fabric-protos-go/ledger/rwset/kvrwset"
@@ -86,6 +86,7 @@ var _ bool = Describe("PrivateData", func() {
 		})
 
 		It("disseminates private data per collections_config1 (positive test) and collections_config8 (negative test)", func() {
+
 			By("deploying legacy chaincode and adding marble1")
 			testChaincode := chaincode{
 				Chaincode: nwo.Chaincode{
@@ -391,35 +392,6 @@ var _ bool = Describe("PrivateData", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Eventually(sess, network.EventuallyTimeout).Should(gexec.Exit(0))
 			Expect(sess).To(gbytes.Say(`{"docType":"marblePrivateDetails","name":"marble1","price":99}`))
-		})
-
-		When("collection config does not have maxPeerCount or requiredPeerCount", func() {
-			It("disseminates private data per collections_config7 with default maxPeerCount and requiredPeerCount", func() {
-				Skip("TODO: Re-enable this test")
-				By("deploying legacy chaincode and adding marble1")
-				testChaincode := chaincode{
-					Chaincode: nwo.Chaincode{
-						Name:    "marblesp",
-						Version: "1.0",
-						Path:    "github.com/hyperledger/fabric/integration/chaincode/marbles_private/cmd",
-						Ctor:    `{"Args":["init"]}`,
-						Policy:  `OR ('Org1MSP.member','Org2MSP.member', 'Org3MSP.member')`,
-						// collections_config1.json defines the access as follows:
-						// 1. collectionMarbles - Org1, Org2 have access to this collection
-						// 2. collectionMarblePrivateDetails - Org2 and Org3 have access to this collection
-						CollectionsConfig: collectionConfig("collections_config7.json"),
-					},
-					isLegacy: true,
-				}
-				deployChaincode(network, orderer, testChaincode)
-				peer := network.Peer("Org1", "peer0")
-				addMarble(network, orderer, testChaincode.Name,
-					`{"name":"marble1", "color":"blue", "size":35, "owner":"tom", "price":99}`,
-					peer,
-				)
-
-				assertPvtdataPresencePerCollectionConfig7(network, testChaincode.Name, "marble1", peer)
-			})
 		})
 	})
 

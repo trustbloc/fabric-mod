@@ -88,8 +88,6 @@ var _ = Describe("EndToEndACL", func() {
 	})
 
 	It("enforces access control list policies", func() {
-		Skip("re-enable this test")
-
 		invokeChaincode := commands.ChaincodeInvoke{
 			ChannelID:    "testchannel",
 			Orderer:      network.OrdererAddress(orderer, nwo.ListenPort),

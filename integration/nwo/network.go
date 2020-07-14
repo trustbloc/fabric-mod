@@ -30,7 +30,6 @@ import (
 	"github.com/hyperledger/fabric/integration/runner"
 	"github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 	. "github.com/onsi/gomega/gstruct"
 	"github.com/onsi/gomega/matchers"
@@ -411,28 +410,6 @@ func (n *Network) userCryptoDir(org *Organization, nodeOrganizationType, user, c
 		"users",
 		fmt.Sprintf("%s@%s", user, org.Domain),
 		cryptoMaterialType,
-	)
-}
-
-// PeerOrgCADir returns the path to the folder containing the CA certificate(s) and/or
-// keys for the specified peer organization.
-func (n *Network) PeerOrgCADir(o *Organization) string {
-	return filepath.Join(
-		n.CryptoPath(),
-		"peerOrganizations",
-		o.Domain,
-		"ca",
-	)
-}
-
-// OrdererOrgCADir returns the path to the folder containing the CA certificate(s) and/or
-// keys for the specified orderer organization.
-func (n *Network) OrdererOrgCADir(o *Organization) string {
-	return filepath.Join(
-		n.CryptoPath(),
-		"ordererOrganizations",
-		o.Domain,
-		"ca",
 	)
 }
 
@@ -1228,46 +1205,9 @@ func (n *Network) OrdererGroupRunner() ifrit.Runner {
 	return grouper.NewParallel(syscall.SIGTERM, members)
 }
 
-//PeerRunner returns ordered ifrit.Runner for couchdb and peer for the specified peer.
-func (n *Network) PeerRunner(p *Peer, env ...string) ifrit.Runner {
-	members := grouper.Members{
-		{Name: "couchdbs", Runner: n.CouchDBRunner(p)},
-		{Name: "peers", Runner: n.PeerNodeRunner(p)},
-	}
-	return &GroupRunner{
-		r:       grouper.NewOrdered(syscall.SIGTERM, members),
-		members: members,
-	}
-}
-
-// GroupRunner wraps a grouped runner
-type GroupRunner struct {
-	r       ifrit.Runner
-	members grouper.Members
-}
-
-// Run runs the task
-func (gr *GroupRunner) Run(signals <-chan os.Signal, ready chan<- struct{}) error {
-	return gr.r.Run(signals, ready)
-}
-
-// Err returns the gbytes.Buffer associated with the stderr stream of the given, named runner.
-func (gr *GroupRunner) Err(name string) *gbytes.Buffer {
-	for _, m := range gr.members {
-		if m.Name == name {
-			grunner, ok := m.Runner.(*ginkgomon.Runner)
-			if !ok {
-				return nil
-			}
-			return grunner.Err()
-		}
-	}
-	return nil
-}
-
-// PeerNodeRunner returns an ifrit.Runner for the specified peer. The runner can be
+// PeerRunner returns an ifrit.Runner for the specified peer. The runner can be
 // used to start and manage a peer process.
-func (n *Network) PeerNodeRunner(p *Peer, env ...string) *ginkgomon.Runner {
+func (n *Network) PeerRunner(p *Peer, env ...string) *ginkgomon.Runner {
 	cmd := n.peerCommand(
 		commands.NodeStart{PeerID: p.ID()},
 		"",
@@ -1286,25 +1226,14 @@ func (n *Network) PeerNodeRunner(p *Peer, env ...string) *ginkgomon.Runner {
 	})
 }
 
-// allPeerGroupRunner returns a runner that can be used to start and stop all
+// PeerGroupRunner returns a runner that can be used to start and stop all
 // peers in a network.
-func (n *Network) allPeerGroupRunner() ifrit.Runner {
+func (n *Network) PeerGroupRunner() ifrit.Runner {
 	members := grouper.Members{}
 	for _, p := range n.Peers {
-		members = append(members, grouper.Member{Name: p.ID(), Runner: n.PeerNodeRunner(p)})
+		members = append(members, grouper.Member{Name: p.ID(), Runner: n.PeerRunner(p)})
 	}
 	return grouper.NewParallel(syscall.SIGTERM, members)
-}
-
-//PeerGroupRunner returns a ordered runner of all couchdbs and peers in network.
-func (n *Network) PeerGroupRunner() ifrit.Runner {
-
-	members := grouper.Members{
-		{Name: "couchdbs", Runner: n.allCouchDBGroupRunner()},
-		{Name: "peers", Runner: n.allPeerGroupRunner()},
-	}
-
-	return grouper.NewOrdered(syscall.SIGTERM, members)
 }
 
 // NetworkGroupRunner returns a runner that can be used to start and stop an
@@ -1638,12 +1567,11 @@ const (
 	ProfilePort    PortName = "Profile"
 	OperationsPort PortName = "Operations"
 	ClusterPort    PortName = "Cluster"
-	CouchDBPort    PortName = "CouchDB"
 )
 
 // PeerPortNames returns the list of ports that need to be reserved for a Peer.
 func PeerPortNames() []PortName {
-	return []PortName{ListenPort, ChaincodePort, EventsPort, ProfilePort, OperationsPort, CouchDBPort}
+	return []PortName{ListenPort, ChaincodePort, EventsPort, ProfilePort, OperationsPort}
 }
 
 // OrdererPortNames  returns the list of ports that need to be reserved for an
@@ -1851,20 +1779,4 @@ func (n *Network) GenerateCoreConfig(p *Peer) {
 	pw := gexec.NewPrefixedWriter(fmt.Sprintf("[%s#core.yaml] ", p.ID()), ginkgo.GinkgoWriter)
 	err = t.Execute(io.MultiWriter(core, pw), n)
 	Expect(err).NotTo(HaveOccurred())
-}
-
-//CouchDBRunner returns an ifrit.Runner for the specified couchdb configured for given peer. The runner can be
-// used to start and manage a couchdb process.
-func (n *Network) CouchDBRunner(p *Peer) ifrit.Runner {
-	return &runner.CouchDB{HostIP: "127.0.0.1", HostPort: int(n.PeerPort(p, CouchDBPort))}
-}
-
-// CouchDBGroupRunner returns a runner that can be used to start and stop all
-// couchdbs in a network.
-func (n *Network) allCouchDBGroupRunner() ifrit.Runner {
-	members := grouper.Members{}
-	for _, p := range n.Peers {
-		members = append(members, grouper.Member{Name: p.ID(), Runner: n.CouchDBRunner(p)})
-	}
-	return grouper.NewParallel(syscall.SIGTERM, members)
 }
