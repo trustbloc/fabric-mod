@@ -43,19 +43,9 @@ func dirExists(path string) bool {
 // maintained with the source tree. This should only be used in a
 // test/development context.
 func GetDevConfigDir() string {
-	sampleConfigPath := os.Getenv("FABRIC_SAMPLECONFIG_PATH")
-	if sampleConfigPath != "" {
-		path, err := gopathDevConfigDir(sampleConfigPath)
-		if err != nil {
-			panic(err)
-		}
-
-		return path
-	}
-
 	path, err := gomodDevConfigDir()
 	if err != nil {
-		path, err = gopathDevConfigDir("src/github.com/hyperledger/fabric/sampleconfig")
+		path, err = gopathDevConfigDir()
 		if err != nil {
 			panic(err)
 		}
@@ -63,13 +53,18 @@ func GetDevConfigDir() string {
 	return path
 }
 
-func gopathDevConfigDir(sampleConfigPath string) (string, error) {
-	gopath := os.Getenv("GOPATH")
+func gopathDevConfigDir() (string, error) {
+	buf := bytes.NewBuffer(nil)
+	cmd := exec.Command("go", "env", "GOPATH")
+	cmd.Stdout = buf
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
 
+	gopath := strings.TrimSpace(buf.String())
 	for _, p := range filepath.SplitList(gopath) {
-		devPath := filepath.Join(p, sampleConfigPath)
+		devPath := filepath.Join(p, "src/github.com/hyperledger/fabric/sampleconfig")
 		if dirExists(devPath) {
-			fmt.Printf("========= Using sample config dir from GOPATH: %s", devPath)
 			return devPath, nil
 		}
 	}

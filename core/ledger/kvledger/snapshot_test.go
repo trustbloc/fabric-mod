@@ -23,13 +23,12 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	lgr "github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/mock"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGenerateSnapshot(t *testing.T) {
-	t.Skip("Re-enable this test when fabric-peer-ext implements BlockStore.ExportTxIds")
-
 	conf, cleanup := testConfig(t)
 	defer cleanup()
 	snapshotRootDir := conf.SnapshotsConfig.RootDir
@@ -195,8 +194,6 @@ func TestSnapshotsDirInitializingErrors(t *testing.T) {
 }
 
 func TestGenerateSnapshotErrors(t *testing.T) {
-	t.Skip("Re-enable this test when fabric-peer-ext implements BlockStore.ExportTxIds")
-
 	conf, cleanup := testConfig(t)
 	defer cleanup()
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
@@ -229,6 +226,8 @@ func TestGenerateSnapshotErrors(t *testing.T) {
 	})
 
 	t.Run("block store returns error", func(t *testing.T) {
+		xtestutil.Skip(t, "CouchDB block storage does not support Close()")
+
 		closeAndReopenLedgerProvider()
 		provider.blkStoreProvider.Close() // Close the blockstore provider to trigger the error
 		err := kvlgr.generateSnapshot()

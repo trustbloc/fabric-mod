@@ -29,12 +29,7 @@ type SnapshotInfo struct {
 
 // BlockStoreProvider provides an handle to a BlockStore
 type BlockStoreProvider interface {
-	//CreateBlockStore(ledgerid string) (BlockStore, error)
 	Open(ledgerid string) (BlockStore, error)
-	BootstrapFromSnapshottedTxIDs(snapshotDir string, snapshotInfo *SnapshotInfo) (BlockStore, error)
-	Exists(ledgerid string) (bool, error)
-	Remove(ledgerid string) error
-	List() ([]string, error)
 	Close()
 }
 
