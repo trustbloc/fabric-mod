@@ -21,7 +21,7 @@ import (
 )
 
 func TestRebuildDBsCmd(t *testing.T) {
-	xtestutil.SkipExt(t, "This test is only valid for LevelDB ID store")
+	xtestutil.Skip(t, "This test is only valid for LevelDB ID store")
 
 	testPath := "/tmp/hyperledger/test"
 	os.RemoveAll(testPath)

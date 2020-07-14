@@ -17,7 +17,7 @@ import (
 )
 
 func TestUpgradeWrongFormat(t *testing.T) {
-	xtestutil.SkipExt(t, "This test is only valid for LevelDB ID store")
+	xtestutil.Skip(t, "This test is only valid for LevelDB ID store")
 
 	conf, cleanup := testConfig(t)
 	conf.HistoryDBConfig.Enabled = false

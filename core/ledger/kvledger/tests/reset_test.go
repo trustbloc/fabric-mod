@@ -19,7 +19,7 @@ import (
 )
 
 func TestResetAllLedgers(t *testing.T) {
-	xtestutil.SkipExt(t, "This test is only valid for LevelDB ID store")
+	xtestutil.Skip(t, "This test is only valid for LevelDB ID store")
 
 	env := newEnv(t)
 	defer env.cleanup()
@@ -108,7 +108,7 @@ func TestResetAllLedgers(t *testing.T) {
 }
 
 func TestResetAllLedgersWithBTL(t *testing.T) {
-	xtestutil.SkipExt(t, "This test is only valid for LevelDB ID store")
+	xtestutil.Skip(t, "This test is only valid for LevelDB ID store")
 
 	env := newEnv(t)
 	defer env.cleanup()
@@ -190,7 +190,7 @@ func TestResetAllLedgersWithBTL(t *testing.T) {
 }
 
 func TestResetLedgerWithoutDroppingDBs(t *testing.T) {
-	xtestutil.SkipExt(t, "This test is only valid for LevelDB ID store")
+	xtestutil.Skip(t, "This test is only valid for LevelDB ID store")
 
 	env := newEnv(t)
 	defer env.cleanup()
