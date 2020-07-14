@@ -101,7 +101,6 @@ func TestLedgerProvider(t *testing.T) {
 }
 
 func TestGetActiveLedgerIDsIteratorError(t *testing.T) {
-	t.Skip("This test should be moved to the leveldb-specific unit tests since it's not compatible with the couch implementation.")
 	conf, cleanup := testConfig(t)
 	defer cleanup()
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
@@ -114,32 +113,35 @@ func TestGetActiveLedgerIDsIteratorError(t *testing.T) {
 	// Close provider to trigger db error
 	provider.Close()
 	_, err := provider.idStore.GetActiveLedgerIDs()
-	require.EqualError(t, err, "error getting ledger ids from idStore: leveldb: closed")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "closed")
 }
 
-// TODO: This test is not compatible with the couch implementation.
-//func TestLedgerMetataDataUnmarshalError(t *testing.T) {
-//	conf, cleanup := testConfig(t)
-//	defer cleanup()
-//	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
-//	defer provider.Close()
-//
-//	ledgerID := constructTestLedgerID(0)
-//	genesisBlock, _ := configtxtest.MakeGenesisBlock(ledgerID)
-//	provider.Create(genesisBlock)
-//
-//	// put invalid bytes for the metatdata key
-//	provider.idStore.db.Put(encodeLedgerKey(ledgerID, metadataKeyPrefix), []byte("invalid"))
-//
-//	_, err := provider.List()
-//	require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
-//
-//	_, err = provider.Open(ledgerID)
-//	require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
-//}
+func TestLedgerMetataDataUnmarshalError(t *testing.T) {
+	xtestutil.SkipExt(t, "This test is only valid for LevelDB ID store")
+
+	conf, cleanup := testConfig(t)
+	defer cleanup()
+	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
+	defer provider.Close()
+
+	ledgerID := constructTestLedgerID(0)
+	genesisBlock, _ := configtxtest.MakeGenesisBlock(ledgerID)
+	provider.Create(genesisBlock)
+
+	// put invalid bytes for the metatdata key
+	provider.idStore.(*idStore).db.Put(encodeLedgerKey(ledgerID, metadataKeyPrefix), []byte("invalid"), true)
+
+	_, err := provider.List()
+	require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
+
+	_, err = provider.Open(ledgerID)
+	require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
+}
 
 func TestNewProviderIdStoreFormatError(t *testing.T) {
-	t.Skip("This test should be re-enabled after the couch DB ID store supports upgrade")
+	xtestutil.SkipExt(t, "This test is only valid for LevelDB ID store")
+
 	conf, cleanup := testConfig(t)
 	defer cleanup()
 
@@ -153,19 +155,20 @@ func TestNewProviderIdStoreFormatError(t *testing.T) {
 			Config:                        conf,
 		},
 	)
-	require.EqualError(t, err, fmt.Sprintf("unexpected format. db info = [leveldb at [%s]], data format = [], expected format = [2.0]", LedgerProviderPath(conf.RootFSPath)))
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unexpected format")
 }
 
 func TestUpgradeIDStoreFormatDBError(t *testing.T) {
-	t.Skip("This test should be re-enabled after the couch DB ID store supports upgrade")
 	conf, cleanup := testConfig(t)
 	defer cleanup()
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
 	provider.Close()
 
 	err := provider.idStore.UpgradeFormat()
-	dbPath := LedgerProviderPath(conf.RootFSPath)
-	require.EqualError(t, err, fmt.Sprintf("error while trying to see if the leveldb at path [%s] is empty: leveldb: closed", dbPath))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "closed")
 }
 
 func TestLedgerProviderHistoryDBDisabled(t *testing.T) {

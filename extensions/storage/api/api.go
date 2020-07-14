@@ -27,7 +27,6 @@ type IDStore interface {
 	GetFormat() ([]byte, error)
 	UpgradeFormat() error
 	GetGenesisBlock(ledgerID string) (*common.Block, error)
-	CheckUpgradeEligibility() (bool, error)
 	Close()
 }
 

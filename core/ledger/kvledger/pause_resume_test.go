@@ -17,7 +17,6 @@ import (
 )
 
 func TestPauseAndResume(t *testing.T) {
-	t.Skip("This test should be re-enabled once the couch version of ID store supports state update")
 	conf, cleanup := testConfig(t)
 	conf.HistoryDBConfig.Enabled = false
 	defer cleanup()
@@ -72,42 +71,44 @@ func TestPauseAndResume(t *testing.T) {
 	require.Equal(t, ErrInactiveLedger, err)
 }
 
-// TODO: This test should be re-enabled once the couch version of ID store supports state update
-//func TestPauseAndResumeErrors(t *testing.T) {
-//	conf, cleanup := testConfig(t)
-//	conf.HistoryDBConfig.Enabled = false
-//	defer cleanup()
-//	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
-//
-//	ledgerID := constructTestLedgerID(0)
-//	genesisBlock, _ := configtxtest.MakeGenesisBlock(ledgerID)
-//	provider.Create(genesisBlock)
-//	// purposely set an invalid metatdata
-//	provider.idStore.Put(provider.idStore.EncodeLedgerKey(ledgerID, metadataKeyPrefix), []byte("invalid"))
-//
-//	// fail if provider is open (e.g., peer is up running)
-//	err := PauseChannel(conf.RootFSPath, constructTestLedgerID(0))
-//	require.Error(t, err, "as another peer node command is executing, wait for that command to complete its execution or terminate it before retrying")
-//
-//	err = ResumeChannel(conf.RootFSPath, constructTestLedgerID(0))
-//	require.Error(t, err, "as another peer node command is executing, wait for that command to complete its execution or terminate it before retrying")
-//
-//	provider.Close()
-//
-//	// fail if ledgerID does not exists
-//	err = PauseChannel(conf.RootFSPath, "dummy")
-//	require.Error(t, err, "LedgerID does not exist")
-//
-//	err = ResumeChannel(conf.RootFSPath, "dummy")
-//	require.Error(t, err, "LedgerID does not exist")
-//
-//	// error if metadata cannot be unmarshaled
-//	err = PauseChannel(conf.RootFSPath, ledgerID)
-//	require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
-//
-//	err = ResumeChannel(conf.RootFSPath, ledgerID)
-//	require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
-//}
+func TestPauseAndResumeErrors(t *testing.T) {
+	conf, cleanup := testConfig(t)
+	conf.HistoryDBConfig.Enabled = false
+	defer cleanup()
+	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
+
+	ledgerID := constructTestLedgerID(0)
+	genesisBlock, _ := configtxtest.MakeGenesisBlock(ledgerID)
+	provider.Create(genesisBlock)
+
+	// This code is LevelDB-specific
+	//// purposely set an invalid metatdata
+	//provider.idStore.Put(provider.idStore.encodeLedgerKey(ledgerID, metadataKeyPrefix), []byte("invalid"))
+
+	// fail if provider is open (e.g., peer is up running)
+	err := PauseChannel(conf, constructTestLedgerID(0))
+	require.Error(t, err, "as another peer node command is executing, wait for that command to complete its execution or terminate it before retrying")
+
+	err = ResumeChannel(conf, constructTestLedgerID(0))
+	require.Error(t, err, "as another peer node command is executing, wait for that command to complete its execution or terminate it before retrying")
+
+	provider.Close()
+
+	// fail if ledgerID does not exists
+	err = PauseChannel(conf, "dummy")
+	require.Error(t, err, "LedgerID does not exist")
+
+	err = ResumeChannel(conf, "dummy")
+	require.Error(t, err, "LedgerID does not exist")
+
+	// This code is LevelDB-specific
+	//// error if metadata cannot be unmarshaled
+	//err = PauseChannel(conf, ledgerID)
+	//require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
+	//
+	//err = ResumeChannel(conf, ledgerID)
+	//require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
+}
 
 // verify status for paused ledgers and non-paused ledgers
 func assertLedgerStatus(t *testing.T, provider *Provider, genesisBlocks []*common.Block, numLedgers int, pausedLedgers []int) {

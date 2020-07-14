@@ -542,11 +542,11 @@ func openIDStore(path string) (s *idStore, e error) {
 	return &idStore{db, path}, nil
 }
 
-// CheckUpgradeEligibility checks if the format is eligible to upgrade.
+// checkUpgradeEligibility checks if the format is eligible to upgrade.
 // It returns true if the format is eligible to upgrade to the current format.
 // It returns false if either the format is the current format or the db is empty.
 // Otherwise, an ErrFormatMismatch is returned.
-func (s *idStore) CheckUpgradeEligibility() (bool, error) {
+func (s *idStore) checkUpgradeEligibility() (bool, error) {
 	emptydb, err := s.db.IsEmpty()
 	if err != nil {
 		return false, err
@@ -578,8 +578,9 @@ func (s *idStore) CheckUpgradeEligibility() (bool, error) {
 func (s *idStore) GetFormat() ([]byte, error) {
 	return s.db.Get(formatKey)
 }
+
 func (s *idStore) UpgradeFormat() error {
-	eligible, err := s.CheckUpgradeEligibility()
+	eligible, err := s.checkUpgradeEligibility()
 	if err != nil {
 		return err
 	}
@@ -601,8 +602,8 @@ func (s *idStore) UpgradeFormat() error {
 	itr := s.db.GetIterator(ledgerKeyPrefix, ledgerKeyStop)
 	defer itr.Release()
 	for itr.Error() == nil && itr.Next() {
-		id := s.DecodeLedgerID(itr.Key(), ledgerKeyPrefix)
-		batch.Put(s.EncodeLedgerKey(id, metadataKeyPrefix), metadata)
+		id := s.decodeLedgerID(itr.Key(), ledgerKeyPrefix)
+		batch.Put(s.encodeLedgerKey(id, metadataKeyPrefix), metadata)
 	}
 	if err = itr.Error(); err != nil {
 		logger.Errorf("Error while upgrading idStore format: %s", err)
@@ -629,8 +630,8 @@ func (s *idStore) GetUnderConstructionFlag() (string, error) {
 }
 
 func (s *idStore) CreateLedgerID(ledgerID string, gb *common.Block) error {
-	gbKey := s.EncodeLedgerKey(ledgerID, ledgerKeyPrefix)
-	metadataKey := s.EncodeLedgerKey(ledgerID, metadataKeyPrefix)
+	gbKey := s.encodeLedgerKey(ledgerID, ledgerKeyPrefix)
+	metadataKey := s.encodeLedgerKey(ledgerID, metadataKeyPrefix)
 	var val []byte
 	var metadata []byte
 	var err error
@@ -654,7 +655,7 @@ func (s *idStore) CreateLedgerID(ledgerID string, gb *common.Block) error {
 }
 
 func (s *idStore) UpdateLedgerStatus(ledgerID string, newStatus msgs.Status) error {
-	metadata, err := s.GetLedgerMetadata(ledgerID)
+	metadata, err := s.getLedgerMetadata(ledgerID)
 	if err != nil {
 		return err
 	}
@@ -673,12 +674,12 @@ func (s *idStore) UpdateLedgerStatus(ledgerID string, newStatus msgs.Status) err
 		return errors.Wrapf(err, "error marshalling ledger metadata")
 	}
 	logger.Infof("Updating ledger [%s] status to [%s]", ledgerID, newStatus)
-	key := s.EncodeLedgerKey(ledgerID, metadataKeyPrefix)
+	key := s.encodeLedgerKey(ledgerID, metadataKeyPrefix)
 	return s.db.Put(key, metadataBytes, true)
 }
 
-func (s *idStore) GetLedgerMetadata(ledgerID string) (*msgs.LedgerMetadata, error) {
-	val, err := s.db.Get(s.EncodeLedgerKey(ledgerID, metadataKeyPrefix))
+func (s *idStore) getLedgerMetadata(ledgerID string) (*msgs.LedgerMetadata, error) {
+	val, err := s.db.Get(s.encodeLedgerKey(ledgerID, metadataKeyPrefix))
 	if val == nil || err != nil {
 		return nil, err
 	}
@@ -691,7 +692,7 @@ func (s *idStore) GetLedgerMetadata(ledgerID string) (*msgs.LedgerMetadata, erro
 }
 
 func (s *idStore) LedgerIDExists(ledgerID string) (bool, error) {
-	key := s.EncodeLedgerKey(ledgerID, ledgerKeyPrefix)
+	key := s.encodeLedgerKey(ledgerID, ledgerKeyPrefix)
 	val, err := s.db.Get(key)
 	if err != nil {
 		return false, err
@@ -701,7 +702,7 @@ func (s *idStore) LedgerIDExists(ledgerID string) (bool, error) {
 
 // LedgerIDActive returns if a ledger is active and existed
 func (s *idStore) LedgerIDActive(ledgerID string) (bool, bool, error) {
-	metadata, err := s.GetLedgerMetadata(ledgerID)
+	metadata, err := s.getLedgerMetadata(ledgerID)
 	if metadata == nil || err != nil {
 		return false, false, err
 	}
@@ -719,7 +720,7 @@ func (s *idStore) GetActiveLedgerIDs() ([]string, error) {
 			return nil, errors.Wrapf(err, "error unmarshalling ledger metadata")
 		}
 		if metadata.Status == msgs.Status_ACTIVE {
-			id := s.DecodeLedgerID(itr.Key(), metadataKeyPrefix)
+			id := s.decodeLedgerID(itr.Key(), metadataKeyPrefix)
 			ids = append(ids, id)
 		}
 	}
@@ -732,7 +733,7 @@ func (s *idStore) GetActiveLedgerIDs() ([]string, error) {
 
 // GetGenesisBlock returns the genesis block for the given ledger ID
 func (s *idStore) GetGenesisBlock(ledgerID string) (*common.Block, error) {
-	bytes, err := s.db.Get(s.EncodeLedgerKey(ledgerID, ledgerKeyPrefix))
+	bytes, err := s.db.Get(s.encodeLedgerKey(ledgerID, ledgerKeyPrefix))
 	if err != nil {
 		return nil, err
 	}
@@ -750,10 +751,10 @@ func (s *idStore) Close() {
 	s.db.Close()
 }
 
-func (s *idStore) EncodeLedgerKey(ledgerID string, prefix []byte) []byte {
+func (s *idStore) encodeLedgerKey(ledgerID string, prefix []byte) []byte {
 	return append(prefix, []byte(ledgerID)...)
 }
 
-func (s *idStore) DecodeLedgerID(key []byte, prefix []byte) string {
+func (s *idStore) decodeLedgerID(key []byte, prefix []byte) string {
 	return string(key[len(prefix):])
 }

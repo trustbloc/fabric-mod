@@ -14,11 +14,13 @@ import (
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/require"
 )
 
 func TestResetAllLedgers(t *testing.T) {
-	t.Skip("Re-enable this test when upgrade is supported by fabric-peer-ext")
+	xtestutil.SkipExt(t, "This test is only valid for LevelDB ID store")
+
 	env := newEnv(t)
 	defer env.cleanup()
 	env.initLedgerMgmt()
@@ -106,7 +108,8 @@ func TestResetAllLedgers(t *testing.T) {
 }
 
 func TestResetAllLedgersWithBTL(t *testing.T) {
-	t.Skip("Re-enable this test when upgrade is supported by fabric-peer-ext")
+	xtestutil.SkipExt(t, "This test is only valid for LevelDB ID store")
+
 	env := newEnv(t)
 	defer env.cleanup()
 	env.initLedgerMgmt()
@@ -187,7 +190,8 @@ func TestResetAllLedgersWithBTL(t *testing.T) {
 }
 
 func TestResetLedgerWithoutDroppingDBs(t *testing.T) {
-	t.Skip("Re-enable this test when upgrade is supported by fabric-peer-ext")
+	xtestutil.SkipExt(t, "This test is only valid for LevelDB ID store")
+
 	env := newEnv(t)
 	defer env.cleanup()
 	env.initLedgerMgmt()
