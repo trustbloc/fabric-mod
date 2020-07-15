@@ -78,23 +78,18 @@ func gomodDevConfigDir() (string, error) {
 	cmd.Stdout = buf
 
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("========= Error running go env GOMOD command: %s", err)
 		return "", err
 	}
 
 	modFile := strings.TrimSpace(buf.String())
 	if modFile == "" {
-		fmt.Printf("========= Go mod file not found: %s", buf)
 		return "", errors.New("not a module or not in module mode")
 	}
 
 	devPath := filepath.Join(filepath.Dir(modFile), "sampleconfig")
 	if !dirExists(devPath) {
-		fmt.Printf("========= Sample config dir from Go mod not found: %s", devPath)
 		return "", fmt.Errorf("%s does not exist", devPath)
 	}
-
-	fmt.Printf("========= Using sample config dir from Go mod: %s", devPath)
 
 	return devPath, nil
 }
