@@ -8,6 +8,8 @@ package blockpublisher
 
 import (
 	cb "github.com/hyperledger/fabric-protos-go/common"
+
+	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/extensions/gossip/api"
 )
 
@@ -60,7 +62,7 @@ func (p *publisher) AddCCEventHandler(handler api.ChaincodeEventHandler) {
 	// Not implemented
 }
 
-func (p *publisher) Publish(block *cb.Block) {
+func (p *publisher) Publish(*cb.Block, ledger.TxPvtDataMap) {
 	// Not implemented
 }
 

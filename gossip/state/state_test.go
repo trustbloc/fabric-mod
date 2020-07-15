@@ -1249,9 +1249,9 @@ func (mock *coordinatorMock) GetBlockByNum(seqNum uint64) (*pcomm.Block, error) 
 	return args.Get(0).(*pcomm.Block), args.Error(1)
 }
 
-func (mock *coordinatorMock) StoreBlock(block *pcomm.Block, data gutil.PvtDataCollections) error {
+func (mock *coordinatorMock) StoreBlock(block *pcomm.Block, data gutil.PvtDataCollections) (*ledger.BlockAndPvtData, error) {
 	args := mock.Called(block, data)
-	return args.Error(1)
+	return nil, args.Error(1)
 }
 
 func (mock *coordinatorMock) LedgerHeight() (uint64, error) {

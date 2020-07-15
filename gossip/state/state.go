@@ -120,7 +120,7 @@ type MCSAdapter interface {
 type ledgerResources interface {
 	// StoreBlock deliver new block with underlined private data
 	// returns missing transaction ids
-	StoreBlock(block *common.Block, data util.PvtDataCollections) error
+	StoreBlock(block *common.Block, data util.PvtDataCollections) (*ledger.BlockAndPvtData, error)
 
 	// StorePvtData used to persist private date into transient store
 	StorePvtData(txid string, privData *transientstore.TxPvtReadWriteSetWithConfigInfo, blckHeight uint64) error
@@ -819,7 +819,7 @@ func (s *GossipStateProviderImpl) commitBlock(block *common.Block, pvtData util.
 	t1 := time.Now()
 
 	// Commit block with available private transactions
-	if err := s.extension.StoreBlock(s.ledger.StoreBlock)(block, pvtData); err != nil {
+	if _, err := s.extension.StoreBlock(s.ledger.StoreBlock)(block, pvtData); err != nil {
 		s.logger.Errorf("Got error while committing(%+v)", errors.WithStack(err))
 		return err
 	}
