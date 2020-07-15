@@ -9,6 +9,8 @@ package state
 import (
 	"github.com/hyperledger/fabric-protos-go/common"
 	proto "github.com/hyperledger/fabric-protos-go/gossip"
+
+	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/extensions/gossip/api"
 	common2 "github.com/hyperledger/fabric/gossip/common"
 	"github.com/hyperledger/fabric/gossip/discovery"
@@ -29,7 +31,7 @@ type GossipStateProviderExtension interface {
 	AddPayload(func(payload *proto.Payload, blockingMode bool) error) func(payload *proto.Payload, blockingMode bool) error
 
 	//StoreBlock  can used to extend given store block handle
-	StoreBlock(func(block *common.Block, pvtData util.PvtDataCollections) error) func(block *common.Block, pvtData util.PvtDataCollections) error
+	StoreBlock(func(block *common.Block, pvtData util.PvtDataCollections) (*ledger.BlockAndPvtData, error)) func(block *common.Block, pvtData util.PvtDataCollections) (*ledger.BlockAndPvtData, error)
 
 	//LedgerHeight can used to extend ledger height feature to get current ledger height
 	LedgerHeight(func() (uint64, error)) func() (uint64, error)
@@ -74,7 +76,7 @@ func (s *gossipStateProviderExtension) AddPayload(handle func(payload *proto.Pay
 	return handle
 }
 
-func (s *gossipStateProviderExtension) StoreBlock(handle func(block *common.Block, pvtData util.PvtDataCollections) error) func(block *common.Block, pvtData util.PvtDataCollections) error {
+func (s *gossipStateProviderExtension) StoreBlock(handle func(block *common.Block, pvtData util.PvtDataCollections) (*ledger.BlockAndPvtData, error)) func(block *common.Block, pvtData util.PvtDataCollections) (*ledger.BlockAndPvtData, error) {
 	return handle
 }
 

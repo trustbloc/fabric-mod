@@ -46,8 +46,8 @@ type BlockPublisher interface {
 	AddLSCCWriteHandler(handler LSCCWriteHandler)
 	// AddCCEventHandler adds a handler for chaincode events
 	AddCCEventHandler(handler ChaincodeEventHandler)
-	// Publish traverses the block and invokes all applicable handlers
-	Publish(block *cb.Block)
+	// Publish traverses the block and private data and invokes all applicable handlers
+	Publish(block *cb.Block, pvtData ledger.TxPvtDataMap)
 	//LedgerHeight returns current in memory ledger height
 	LedgerHeight() uint64
 }

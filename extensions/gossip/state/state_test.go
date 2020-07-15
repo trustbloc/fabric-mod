@@ -9,13 +9,14 @@ package state
 import (
 	"testing"
 
-	"github.com/pkg/errors"
-
 	"github.com/hyperledger/fabric-protos-go/common"
 	proto "github.com/hyperledger/fabric-protos-go/gossip"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
+
+	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/gossip/discovery"
 	"github.com/hyperledger/fabric/gossip/util"
-	"github.com/stretchr/testify/require"
 )
 
 func TestProviderExtension(t *testing.T) {
@@ -30,8 +31,8 @@ func TestProviderExtension(t *testing.T) {
 		return sampleError
 	}
 
-	handleStoreBlock := func(block *common.Block, pvtData util.PvtDataCollections) error {
-		return sampleError
+	handleStoreBlock := func(block *common.Block, pvtData util.PvtDataCollections) (*ledger.BlockAndPvtData, error) {
+		return nil, sampleError
 	}
 
 	handleLedgerheight := func() (uint64, error) {
@@ -41,7 +42,8 @@ func TestProviderExtension(t *testing.T) {
 	extension := NewGossipStateProviderExtension("test", nil, nil, false)
 	require.Error(t, sampleError, extension.AddPayload(handleAddPayload))
 	require.True(t, extension.Predicate(predicate)(discovery.NetworkMember{}))
-	require.Error(t, sampleError, extension.StoreBlock(handleStoreBlock))
+	_, err := extension.StoreBlock(handleStoreBlock)(&common.Block{}, nil)
+	require.Error(t, err, sampleError)
 	height, err := extension.LedgerHeight(handleLedgerheight)()
 	require.Equal(t, 99, int(height))
 	require.NoError(t, err)

@@ -31,7 +31,7 @@ func TestProvider(t *testing.T) {
 		publisher.AddCCUpgradeHandler(nil)
 		publisher.AddCCEventHandler(nil)
 		publisher.AddLSCCWriteHandler(nil)
-		publisher.Publish(nil)
+		publisher.Publish(nil, nil)
 	})
 
 	p.Close()

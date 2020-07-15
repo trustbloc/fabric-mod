@@ -8,6 +8,8 @@ package mocks
 
 import (
 	cb "github.com/hyperledger/fabric-protos-go/common"
+
+	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/extensions/gossip/api"
 )
 
@@ -50,7 +52,7 @@ func (m *BlockPublisher) AddCCEventHandler(handler api.ChaincodeEventHandler) {
 }
 
 // Publish traverses the block and invokes all applicable handlers
-func (m *BlockPublisher) Publish(block *cb.Block) {
+func (m *BlockPublisher) Publish(block *cb.Block, pvtData ledger.TxPvtDataMap) {
 	// Not implemented
 }
 

@@ -661,7 +661,7 @@ func TestCoordinatorStoreInvalidBlock(t *testing.T) {
 		Validator:          &validatorMock{},
 		CapabilityProvider: capabilityProvider,
 	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Block.Metadata is nil or Block.Metadata lacks a Tx filter bitmap")
 
@@ -676,7 +676,7 @@ func TestCoordinatorStoreInvalidBlock(t *testing.T) {
 		Validator:          &validatorMock{fmt.Errorf("failed validating block")},
 		CapabilityProvider: capabilityProvider,
 	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed validating block")
 
@@ -691,7 +691,7 @@ func TestCoordinatorStoreInvalidBlock(t *testing.T) {
 		Validator:          &validatorMock{},
 		CapabilityProvider: capabilityProvider,
 	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "block data size")
 	assert.Contains(t, err.Error(), "is different from Tx filter size")
@@ -746,7 +746,7 @@ func TestCoordinatorStoreInvalidBlock(t *testing.T) {
 		Validator:          &validatorMock{},
 		CapabilityProvider: capabilityProvider,
 	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 	assertCommitHappened()
 	// Ensure the 2nd transaction which is invalid and wasn't committed - is still purged.
@@ -808,7 +808,7 @@ func TestCoordinatorStoreInvalidBlock(t *testing.T) {
 		Validator:          &validatorMock{},
 		CapabilityProvider: capabilityProvider,
 	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 	assertCommitHappened()
 	assertPurged("tx1", "tx2")
@@ -876,20 +876,20 @@ func TestCoordinatorStoreInvalidBlock(t *testing.T) {
 		Validator:          &validatorMock{},
 		CapabilityProvider: capabilityProvider,
 	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 	assertCommitHappened()
 	assertPurged("tx1", "tx2")
 
 	// Scenario VII: Block doesn't contain a header
 	block.Header = nil
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Block header is nil")
 
 	// Scenario VIII: Block doesn't contain Data
 	block.Data = nil
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Block data is empty")
 }
@@ -1119,7 +1119,7 @@ func TestCoordinatorStoreBlock(t *testing.T) {
 		Validator:          &validatorMock{},
 		CapabilityProvider: capabilityProvider,
 	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 	assertCommitHappened()
 	assertPurgeTxs := func() bool {
@@ -1147,7 +1147,7 @@ func TestCoordinatorStoreBlock(t *testing.T) {
 		CollectionConfigs: make(map[string]*peer.CollectionConfigPackage),
 	})
 	pvtData = pdFactory.addRWSet().addNSRWSet("ns1", "c1").addRWSet().addNSRWSet("ns2", "c1").create()
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 	assertCommitHappened()
 	assertPurgeTxs = func() bool {
@@ -1192,7 +1192,7 @@ func TestCoordinatorStoreBlock(t *testing.T) {
 		},
 	}, nil)
 	pvtData = pdFactory.addRWSet().addNSRWSet("ns1", "c1").create()
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 	assertCommitHappened()
 	assertPurgeTxs = func() bool {
@@ -1204,7 +1204,7 @@ func TestCoordinatorStoreBlock(t *testing.T) {
 	// Scenario IV: Block came with more than sufficient private data alongside it, some of it is redundant.
 	pvtData = pdFactory.addRWSet().addNSRWSet("ns1", "c1", "c2", "c3").
 		addRWSet().addNSRWSet("ns2", "c1", "c3").addRWSet().addNSRWSet("ns1", "c4").create()
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 	assertCommitHappened()
 	assertPurgeTxs = func() bool {
@@ -1226,7 +1226,7 @@ func TestCoordinatorStoreBlock(t *testing.T) {
 		Validator:          &validatorMock{},
 		CapabilityProvider: capabilityProvider,
 	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
-	err = coordinator.StoreBlock(block, nil)
+	_, err = coordinator.StoreBlock(block, nil)
 	assert.Error(t, err)
 	assert.Equal(t, "test error", err.Error())
 
@@ -1273,7 +1273,7 @@ func TestCoordinatorStoreBlock(t *testing.T) {
 		Validator:          &validatorMock{},
 		CapabilityProvider: capabilityProvider,
 	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
-	err = coordinator.StoreBlock(block, nil)
+	_, err = coordinator.StoreBlock(block, nil)
 	assert.NoError(t, err)
 	assertCommitHappened()
 	assertPurgeTxs = func() bool {
@@ -1315,7 +1315,7 @@ func TestCoordinatorStoreBlock(t *testing.T) {
 	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
 
 	pvtData = pdFactory.addRWSet().addNSRWSet("ns3", "c3").create()
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 	assertCommitHappened()
 	// In any case, all transactions in the block are purged from the transient store
@@ -1392,7 +1392,7 @@ func TestCoordinatorStoreBlockWhenPvtDataExistInLedger(t *testing.T) {
 		Validator:          &validatorMock{},
 		CapabilityProvider: capabilityProvider,
 	}, nil, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 	assertCommitHappened()
 }
@@ -1507,7 +1507,7 @@ func TestProceedWithoutPrivateData(t *testing.T) {
 		Validator:          &validatorMock{},
 		CapabilityProvider: capabilityProvider,
 	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 	assertCommitHappened()
 	assertPurged("tx1")
@@ -1581,7 +1581,7 @@ func TestProceedWithInEligiblePrivateData(t *testing.T) {
 		Validator:          &validatorMock{},
 		CapabilityProvider: capabilityProvider,
 	}, nil, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
-	err = coordinator.StoreBlock(block, nil)
+	_, err = coordinator.StoreBlock(block, nil)
 	assert.NoError(t, err)
 	assertCommitHappened()
 }
@@ -1763,7 +1763,7 @@ func TestPurgeBelowHeight(t *testing.T) {
 		return assertPurged(false)
 	}
 	require.Eventually(t, assertPurgedBlocks, 2*time.Second, 100*time.Millisecond)
-	err := coordinator.StoreBlock(block, pvtData)
+	_, err := coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 	// test first 6 blocks were purged
 	assertPurgedBlocks = func() bool {
@@ -1905,7 +1905,7 @@ func TestIgnoreReadOnlyColRWSets(t *testing.T) {
 	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
 	// We pass a nil private data slice to indicate no pre-images though the block contains
 	// private data reads.
-	err = coordinator.StoreBlock(block, nil)
+	_, err = coordinator.StoreBlock(block, nil)
 	assert.NoError(t, err)
 	assertCommitHappened()
 }
@@ -1987,7 +1987,7 @@ func TestCoordinatorMetrics(t *testing.T) {
 		Validator:          &validatorMock{},
 		CapabilityProvider: capabilityProvider,
 	}, store.store, peerSelfSignedData, metrics, testConfig, idDeserializerFactory)
-	err = coordinator.StoreBlock(block, pvtData)
+	_, err = coordinator.StoreBlock(block, pvtData)
 	assert.NoError(t, err)
 
 	// make sure all coordinator metrics were reported

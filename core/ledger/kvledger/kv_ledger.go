@@ -518,7 +518,7 @@ func (l *kvLedger) CommitLegacy(pvtdataAndBlock *ledger.BlockAndPvtData, commitO
 		}
 	}
 
-	blockpublisher.ForChannel(l.ledgerID).Publish(block)
+	blockpublisher.ForChannel(l.ledgerID).Publish(block, pvtdataAndBlock.PvtData)
 
 	logger.Infof("[%s] Committed block [%d] with %d transaction(s) in %dms (state_validation=%dms block_and_pvtdata_commit=%dms state_commit=%dms)"+
 		" commitHash=[%x]",

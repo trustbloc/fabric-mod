@@ -53,7 +53,7 @@ type Committer interface {
 type Coordinator interface {
 	// StoreBlock deliver new block with underlined private data
 	// returns missing transaction ids
-	StoreBlock(block *common.Block, data util.PvtDataCollections) error
+	StoreBlock(block *common.Block, data util.PvtDataCollections) (*ledger.BlockAndPvtData, error)
 
 	// StorePvtData used to persist private data into transient store
 	StorePvtData(txid string, privData *protostransientstore.TxPvtReadWriteSetWithConfigInfo, blckHeight uint64) error
@@ -160,12 +160,12 @@ func NewCoordinator(mspID string, support Support, store storageapi.TransientSto
 }
 
 // StoreBlock stores block with private data into the ledger
-func (c *coordinator) StoreBlock(block *common.Block, privateDataSets util.PvtDataCollections) error {
+func (c *coordinator) StoreBlock(block *common.Block, privateDataSets util.PvtDataCollections) (*ledger.BlockAndPvtData, error) {
 	if block.Data == nil {
-		return errors.New("Block data is empty")
+		return nil, errors.New("Block data is empty")
 	}
 	if block.Header == nil {
-		return errors.New("Block header is nil")
+		return nil, errors.New("Block header is nil")
 	}
 
 	logger.Infof("[%s] Received block [%d] from buffer", c.ChainID, block.Header.Number)
@@ -177,7 +177,7 @@ func (c *coordinator) StoreBlock(block *common.Block, privateDataSets util.PvtDa
 	c.reportValidationDuration(time.Since(validationStart))
 	if err != nil {
 		logger.Errorf("Validation failed: %+v", err)
-		return err
+		return nil, err
 	}
 
 	blockAndPvtData := &ledger.BlockAndPvtData{
@@ -188,11 +188,11 @@ func (c *coordinator) StoreBlock(block *common.Block, privateDataSets util.PvtDa
 
 	exist, err := c.DoesPvtDataInfoExistInLedger(block.Header.Number)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if exist {
 		commitOpts := &ledger.CommitOptions{FetchPvtDataFromLedger: true}
-		return c.CommitLegacy(blockAndPvtData, commitOpts)
+		return nil, c.CommitLegacy(blockAndPvtData, commitOpts)
 	}
 
 	listMissingPrivateDataDurationHistogram := c.metrics.ListMissingPrivateDataDuration.With("channel", c.ChainID)
@@ -219,7 +219,7 @@ func (c *coordinator) StoreBlock(block *common.Block, privateDataSets util.PvtDa
 	pvtdataToRetrieve, err := c.getTxPvtdataInfoFromBlock(block)
 	if err != nil {
 		logger.Warningf("Failed to get private data info from block: %s", err)
-		return err
+		return nil, err
 	}
 
 	// Retrieve the private data.
@@ -227,7 +227,7 @@ func (c *coordinator) StoreBlock(block *common.Block, privateDataSets util.PvtDa
 	retrievedPvtdata, err := pdp.RetrievePvtdata(pvtdataToRetrieve)
 	if err != nil {
 		logger.Warningf("Failed to retrieve pvtdata: %s", err)
-		return err
+		return nil, err
 	}
 
 	blockAndPvtData.PvtData = retrievedPvtdata.blockPvtdata.PvtData
@@ -238,13 +238,13 @@ func (c *coordinator) StoreBlock(block *common.Block, privateDataSets util.PvtDa
 	err = c.CommitLegacy(blockAndPvtData, &ledger.CommitOptions{})
 	c.reportCommitDuration(time.Since(commitStart))
 	if err != nil {
-		return errors.Wrap(err, "commit failed")
+		return nil, errors.Wrap(err, "commit failed")
 	}
 
 	// Purge transactions
 	go retrievedPvtdata.Purge()
 
-	return nil
+	return blockAndPvtData, nil
 }
 
 // StorePvtData used to persist private date into transient store
