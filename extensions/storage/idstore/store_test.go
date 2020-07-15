@@ -20,8 +20,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-//go:generate counterfeiter -o mock_idstore.go --fake-name MockIDStore ../api IDStore
-
 func TestOpenIDStore(t *testing.T) {
 	tempDir, err := ioutil.TempDir("", "idstore")
 	require.NoError(t, err)

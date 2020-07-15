@@ -15,6 +15,8 @@ import (
 	"github.com/hyperledger/fabric/core/transientstore"
 )
 
+//go:generate counterfeiter -o idstore/mock_idstore.go --fake-name MockIDStore . IDStore
+
 type IDStore interface {
 	SetUnderConstructionFlag(string) error
 	UnsetUnderConstructionFlag() error

@@ -24,6 +24,7 @@ require (
 	github.com/VictoriaMetrics/fastcache v1.4.6
 	github.com/VividCortex/gohistogram v1.0.0 // indirect
 	github.com/coreos/go-systemd v0.0.0-20190620071333-e64a0ec8b42a // indirect
+	github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f // indirect
 	github.com/davecgh/go-spew v1.1.1
 	github.com/docker/docker v17.12.0-ce-rc1.0.20190628135806-70f67c6240bb+incompatible // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
@@ -46,6 +47,7 @@ require (
 	github.com/hyperledger/fabric/extensions v0.0.0-00010101000000-000000000000
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/kr/pretty v0.2.0
+	github.com/magiconair/properties v1.8.1 // indirect
 	github.com/mattn/go-runewidth v0.0.4 // indirect
 	github.com/miekg/pkcs11 v1.0.3
 	github.com/mitchellh/mapstructure v1.2.2
@@ -60,7 +62,6 @@ require (
 	github.com/spf13/cobra v0.0.3
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5
-	github.com/spf13/viper v1.7.0
 	github.com/spf13/viper2015 v1.3.2
 	github.com/stretchr/testify v1.5.1
 	github.com/sykesm/zap-logfmt v0.0.2
@@ -70,7 +71,9 @@ require (
 	go.etcd.io/etcd v0.5.0-alpha.5.0.20181228115726-23731bf9ba55
 	go.uber.org/zap v1.14.1
 	golang.org/x/crypto v0.0.0-20200221231518-2aa609cf4a9d
+	golang.org/x/text v0.3.2 // indirect
 	golang.org/x/tools v0.0.0-20200131233409-575de47986ce
+	google.golang.org/genproto v0.0.0-20191108220845-16a3f7862a1a // indirect
 	google.golang.org/grpc v1.29.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/cheggaaa/pb.v1 v1.0.28
