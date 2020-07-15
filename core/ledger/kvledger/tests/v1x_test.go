@@ -280,7 +280,7 @@ func TestV13WithStateCouchdb(t *testing.T) {
 // TestInitLedgerPanicWithV11Data tests init ledger panic cases caused by ledger dbs in old formats.
 // It tests stateleveldb.
 func TestInitLedgerPanicWithV11Data(t *testing.T) {
-	t.Skip("This test assumes LevelDB implementation of storage. It should be modified to also support CouchDB.")
+	xtestutil.Skip(t, "This test assumes LevelDB implementation of storage")
 
 	env := newEnv(t)
 	defer env.cleanup()
@@ -293,7 +293,7 @@ func TestInitLedgerPanicWithV11Data(t *testing.T) {
 // TestInitLedgerPanicWithV13Data tests init ledger panic cases caused by ledger dbs in old formats.
 // It tests statecouchdb.
 func TestInitLedgerPanicWithV13Data(t *testing.T) {
-	t.Skip("This test assumes LevelDB implementation of storage. It should be modified to also support CouchDB.")
+	xtestutil.Skip(t, "This test assumes LevelDB implementation of storage")
 
 	env := newEnv(t)
 	defer env.cleanup()
@@ -317,7 +317,7 @@ func testInitLedgerPanic(t *testing.T, env *env, ledgerFSRoot string, couchdbCon
 	idStorePath := kvledger.LedgerProviderPath(ledgerFSRoot)
 	require.PanicsWithValue(
 		t,
-		fmt.Sprintf("Error in instantiating ledger provider: unexpected format. db info = [leveldb at [%s]], data format = [], expected format = [2.0]",
+		fmt.Sprintf("Error in instantiating ledger provider: unexpected format. db info = [leveldb for channel-IDs at [%s]], data format = [], expected format = [2.0]",
 			idStorePath),
 		func() { env.initLedgerMgmt() },
 		"A panic should occur because idstore is in format 1.x",
@@ -370,7 +370,6 @@ func testInitLedgerPanic(t *testing.T, env *env, ledgerFSRoot string, couchdbCon
 		require.NoError(t, statecouchdb.DropApplicationDBs(couchdbConfig))
 	}
 }
-
 func startCouchDBWithV13Data(t *testing.T, ledgerFSRoot string) (*ledger.CouchDBConfig, func()) {
 	// unzip couchdb data to prepare the mount dir
 	couchdbDataUnzipDir := filepath.Join(ledgerFSRoot, "couchdbData")

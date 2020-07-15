@@ -117,6 +117,9 @@ func NewProvider(initializer *ledger.Initializer) (pr *Provider, e error) {
 
 	p.fileLock = fileLock
 
+	if err := p.initLedgerIDInventory(); err != nil {
+		return nil, err
+	}
 	if err := p.initBlockStoreProvider(); err != nil {
 		return nil, err
 	}
@@ -135,10 +138,6 @@ func NewProvider(initializer *ledger.Initializer) (pr *Provider, e error) {
 	// State store must be initialized before ID store until
 	// ID store in fabric-peer-ext supports format versioning
 	if err := p.initStateDBProvider(); err != nil {
-		return nil, err
-	}
-
-	if err := p.initLedgerIDInventory(); err != nil {
 		return nil, err
 	}
 
