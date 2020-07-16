@@ -117,9 +117,6 @@ func NewProvider(initializer *ledger.Initializer) (pr *Provider, e error) {
 
 	p.fileLock = fileLock
 
-	if err := p.initLedgerIDInventory(); err != nil {
-		return nil, err
-	}
 	if err := p.initBlockStoreProvider(); err != nil {
 		return nil, err
 	}
@@ -135,9 +132,13 @@ func NewProvider(initializer *ledger.Initializer) (pr *Provider, e error) {
 	p.initCollElgNotifier()
 	p.initStateListeners()
 
-	// State store must be initialized before ID store until
-	// ID store in fabric-peer-ext supports format versioning
+	// State store must be initialized before ID store since there's a check for empty
+	// DB and the DB won't be empty if ID store is initialized first (since ID store is
+	// in CouchDB for fabric-peer-ext).
 	if err := p.initStateDBProvider(); err != nil {
+		return nil, err
+	}
+	if err := p.initLedgerIDInventory(); err != nil {
 		return nil, err
 	}
 
