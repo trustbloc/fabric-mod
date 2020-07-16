@@ -19,6 +19,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/internal/version"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
+	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
 	"github.com/hyperledger/fabric/extensions/roles"
 	xstorageapi "github.com/hyperledger/fabric/extensions/storage/api"
 	xcouchdb "github.com/hyperledger/fabric/extensions/storage/couchdb"
@@ -221,6 +222,12 @@ func newVersionedDB(couchInstance *CouchInstance, redoLogger *redoLogger, dbName
 	isNewDB := savepoint == nil
 	if err = vdb.initChannelMetadata(isNewDB, nsProvider); err != nil {
 		return nil, err
+	}
+
+	if !roles.IsCommitter() {
+		logger.Debugf("[%s] Registering for KV write events", chainName)
+
+		blockpublisher.ForChannel(chainName).AddWriteHandler(vdb.deleteCacheEntry)
 	}
 
 	// in normal circumstances, redolog is expected to be either equal to the last block

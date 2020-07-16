@@ -280,7 +280,7 @@ func TestV13WithStateCouchdb(t *testing.T) {
 // TestInitLedgerPanicWithV11Data tests init ledger panic cases caused by ledger dbs in old formats.
 // It tests stateleveldb.
 func TestInitLedgerPanicWithV11Data(t *testing.T) {
-	xtestutil.Skip(t, "This test assumes LevelDB implementation of storage")
+	t.Skip(t, "This test assumes LevelDB implementation of storage")
 
 	env := newEnv(t)
 	defer env.cleanup()
@@ -293,7 +293,7 @@ func TestInitLedgerPanicWithV11Data(t *testing.T) {
 // TestInitLedgerPanicWithV13Data tests init ledger panic cases caused by ledger dbs in old formats.
 // It tests statecouchdb.
 func TestInitLedgerPanicWithV13Data(t *testing.T) {
-	xtestutil.Skip(t, "This test assumes LevelDB implementation of storage")
+	t.Skip(t, "This test assumes LevelDB implementation of storage")
 
 	env := newEnv(t)
 	defer env.cleanup()
