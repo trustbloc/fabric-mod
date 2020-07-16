@@ -10,12 +10,13 @@ import (
 	"testing"
 
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/ledger/kvledger"
+	"github.com/hyperledger/fabric/extensions/ledger/kvledger"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestGetMissingPvtDataAfterRollback(t *testing.T) {
-	t.Skip("Re-enable after the couch DB block store supports rollback")
+	xtestutil.Skip(t, "This test is only valid for LevelDB ID store")
 	env := newEnv(t)
 	defer env.cleanup()
 	env.initLedgerMgmt()
