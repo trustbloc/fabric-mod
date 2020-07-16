@@ -8,10 +8,11 @@ package ledger
 
 import (
 	"errors"
+	"testing"
+
 	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 const errMsg = "not implemented"
