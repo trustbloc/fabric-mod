@@ -23,6 +23,9 @@ type WriteHandler func(txMetadata TxMetadata, namespace string, kvWrite *kvrwset
 // ReadHandler handles a KV read
 type ReadHandler func(txMetadata TxMetadata, namespace string, kvRead *kvrwset.KVRead) error
 
+// CollHashWriteHandler handles a KV collection hash write
+type CollHashWriteHandler func(txMetadata TxMetadata, namespace, collection string, kvWrite *kvrwset.KVWriteHash) error
+
 // ChaincodeEventHandler handles a chaincode event
 type ChaincodeEventHandler func(txMetadata TxMetadata, event *pb.ChaincodeEvent) error
 
@@ -42,6 +45,8 @@ type BlockPublisher interface {
 	AddWriteHandler(handler WriteHandler)
 	// AddReadHandler adds a handler for KV reads
 	AddReadHandler(handler ReadHandler)
+	// AddCollHashWriteHandler adds a new handler for KV collection hash writes
+	AddCollHashWriteHandler(handler CollHashWriteHandler)
 	// AddLSCCWriteHandler adds a handler for LSCC writes (for chaincode instantiate/upgrade)
 	AddLSCCWriteHandler(handler LSCCWriteHandler)
 	// AddCCEventHandler adds a handler for chaincode events

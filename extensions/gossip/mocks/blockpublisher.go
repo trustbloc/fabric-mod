@@ -42,6 +42,11 @@ func (m *BlockPublisher) AddReadHandler(handler api.ReadHandler) {
 	// Not implemented
 }
 
+// AddCollHashWriteHandler adds a new handler for KV collection hash writes
+func (p *BlockPublisher) AddCollHashWriteHandler(handler api.CollHashWriteHandler) {
+	// Not implemented
+}
+
 func (p *BlockPublisher) AddLSCCWriteHandler(handler api.LSCCWriteHandler) {
 	// Not implemented
 }

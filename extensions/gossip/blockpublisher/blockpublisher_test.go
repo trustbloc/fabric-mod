@@ -28,6 +28,7 @@ func TestProvider(t *testing.T) {
 		publisher.AddConfigUpdateHandler(nil)
 		publisher.AddWriteHandler(nil)
 		publisher.AddReadHandler(nil)
+		publisher.AddCollHashWriteHandler(nil)
 		publisher.AddCCUpgradeHandler(nil)
 		publisher.AddCCEventHandler(nil)
 		publisher.AddLSCCWriteHandler(nil)
