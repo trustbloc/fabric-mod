@@ -54,6 +54,10 @@ func (p *publisher) AddReadHandler(handler api.ReadHandler) {
 	// Not implemented
 }
 
+func (p *publisher) AddCollHashWriteHandler(handler api.CollHashWriteHandler) {
+	// Not implemented
+}
+
 func (p *publisher) AddLSCCWriteHandler(handler api.LSCCWriteHandler) {
 	// Not implemented
 }

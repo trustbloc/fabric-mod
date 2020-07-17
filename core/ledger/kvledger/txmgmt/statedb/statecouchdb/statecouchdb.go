@@ -227,7 +227,9 @@ func newVersionedDB(couchInstance *CouchInstance, redoLogger *redoLogger, dbName
 	if !roles.IsCommitter() {
 		logger.Debugf("[%s] Registering for KV write events", chainName)
 
-		blockpublisher.ForChannel(chainName).AddWriteHandler(vdb.deleteCacheEntry)
+		bp := blockpublisher.ForChannel(chainName)
+		bp.AddWriteHandler(vdb.deleteCacheEntry)
+		bp.AddCollHashWriteHandler(vdb.deleteCollHashCacheEntry)
 	}
 
 	// in normal circumstances, redolog is expected to be either equal to the last block
