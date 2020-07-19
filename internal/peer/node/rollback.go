@@ -37,6 +37,6 @@ var nodeRollbackCmd = &cobra.Command{
 		}
 
 		config := ledgerConfig()
-		return kvledger.RollbackKVLedger(config.RootFSPath, channelID, blockNumber)
+		return kvledger.RollbackKVLedger(config, channelID, blockNumber)
 	},
 }

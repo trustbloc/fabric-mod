@@ -69,7 +69,7 @@ func TestGetMissingPvtDataAfterRollback(t *testing.T) {
 	// rollback ledger to block 2
 	h.verifyLedgerHeight(5)
 	env.closeLedgerMgmt()
-	err := kvledger.RollbackKVLedger(env.initializer.Config.RootFSPath, "ledger1", 2)
+	err := kvledger.RollbackKVLedger(env.initializer.Config, "ledger1", 2)
 	assert.NoError(t, err)
 	env.initLedgerMgmt()
 
