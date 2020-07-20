@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
-
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,7 +23,9 @@ func TestRollbackCmd(t *testing.T) {
 	})
 
 	t.Run("when the specified channelID does not exist", func(t *testing.T) {
-		xtestutil.Skip(t, "This test is only valid for LevelDB ID store")
+		addr, cleanup, destroy := xtestutil.SetupExtTestEnv()
+		defer destroy()
+		defer cleanup(addr)
 		cmd := rollbackCmd()
 		args := []string{"-c", "ch1", "-b", "10"}
 		cmd.SetArgs(args)
