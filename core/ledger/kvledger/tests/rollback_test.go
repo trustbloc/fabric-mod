@@ -12,7 +12,6 @@ import (
 
 	"github.com/hyperledger/fabric/core/ledger"
 	extkvledger "github.com/hyperledger/fabric/extensions/ledger/kvledger"
-	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -66,8 +65,6 @@ func TestRollbackKVLedger(t *testing.T) {
 }
 
 func TestRollbackKVLedgerWithBTL(t *testing.T) {
-	xtestutil.Skip(t, "This test is only valid for LevelDB ID store")
-
 	env := newEnv(t)
 	defer env.cleanup()
 	env.initLedgerMgmt()
