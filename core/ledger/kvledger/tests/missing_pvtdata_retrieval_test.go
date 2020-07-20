@@ -11,12 +11,10 @@ import (
 
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/extensions/ledger/kvledger"
-	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestGetMissingPvtDataAfterRollback(t *testing.T) {
-	xtestutil.Skip(t, "This test is only valid for LevelDB ID store")
 	env := newEnv(t)
 	defer env.cleanup()
 	env.initLedgerMgmt()
