@@ -14,6 +14,7 @@ import (
 	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger"
+	extkvledger "github.com/hyperledger/fabric/extensions/ledger/kvledger"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -54,7 +55,7 @@ func TestResetAllLedgers(t *testing.T) {
 	rebuildable := rebuildableStatedb | rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB | rebuildableBlockIndex
 	env.verifyRebuilableDoesNotExist(rebuildable)
 	env.initLedgerMgmt()
-	preResetHt, err := kvledger.LoadPreResetHeight(rootFSPath, ledgerIDs)
+	preResetHt, err := extkvledger.LoadPreResetHeight(env.initializer.Config, ledgerIDs)
 	require.NoError(t, err)
 	t.Logf("preResetHt = %#v", preResetHt)
 	// open all the ledgers again and verify that
@@ -80,7 +81,7 @@ func TestResetAllLedgers(t *testing.T) {
 	}
 
 	require.NoError(t, kvledger.ClearPreResetHeight(env.initializer.Config.RootFSPath, ledgerIDs))
-	preResetHt, err = kvledger.LoadPreResetHeight(env.initializer.Config.RootFSPath, ledgerIDs)
+	preResetHt, err = extkvledger.LoadPreResetHeight(env.initializer.Config, ledgerIDs)
 	require.NoError(t, err)
 	require.Len(t, preResetHt, 0)
 
@@ -91,7 +92,7 @@ func TestResetAllLedgers(t *testing.T) {
 	env.initLedgerMgmt()
 	// verify LoadPreResetHeight with different ledgerIDs
 	newLedgerIDs := ledgerIDs[:len(ledgerIDs)-3]
-	preResetHt, err = kvledger.LoadPreResetHeight(env.initializer.Config.RootFSPath, newLedgerIDs)
+	preResetHt, err = extkvledger.LoadPreResetHeight(env.initializer.Config, newLedgerIDs)
 	require.NoError(t, err)
 	require.Equal(t, numLedgers-3, len(preResetHt))
 	for i := 0; i < len(preResetHt); i++ {
@@ -99,7 +100,7 @@ func TestResetAllLedgers(t *testing.T) {
 	}
 	// verify preResetHt after ClearPreResetHeight
 	require.NoError(t, kvledger.ClearPreResetHeight(env.initializer.Config.RootFSPath, newLedgerIDs))
-	preResetHt, err = kvledger.LoadPreResetHeight(env.initializer.Config.RootFSPath, ledgerIDs)
+	preResetHt, err = extkvledger.LoadPreResetHeight(env.initializer.Config, ledgerIDs)
 	require.NoError(t, err)
 	require.Len(t, preResetHt, 3)
 	require.Contains(t, preResetHt, fmt.Sprintf("ledger-%d", 7))
@@ -164,7 +165,7 @@ func TestResetAllLedgersWithBTL(t *testing.T) {
 	env.initLedgerMgmt()
 
 	// ensure that the reset is executed correctly
-	preResetHt, err := kvledger.LoadPreResetHeight(env.initializer.Config.RootFSPath, []string{"ledger1"})
+	preResetHt, err := extkvledger.LoadPreResetHeight(env.initializer.Config, []string{"ledger1"})
 	require.NoError(t, err)
 	t.Logf("preResetHt = %#v", preResetHt)
 	require.Equal(t, uint64(5), preResetHt["ledger1"])
@@ -213,7 +214,7 @@ func TestResetLedgerWithoutDroppingDBs(t *testing.T) {
 	rebuildable = rebuildableBlockIndex
 	env.verifyRebuilableDoesNotExist(rebuildable)
 	env.initLedgerMgmt()
-	preResetHt, err := kvledger.LoadPreResetHeight(env.initializer.Config.RootFSPath, []string{"ledger-1"})
+	preResetHt, err := extkvledger.LoadPreResetHeight(env.initializer.Config, []string{"ledger-1"})
 	t.Logf("preResetHt = %#v", preResetHt)
 	require.NoError(t, err)
 	require.Equal(t, uint64(9), preResetHt["ledger-1"])

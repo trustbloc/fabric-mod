@@ -11,6 +11,6 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger"
 )
 
-func RollbackKVLedger(ledgerconfig *ledger.Config, ledgerID string, blockNum uint64) error {
-	return kvledger.RollbackKVLedger(ledgerconfig.RootFSPath, ledgerID, blockNum)
+func LoadPreResetHeight(ledgerconfig *ledger.Config, ledgerIDs []string) (map[string]uint64, error) {
+	return kvledger.LoadPreResetHeight(ledgerconfig.RootFSPath, ledgerIDs)
 }

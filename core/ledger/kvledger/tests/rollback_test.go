@@ -11,15 +11,12 @@ import (
 	"testing"
 
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/ledger/kvledger"
 	extkvledger "github.com/hyperledger/fabric/extensions/ledger/kvledger"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestRollbackKVLedger(t *testing.T) {
-	xtestutil.Skip(t, "This test is only valid for LevelDB ID store")
-
 	env := newEnv(t)
 	defer env.cleanup()
 	env.initLedgerMgmt()
@@ -35,21 +32,21 @@ func TestRollbackKVLedger(t *testing.T) {
 	env.closeLedgerMgmt()
 
 	// Rollback the testLedger (invalid rollback params)
-	err = extkvledger.RollbackKVLedger(env.initializer.Config.RootFSPath, "noLedger", 0)
+	err = extkvledger.RollbackKVLedger(env.initializer.Config, "noLedger", 0)
 	assert.Equal(t, "ledgerID [noLedger] does not exist", err.Error())
-	err = extkvledger.RollbackKVLedger(env.initializer.Config.RootFSPath, "testLedger", bcInfo.Height)
+	err = extkvledger.RollbackKVLedger(env.initializer.Config, "testLedger", bcInfo.Height)
 	expectedErr := fmt.Sprintf("target block number [%d] should be less than the biggest block number [%d]",
 		bcInfo.Height, bcInfo.Height-1)
 	assert.Equal(t, expectedErr, err.Error())
 
 	// Rollback the testLedger (valid rollback params)
 	targetBlockNum := bcInfo.Height - 3
-	err = extkvledger.RollbackKVLedger(env.initializer.Config.RootFSPath, "testLedger", targetBlockNum)
+	err = extkvledger.RollbackKVLedger(env.initializer.Config, "testLedger", targetBlockNum)
 	assert.NoError(t, err)
 	rebuildable := rebuildableStatedb + rebuildableBookkeeper + rebuildableConfigHistory + rebuildableHistoryDB
 	env.verifyRebuilableDoesNotExist(rebuildable)
 	env.initLedgerMgmt()
-	preResetHt, err := kvledger.LoadPreResetHeight(env.initializer.Config.RootFSPath, []string{"testLedger"})
+	preResetHt, err := extkvledger.LoadPreResetHeight(env.initializer.Config, []string{"testLedger"})
 	assert.NoError(t, err)
 	assert.Equal(t, bcInfo.Height, preResetHt["testLedger"])
 	t.Logf("preResetHt = %#v", preResetHt)
@@ -119,7 +116,7 @@ func TestRollbackKVLedgerWithBTL(t *testing.T) {
 	env.closeLedgerMgmt()
 
 	// rebuild statedb and bookkeeper
-	err := extkvledger.RollbackKVLedger(env.initializer.Config.RootFSPath, "ledger1", 4)
+	err := extkvledger.RollbackKVLedger(env.initializer.Config, "ledger1", 4)
 	assert.NoError(t, err)
 	rebuildable := rebuildableStatedb | rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB
 	env.verifyRebuilableDoesNotExist(rebuildable)
