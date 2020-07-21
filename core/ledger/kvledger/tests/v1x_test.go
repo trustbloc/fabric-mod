@@ -21,6 +21,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/kvledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb/statecouchdb"
 	"github.com/hyperledger/fabric/core/ledger/mock"
+	extkvledger "github.com/hyperledger/fabric/extensions/ledger/kvledger"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/require"
@@ -56,7 +57,7 @@ func TestV11(t *testing.T) {
 
 	// rebuild and verify again
 	env.ledgerMgr.Close()
-	require.NoError(t, kvledger.RebuildDBs(env.initializer.Config))
+	require.NoError(t, extkvledger.RebuildDBs(env.initializer.Config))
 	env.verifyRebuilableDoesNotExist(rebuildable)
 	env.initLedgerMgmt()
 
@@ -267,7 +268,7 @@ func TestV13WithStateCouchdb(t *testing.T) {
 
 	// rebuild and verify again
 	env.ledgerMgr.Close()
-	require.NoError(t, kvledger.RebuildDBs(env.initializer.Config))
+	require.NoError(t, extkvledger.RebuildDBs(env.initializer.Config))
 	require.True(t, statecouchdb.IsEmpty(t, couchdbConfig))
 	env.verifyRebuilableDoesNotExist(rebuildable)
 	env.initLedgerMgmt()
