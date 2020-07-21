@@ -12,7 +12,7 @@ import (
 
 	"github.com/hyperledger/fabric/common/ledger/testutil"
 	"github.com/hyperledger/fabric/core/chaincode/lifecycle"
-	"github.com/hyperledger/fabric/core/ledger/kvledger"
+	extkvledger "github.com/hyperledger/fabric/extensions/ledger/kvledger"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +35,7 @@ func TestV20SampleLedger(t *testing.T) {
 
 	// rebuild and verify again
 	env.closeLedgerMgmt()
-	kvledger.RebuildDBs(env.initializer.Config)
+	extkvledger.RebuildDBs(env.initializer.Config)
 	env.initLedgerMgmt()
 	h1 = env.newTestHelperOpenLgr("testchannel", t)
 	dataHelper.verify(h1)

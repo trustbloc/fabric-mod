@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package node
 
 import (
-	"github.com/hyperledger/fabric/core/ledger/kvledger"
+	extkvledger "github.com/hyperledger/fabric/extensions/ledger/kvledger"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +21,6 @@ var nodeRebuildCmd = &cobra.Command{
 	Long:  "Drops the databases for all the channels and rebuilds them upon peer restart. When the command is executed, the peer must be offline.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		config := ledgerConfig()
-		return kvledger.RebuildDBs(config)
+		return extkvledger.RebuildDBs(config)
 	},
 }
