@@ -43,7 +43,7 @@ func TestV11(t *testing.T) {
 	// pass false so that 'ledgersData' directory will not be created when unzipped to ledgerFSRoot
 	require.NoError(t, testutil.Unzip("testdata/v11/sample_ledgers/ledgersData.zip", ledgerFSRoot, false))
 
-	require.NoError(t, kvledger.UpgradeDBs(env.initializer.Config))
+	require.NoError(t, extkvledger.UpgradeDBs(env.initializer.Config))
 	rebuildable := rebuildableStatedb | rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB | rebuildableBlockIndex
 	env.verifyRebuilableDoesNotExist(rebuildable)
 
@@ -176,7 +176,7 @@ func testV11CommitHashes(t *testing.T,
 	// pass false so that 'ledgersData' directory will not be created when unzipped to ledgerFSRoot
 	require.NoError(t, testutil.Unzip(v11DataPath, ledgerFSRoot, false))
 
-	require.NoError(t, kvledger.UpgradeDBs(env.initializer.Config))
+	require.NoError(t, extkvledger.UpgradeDBs(env.initializer.Config))
 	rebuildable := rebuildableStatedb | rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB | rebuildableBlockIndex
 	env.verifyRebuilableDoesNotExist(rebuildable)
 
@@ -254,7 +254,7 @@ func TestV13WithStateCouchdb(t *testing.T) {
 	env.initializer.HealthCheckRegistry = &mock.HealthCheckRegistry{}
 	env.initializer.ChaincodeLifecycleEventProvider = &mock.ChaincodeLifecycleEventProvider{}
 
-	require.NoError(t, kvledger.UpgradeDBs(env.initializer.Config))
+	require.NoError(t, extkvledger.UpgradeDBs(env.initializer.Config))
 	require.True(t, statecouchdb.IsEmpty(t, couchdbConfig))
 	rebuildable := rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB | rebuildableBlockIndex
 	env.verifyRebuilableDoesNotExist(rebuildable)
