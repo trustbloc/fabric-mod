@@ -15,14 +15,11 @@ import (
 
 	"github.com/hyperledger/fabric/core/config"
 	"github.com/hyperledger/fabric/core/ledger/kvledger"
-	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	viper "github.com/spf13/viper2015"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestRebuildDBsCmd(t *testing.T) {
-	xtestutil.Skip(t, "This test is only valid for LevelDB ID store")
-
 	testPath := "/tmp/hyperledger/test"
 	os.RemoveAll(testPath)
 	viper.Set("peer.fileSystemPath", testPath)
