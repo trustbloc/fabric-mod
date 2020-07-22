@@ -11,12 +11,16 @@ import (
 	"path/filepath"
 	"testing"
 
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
+
 	configtxtest "github.com/hyperledger/fabric/common/configtx/test"
 	"github.com/hyperledger/fabric/core/ledger/mock"
 	"github.com/stretchr/testify/require"
 )
 
 func TestRebuildDBs(t *testing.T) {
+	xtestutil.Skip(t, "This test is only valid for LevelDB ID store, Corresponding CouchDB unit test is exist")
+
 	conf, cleanup := testConfig(t)
 	defer cleanup()
 	provider := testutilNewProvider(conf, t, &mock.DeployedChaincodeInfoProvider{})
