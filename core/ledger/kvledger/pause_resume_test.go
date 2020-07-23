@@ -13,10 +13,13 @@ import (
 	"github.com/hyperledger/fabric-protos-go/common"
 	configtxtest "github.com/hyperledger/fabric/common/configtx/test"
 	"github.com/hyperledger/fabric/core/ledger/mock"
+	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/require"
 )
 
 func TestPauseAndResume(t *testing.T) {
+	xtestutil.Skip(t, "This test is only valid for LevelDB ID store, Corresponding CouchDB unit test is exist")
+
 	conf, cleanup := testConfig(t)
 	conf.HistoryDBConfig.Enabled = false
 	defer cleanup()
@@ -72,6 +75,8 @@ func TestPauseAndResume(t *testing.T) {
 }
 
 func TestPauseAndResumeErrors(t *testing.T) {
+	xtestutil.Skip(t, "This test is only valid for LevelDB ID store, Corresponding CouchDB unit test is exist")
+
 	conf, cleanup := testConfig(t)
 	conf.HistoryDBConfig.Enabled = false
 	defer cleanup()
