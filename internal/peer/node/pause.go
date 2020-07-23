@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package node
 
 import (
-	"github.com/hyperledger/fabric/core/ledger/kvledger"
+	extkvledger "github.com/hyperledger/fabric/extensions/ledger/kvledger"
 	"github.com/hyperledger/fabric/internal/peer/common"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -30,6 +30,6 @@ var pauseChannelCmd = &cobra.Command{
 			return errors.New("Must supply channel ID")
 		}
 
-		return kvledger.PauseChannel(ledgerConfig(), channelID)
+		return extkvledger.PauseChannel(ledgerConfig(), channelID)
 	},
 }

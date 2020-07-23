@@ -81,9 +81,8 @@ func TestPauseAndResumeErrors(t *testing.T) {
 	genesisBlock, _ := configtxtest.MakeGenesisBlock(ledgerID)
 	provider.Create(genesisBlock)
 
-	// This code is LevelDB-specific
-	//// purposely set an invalid metatdata
-	//provider.idStore.Put(provider.idStore.encodeLedgerKey(ledgerID, metadataKeyPrefix), []byte("invalid"))
+	// purposely set an invalid metatdata
+	provider.idStore.(*idStore).db.Put(provider.idStore.(*idStore).encodeLedgerKey(ledgerID, metadataKeyPrefix), []byte("invalid"), true)
 
 	// fail if provider is open (e.g., peer is up running)
 	err := PauseChannel(conf, constructTestLedgerID(0))
@@ -101,13 +100,12 @@ func TestPauseAndResumeErrors(t *testing.T) {
 	err = ResumeChannel(conf, "dummy")
 	require.Error(t, err, "LedgerID does not exist")
 
-	// This code is LevelDB-specific
-	//// error if metadata cannot be unmarshaled
-	//err = PauseChannel(conf, ledgerID)
-	//require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
-	//
-	//err = ResumeChannel(conf, ledgerID)
-	//require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
+	// error if metadata cannot be unmarshaled
+	err = PauseChannel(conf, ledgerID)
+	require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
+
+	err = ResumeChannel(conf, ledgerID)
+	require.EqualError(t, err, "error unmarshalling ledger metadata: unexpected EOF")
 }
 
 // verify status for paused ledgers and non-paused ledgers
