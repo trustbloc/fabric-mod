@@ -26,8 +26,6 @@ func TestResumeCmd(t *testing.T) {
 	viper.Set("ledger.state.couchDBConfig.maxRetriesOnStartup", 3)
 
 	t.Run("when the channelID is not supplied", func(t *testing.T) {
-		t.Skip("This test doesn't work with fabric-peer-ext. Must fix and re-enable.")
-
 		cmd := resumeCmd()
 		args := []string{}
 		cmd.SetArgs(args)
@@ -36,8 +34,6 @@ func TestResumeCmd(t *testing.T) {
 	})
 
 	t.Run("when the specified channelID does not exist", func(t *testing.T) {
-		t.Skip("This test doesn't work with fabric-peer-ext. Must fix and re-enable.")
-
 		testPath := "/tmp/hyperledger/test"
 		os.RemoveAll(testPath)
 		viper.Set("peer.fileSystemPath", testPath)
