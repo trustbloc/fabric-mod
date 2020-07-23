@@ -49,8 +49,7 @@ func TestResetAllLedgers(t *testing.T) {
 	env.closeLedgerMgmt()
 
 	// Reset All kv ledgers
-	rootFSPath := env.initializer.Config.RootFSPath
-	err := kvledger.ResetAllKVLedgers(rootFSPath)
+	err := extkvledger.ResetAllKVLedgers(env.initializer.Config)
 	require.NoError(t, err)
 	rebuildable := rebuildableStatedb | rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB | rebuildableBlockIndex
 	env.verifyRebuilableDoesNotExist(rebuildable)
@@ -80,14 +79,14 @@ func TestResetAllLedgers(t *testing.T) {
 		dataHelper.verifyLedgerContent(h)
 	}
 
-	require.NoError(t, kvledger.ClearPreResetHeight(env.initializer.Config.RootFSPath, ledgerIDs))
+	require.NoError(t, extkvledger.ClearPreResetHeight(env.initializer.Config, ledgerIDs))
 	preResetHt, err = extkvledger.LoadPreResetHeight(env.initializer.Config, ledgerIDs)
 	require.NoError(t, err)
 	require.Len(t, preResetHt, 0)
 
 	// reset again to test ClearPreResetHeight with different ledgerIDs
 	env.closeLedgerMgmt()
-	err = kvledger.ResetAllKVLedgers(rootFSPath)
+	err = extkvledger.ResetAllKVLedgers(env.initializer.Config)
 	require.NoError(t, err)
 	env.initLedgerMgmt()
 	// verify LoadPreResetHeight with different ledgerIDs
@@ -99,7 +98,7 @@ func TestResetAllLedgers(t *testing.T) {
 		require.Contains(t, preResetHt, fmt.Sprintf("ledger-%d", i))
 	}
 	// verify preResetHt after ClearPreResetHeight
-	require.NoError(t, kvledger.ClearPreResetHeight(env.initializer.Config.RootFSPath, newLedgerIDs))
+	require.NoError(t, extkvledger.ClearPreResetHeight(env.initializer.Config, newLedgerIDs))
 	preResetHt, err = extkvledger.LoadPreResetHeight(env.initializer.Config, ledgerIDs)
 	require.NoError(t, err)
 	require.Len(t, preResetHt, 3)
@@ -158,7 +157,7 @@ func TestResetAllLedgersWithBTL(t *testing.T) {
 	env.closeLedgerMgmt()
 
 	// reset ledgers to genesis block
-	err := kvledger.ResetAllKVLedgers(env.initializer.Config.RootFSPath)
+	err := extkvledger.ResetAllKVLedgers(env.initializer.Config)
 	require.NoError(t, err)
 	rebuildable := rebuildableStatedb | rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB | rebuildableBlockIndex
 	env.verifyRebuilableDoesNotExist(rebuildable)
