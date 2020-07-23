@@ -14,3 +14,11 @@ import (
 func LoadPreResetHeight(ledgerconfig *ledger.Config, ledgerIDs []string) (map[string]uint64, error) {
 	return kvledger.LoadPreResetHeight(ledgerconfig.RootFSPath, ledgerIDs)
 }
+
+func ClearPreResetHeight(ledgerconfig *ledger.Config, ledgerIDs []string) error {
+	return kvledger.ClearPreResetHeight(ledgerconfig.RootFSPath, ledgerIDs)
+}
+
+func ResetAllKVLedgers(ledgerconfig *ledger.Config) error {
+	return kvledger.ResetAllKVLedgers(ledgerconfig.RootFSPath)
+}

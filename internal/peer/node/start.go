@@ -65,7 +65,6 @@ import (
 	validation "github.com/hyperledger/fabric/core/handlers/validation/api"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/cceventmgmt"
-	"github.com/hyperledger/fabric/core/ledger/kvledger"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
 	"github.com/hyperledger/fabric/core/operations"
 	"github.com/hyperledger/fabric/core/peer"
@@ -83,6 +82,7 @@ import (
 	extchaincode "github.com/hyperledger/fabric/extensions/chaincode"
 	collretriever "github.com/hyperledger/fabric/extensions/collections/retriever"
 	extcscc "github.com/hyperledger/fabric/extensions/cscc"
+	extkvledger "github.com/hyperledger/fabric/extensions/ledger/kvledger"
 	"github.com/hyperledger/fabric/extensions/resource"
 	transientstoreext "github.com/hyperledger/fabric/extensions/storage/transientstore"
 	gossipcommon "github.com/hyperledger/fabric/gossip/common"
@@ -902,8 +902,7 @@ func serve(args []string) error {
 	}
 
 	// check to see if the peer ledgers have been reset
-	rootFSPath := filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "ledgersData")
-	preResetHeights, err := kvledger.LoadPreResetHeight(rootFSPath, ledgerIDs)
+	preResetHeights, err := extkvledger.LoadPreResetHeight(ledgerConfig, ledgerIDs)
 	if err != nil {
 		return fmt.Errorf("error loading prereset height: %s", err)
 	}
@@ -1355,8 +1354,6 @@ func resetLoop(
 	pLedger getLedger,
 	interval time.Duration,
 ) {
-	ledgerDataPath := filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "ledgersData")
-
 	// periodically check to see if current ledger height(s) surpass prereset height(s)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -1391,7 +1388,7 @@ func resetLoop(
 		if len(preResetHeights) == 0 {
 			logger.Infof("Ledger rebuild: Complete, all ledgers surpass prereset heights. Endorsement request processing will be enabled.")
 
-			err := kvledger.ClearPreResetHeight(ledgerDataPath, ledgerIDs)
+			err := extkvledger.ClearPreResetHeight(ledgerConfig(), ledgerIDs)
 			if err != nil {
 				logger.Warningf("Ledger rebuild: could not clear off prerest files: error=%s", err)
 			}
