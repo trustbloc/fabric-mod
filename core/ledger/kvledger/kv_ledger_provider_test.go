@@ -118,7 +118,7 @@ func TestGetActiveLedgerIDsIteratorError(t *testing.T) {
 }
 
 func TestLedgerMetataDataUnmarshalError(t *testing.T) {
-	xtestutil.Skip(t, "This test is only valid for LevelDB ID store")
+	xtestutil.Skip(t, "This test is only valid for LevelDB ID store, Corresponding CouchDB unit test is exist")
 
 	conf, cleanup := testConfig(t)
 	defer cleanup()
@@ -140,7 +140,7 @@ func TestLedgerMetataDataUnmarshalError(t *testing.T) {
 }
 
 func TestNewProviderIdStoreFormatError(t *testing.T) {
-	xtestutil.Skip(t, "This test is only valid for LevelDB ID store")
+	xtestutil.Skip(t, "ID store CouchDB not supported in V1")
 
 	conf, cleanup := testConfig(t)
 	defer cleanup()
