@@ -11,9 +11,7 @@ import (
 	"testing"
 
 	"github.com/hyperledger/fabric-protos-go/common"
-	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/ledger/kvledger"
 	extkvledger "github.com/hyperledger/fabric/extensions/ledger/kvledger"
 	xtestutil "github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/require"
@@ -205,8 +203,7 @@ func TestResetLedgerWithoutDroppingDBs(t *testing.T) {
 	env.closeLedgerMgmt()
 
 	// Reset All kv ledgers
-	blockstorePath := kvledger.BlockStorePath(env.initializer.Config.RootFSPath)
-	err := blkstorage.ResetBlockStore(blockstorePath)
+	err := extkvledger.ResetBlockStore(env.initializer.Config)
 	require.NoError(t, err)
 	rebuildable := rebuildableStatedb | rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB
 	env.verifyRebuilablesExist(rebuildable)
