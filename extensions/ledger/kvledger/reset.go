@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package kvledger
 
 import (
+	"github.com/hyperledger/fabric/common/ledger/blkstorage"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/kvledger"
 )
@@ -21,4 +22,8 @@ func ClearPreResetHeight(ledgerconfig *ledger.Config, ledgerIDs []string) error 
 
 func ResetAllKVLedgers(ledgerconfig *ledger.Config) error {
 	return kvledger.ResetAllKVLedgers(ledgerconfig.RootFSPath)
+}
+
+func ResetBlockStore(ledgerconfig *ledger.Config) error {
+	return blkstorage.ResetBlockStore(kvledger.BlockStorePath(ledgerconfig.RootFSPath))
 }
