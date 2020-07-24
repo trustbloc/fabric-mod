@@ -747,6 +747,7 @@ func serve(args []string) error {
 		plugin.MapBasedMapper(validationPluginsByName),
 		aclProvider,
 		endorserSupport,
+		lifecycleValidatorCommitter,
 	)
 	if err != nil {
 		panic(err)
