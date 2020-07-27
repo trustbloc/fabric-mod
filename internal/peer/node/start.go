@@ -748,6 +748,7 @@ func serve(args []string) error {
 		aclProvider,
 		endorserSupport,
 		lifecycleValidatorCommitter,
+		lifecycleCache,
 	)
 	if err != nil {
 		panic(err)
