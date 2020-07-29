@@ -106,6 +106,7 @@ type BulkOptimizable interface {
 type IndexCapable interface {
 	GetDBType() string
 	ProcessIndexesForChaincodeDeploy(namespace string, indexFilesData map[string][]byte) error
+	ProcessIndexes(namespace string, entries []string) error
 }
 
 // FullScanIterator provides a mean to iterate over entire statedb. The intended use of this iterator
