@@ -11,6 +11,7 @@ import (
 
 	"github.com/hyperledger/fabric/core/container/externalbuilder"
 	"github.com/hyperledger/fabric/core/ledger"
+	extchaincode "github.com/hyperledger/fabric/extensions/chaincode"
 	"github.com/pkg/errors"
 )
 
@@ -44,11 +45,19 @@ func (b *EventBroker) RegisterListener(channelID string, listener ledger.Chainco
 // ProcessInstallEvent gets invoked when a chaincode is installed
 func (b *EventBroker) ProcessInstallEvent(localChaincode *LocalChaincode) {
 	logger.Debugf("ProcessInstallEvent() - localChaincode = %s", localChaincode.Info)
-	dbArtifacts, err := b.loadDBArtifacts(localChaincode.Info.PackageID)
-	if err != nil {
-		logger.Errorf("Error while loading db artifacts for chaincode package with package ID [%s]: %s",
-			localChaincode.Info.PackageID, err)
-		return
+
+	var dbArtifacts []byte
+
+	if _, ok := extchaincode.GetUCCByID(localChaincode.Info.PackageID); ok {
+		logger.Debugf("Not loading DB artifacts for in-process user chaincode [%s]", localChaincode.Info.PackageID)
+	} else {
+		var err error
+		dbArtifacts, err = b.loadDBArtifacts(localChaincode.Info.PackageID)
+		if err != nil {
+			logger.Errorf("Error while loading db artifacts for chaincode package with package ID [%s]: %s",
+				localChaincode.Info.PackageID, err)
+			return
+		}
 	}
 	for channelID, channelCache := range localChaincode.References {
 		listenersInvokedOnChannel := false
@@ -89,11 +98,19 @@ func (b *EventBroker) ProcessApproveOrDefineEvent(channelID string, chaincodeNam
 	if !isChaincodeInvokable(cachedChaincode) {
 		return
 	}
-	dbArtifacts, err := b.loadDBArtifacts(cachedChaincode.InstallInfo.PackageID)
-	if err != nil {
-		logger.Errorf("Error while loading db artifacts for chaincode package with package ID [%s]: %s",
-			cachedChaincode.InstallInfo.PackageID, err)
-		return
+
+	var dbArtifacts []byte
+
+	if _, ok := extchaincode.GetUCCByID(cachedChaincode.InstallInfo.PackageID); ok {
+		logger.Debugf("[%s] Not loading DB artifacts for in-process user chaincode [%s]", channelID, cachedChaincode.InstallInfo.PackageID)
+	} else {
+		var err error
+		dbArtifacts, err = b.loadDBArtifacts(cachedChaincode.InstallInfo.PackageID)
+		if err != nil {
+			logger.Errorf("Error while loading db artifacts for chaincode package with package ID [%s]: %s",
+				cachedChaincode.InstallInfo.PackageID, err)
+			return
+		}
 	}
 	ccdef := &ledger.ChaincodeDefinition{
 		Name:              chaincodeName,

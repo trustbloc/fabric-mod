@@ -18,6 +18,7 @@ import (
 	"github.com/hyperledger/fabric/core/chaincode/persistence"
 	"github.com/hyperledger/fabric/core/container/externalbuilder"
 	"github.com/hyperledger/fabric/core/ledger"
+	extchaincode "github.com/hyperledger/fabric/extensions/chaincode"
 	"github.com/hyperledger/fabric/protoutil"
 
 	"github.com/pkg/errors"
@@ -141,19 +142,41 @@ func NewCache(resources *Resources, myOrgMSPID string, metadataManager MetadataH
 func (c *Cache) InitializeLocalChaincodes() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	ccPackages, err := c.Resources.ChaincodeStore.ListInstalledChaincodes()
+
+	var ccPackages []chaincode.InstalledChaincode
+	var err error
+	ccPackages, err = c.Resources.ChaincodeStore.ListInstalledChaincodes()
 	if err != nil {
 		return errors.WithMessage(err, "could not list installed chaincodes")
 	}
 
+	for _, cc := range extchaincode.Chaincodes() {
+		logger.Debugf("Adding in-process chaincode [%s]", extchaincode.GetID(cc))
+
+		ccPackages = append(ccPackages, chaincode.InstalledChaincode{
+			PackageID: extchaincode.GetID(cc),
+			Label:     cc.Name(),
+		})
+	}
+
 	for _, ccPackage := range ccPackages {
-		ccPackageBytes, err := c.Resources.ChaincodeStore.Load(ccPackage.PackageID)
-		if err != nil {
-			return errors.WithMessagef(err, "could not load chaincode with package ID '%s'", ccPackage.PackageID)
-		}
-		parsedCCPackage, err := c.Resources.PackageParser.Parse(ccPackageBytes)
-		if err != nil {
-			return errors.WithMessagef(err, "could not parse chaincode with package ID '%s'", ccPackage.PackageID)
+		var parsedCCPackage *persistence.ChaincodePackage
+		if cc, ok := extchaincode.GetUCCByID(ccPackage.PackageID); ok {
+			parsedCCPackage = &persistence.ChaincodePackage{
+				Metadata: &persistence.ChaincodePackageMetadata{
+					Type:  "golang",
+					Label: cc.Name(),
+				},
+			}
+		} else {
+			ccPackageBytes, err := c.Resources.ChaincodeStore.Load(ccPackage.PackageID)
+			if err != nil {
+				return errors.WithMessagef(err, "could not load chaincode with package ID '%s'", ccPackage.PackageID)
+			}
+			parsedCCPackage, err = c.Resources.PackageParser.Parse(ccPackageBytes)
+			if err != nil {
+				return errors.WithMessagef(err, "could not parse chaincode with package ID '%s'", ccPackage.PackageID)
+			}
 		}
 		c.handleChaincodeInstalledWhileLocked(true, parsedCCPackage.Metadata, ccPackage.PackageID)
 	}

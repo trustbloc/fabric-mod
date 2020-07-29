@@ -174,13 +174,27 @@ func (e endorserChannelAdapter) Channel(channelID string) *endorser.Channel {
 	return nil
 }
 
+type inProcLauncher interface {
+	LaunchInProc(ccid string) <-chan struct{}
+	StopInProc(ccid string) error
+}
+
 type custodianLauncherAdapter struct {
-	launcher      chaincode.Launcher
-	streamHandler extcc.StreamHandler
+	launcher       chaincode.Launcher
+	streamHandler  extcc.StreamHandler
+	inProcLauncher inProcLauncher
 }
 
 func (c custodianLauncherAdapter) Launch(ccid string) error {
 	return c.launcher.Launch(ccid, c.streamHandler)
+}
+
+func (c custodianLauncherAdapter) LaunchInProc(ccid string) <-chan struct{} {
+	return c.inProcLauncher.LaunchInProc(ccid)
+}
+
+func (c custodianLauncherAdapter) StopInProc(ccid string) error {
+	return c.inProcLauncher.StopInProc(ccid)
 }
 
 func (c custodianLauncherAdapter) Stop(ccid string) error {
@@ -462,9 +476,11 @@ func serve(args []string) error {
 	lsccInstallPath := filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "chaincodes")
 	ccprovider.SetChaincodesPath(lsccInstallPath)
 
-	if err := lifecycleCache.InitializeLocalChaincodes(); err != nil {
-		return errors.WithMessage(err, "could not initialize local chaincodes")
-	}
+	// NOTE: InitializeLocalChaincodes is called after the resource.Initialize below
+	// so that in-process user chaincodes are added to the cache.
+	//if err := lifecycleCache.InitializeLocalChaincodes(); err != nil {
+	//	return errors.WithMessage(err, "could not initialize local chaincodes")
+	//}
 
 	// Parameter overrides must be processed before any parameters are
 	// cached. Failures to cache cause the server to terminate immediately.
@@ -672,8 +688,9 @@ func serve(args []string) error {
 	}
 
 	custodianLauncher := custodianLauncherAdapter{
-		launcher:      chaincodeLauncher,
-		streamHandler: chaincodeSupport,
+		launcher:       chaincodeLauncher,
+		streamHandler:  chaincodeSupport,
+		inProcLauncher: chaincodeSupport,
 	}
 	go chaincodeCustodian.Work(buildRegistry, containerRouter, custodianLauncher)
 
@@ -758,6 +775,12 @@ func serve(args []string) error {
 	logger.Debugf("Waiting for in-process chaincodes to be registered...")
 
 	extchaincode.WaitForReady()
+
+	// NOTE: InitializeLocalChaincodes must be called after in-process user chaincodes
+	// are initialized, otherwise they won't be added to the cache.
+	if err := lifecycleCache.InitializeLocalChaincodes(); err != nil {
+		return errors.WithMessage(err, "could not initialize local chaincodes")
+	}
 
 	logger.Debugf("... done registering in-process chaincodes.")
 

@@ -8,10 +8,10 @@ import (
 )
 
 type ChaincodeLauncher struct {
-	LaunchStub        func(string) error
+	LaunchStub        func(ccid string) error
 	launchMutex       sync.RWMutex
 	launchArgsForCall []struct {
-		arg1 string
+		ccid string
 	}
 	launchReturns struct {
 		result1 error
@@ -19,10 +19,10 @@ type ChaincodeLauncher struct {
 	launchReturnsOnCall map[int]struct {
 		result1 error
 	}
-	StopStub        func(string) error
+	StopStub        func(ccid string) error
 	stopMutex       sync.RWMutex
 	stopArgsForCall []struct {
-		arg1 string
+		ccid string
 	}
 	stopReturns struct {
 		result1 error
@@ -30,26 +30,47 @@ type ChaincodeLauncher struct {
 	stopReturnsOnCall map[int]struct {
 		result1 error
 	}
+	LaunchInProcStub        func(ccID string) <-chan struct{}
+	launchInProcMutex       sync.RWMutex
+	launchInProcArgsForCall []struct {
+		ccID string
+	}
+	launchInProcReturns struct {
+		result1 <-chan struct{}
+	}
+	launchInProcReturnsOnCall map[int]struct {
+		result1 <-chan struct{}
+	}
+	StopInProcStub        func(ccID string) error
+	stopInProcMutex       sync.RWMutex
+	stopInProcArgsForCall []struct {
+		ccID string
+	}
+	stopInProcReturns struct {
+		result1 error
+	}
+	stopInProcReturnsOnCall map[int]struct {
+		result1 error
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *ChaincodeLauncher) Launch(arg1 string) error {
+func (fake *ChaincodeLauncher) Launch(ccid string) error {
 	fake.launchMutex.Lock()
 	ret, specificReturn := fake.launchReturnsOnCall[len(fake.launchArgsForCall)]
 	fake.launchArgsForCall = append(fake.launchArgsForCall, struct {
-		arg1 string
-	}{arg1})
-	fake.recordInvocation("Launch", []interface{}{arg1})
+		ccid string
+	}{ccid})
+	fake.recordInvocation("Launch", []interface{}{ccid})
 	fake.launchMutex.Unlock()
 	if fake.LaunchStub != nil {
-		return fake.LaunchStub(arg1)
+		return fake.LaunchStub(ccid)
 	}
 	if specificReturn {
 		return ret.result1
 	}
-	fakeReturns := fake.launchReturns
-	return fakeReturns.result1
+	return fake.launchReturns.result1
 }
 
 func (fake *ChaincodeLauncher) LaunchCallCount() int {
@@ -58,22 +79,13 @@ func (fake *ChaincodeLauncher) LaunchCallCount() int {
 	return len(fake.launchArgsForCall)
 }
 
-func (fake *ChaincodeLauncher) LaunchCalls(stub func(string) error) {
-	fake.launchMutex.Lock()
-	defer fake.launchMutex.Unlock()
-	fake.LaunchStub = stub
-}
-
 func (fake *ChaincodeLauncher) LaunchArgsForCall(i int) string {
 	fake.launchMutex.RLock()
 	defer fake.launchMutex.RUnlock()
-	argsForCall := fake.launchArgsForCall[i]
-	return argsForCall.arg1
+	return fake.launchArgsForCall[i].ccid
 }
 
 func (fake *ChaincodeLauncher) LaunchReturns(result1 error) {
-	fake.launchMutex.Lock()
-	defer fake.launchMutex.Unlock()
 	fake.LaunchStub = nil
 	fake.launchReturns = struct {
 		result1 error
@@ -81,8 +93,6 @@ func (fake *ChaincodeLauncher) LaunchReturns(result1 error) {
 }
 
 func (fake *ChaincodeLauncher) LaunchReturnsOnCall(i int, result1 error) {
-	fake.launchMutex.Lock()
-	defer fake.launchMutex.Unlock()
 	fake.LaunchStub = nil
 	if fake.launchReturnsOnCall == nil {
 		fake.launchReturnsOnCall = make(map[int]struct {
@@ -94,22 +104,21 @@ func (fake *ChaincodeLauncher) LaunchReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *ChaincodeLauncher) Stop(arg1 string) error {
+func (fake *ChaincodeLauncher) Stop(ccid string) error {
 	fake.stopMutex.Lock()
 	ret, specificReturn := fake.stopReturnsOnCall[len(fake.stopArgsForCall)]
 	fake.stopArgsForCall = append(fake.stopArgsForCall, struct {
-		arg1 string
-	}{arg1})
-	fake.recordInvocation("Stop", []interface{}{arg1})
+		ccid string
+	}{ccid})
+	fake.recordInvocation("Stop", []interface{}{ccid})
 	fake.stopMutex.Unlock()
 	if fake.StopStub != nil {
-		return fake.StopStub(arg1)
+		return fake.StopStub(ccid)
 	}
 	if specificReturn {
 		return ret.result1
 	}
-	fakeReturns := fake.stopReturns
-	return fakeReturns.result1
+	return fake.stopReturns.result1
 }
 
 func (fake *ChaincodeLauncher) StopCallCount() int {
@@ -118,22 +127,13 @@ func (fake *ChaincodeLauncher) StopCallCount() int {
 	return len(fake.stopArgsForCall)
 }
 
-func (fake *ChaincodeLauncher) StopCalls(stub func(string) error) {
-	fake.stopMutex.Lock()
-	defer fake.stopMutex.Unlock()
-	fake.StopStub = stub
-}
-
 func (fake *ChaincodeLauncher) StopArgsForCall(i int) string {
 	fake.stopMutex.RLock()
 	defer fake.stopMutex.RUnlock()
-	argsForCall := fake.stopArgsForCall[i]
-	return argsForCall.arg1
+	return fake.stopArgsForCall[i].ccid
 }
 
 func (fake *ChaincodeLauncher) StopReturns(result1 error) {
-	fake.stopMutex.Lock()
-	defer fake.stopMutex.Unlock()
 	fake.StopStub = nil
 	fake.stopReturns = struct {
 		result1 error
@@ -141,8 +141,6 @@ func (fake *ChaincodeLauncher) StopReturns(result1 error) {
 }
 
 func (fake *ChaincodeLauncher) StopReturnsOnCall(i int, result1 error) {
-	fake.stopMutex.Lock()
-	defer fake.stopMutex.Unlock()
 	fake.StopStub = nil
 	if fake.stopReturnsOnCall == nil {
 		fake.stopReturnsOnCall = make(map[int]struct {
@@ -154,6 +152,102 @@ func (fake *ChaincodeLauncher) StopReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
+func (fake *ChaincodeLauncher) LaunchInProc(ccID string) <-chan struct{} {
+	fake.launchInProcMutex.Lock()
+	ret, specificReturn := fake.launchInProcReturnsOnCall[len(fake.launchInProcArgsForCall)]
+	fake.launchInProcArgsForCall = append(fake.launchInProcArgsForCall, struct {
+		ccID string
+	}{ccID})
+	fake.recordInvocation("LaunchInProc", []interface{}{ccID})
+	fake.launchInProcMutex.Unlock()
+	if fake.LaunchInProcStub != nil {
+		return fake.LaunchInProcStub(ccID)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fake.launchInProcReturns.result1
+}
+
+func (fake *ChaincodeLauncher) LaunchInProcCallCount() int {
+	fake.launchInProcMutex.RLock()
+	defer fake.launchInProcMutex.RUnlock()
+	return len(fake.launchInProcArgsForCall)
+}
+
+func (fake *ChaincodeLauncher) LaunchInProcArgsForCall(i int) string {
+	fake.launchInProcMutex.RLock()
+	defer fake.launchInProcMutex.RUnlock()
+	return fake.launchInProcArgsForCall[i].ccID
+}
+
+func (fake *ChaincodeLauncher) LaunchInProcReturns(result1 <-chan struct{}) {
+	fake.LaunchInProcStub = nil
+	fake.launchInProcReturns = struct {
+		result1 <-chan struct{}
+	}{result1}
+}
+
+func (fake *ChaincodeLauncher) LaunchInProcReturnsOnCall(i int, result1 <-chan struct{}) {
+	fake.LaunchInProcStub = nil
+	if fake.launchInProcReturnsOnCall == nil {
+		fake.launchInProcReturnsOnCall = make(map[int]struct {
+			result1 <-chan struct{}
+		})
+	}
+	fake.launchInProcReturnsOnCall[i] = struct {
+		result1 <-chan struct{}
+	}{result1}
+}
+
+func (fake *ChaincodeLauncher) StopInProc(ccID string) error {
+	fake.stopInProcMutex.Lock()
+	ret, specificReturn := fake.stopInProcReturnsOnCall[len(fake.stopInProcArgsForCall)]
+	fake.stopInProcArgsForCall = append(fake.stopInProcArgsForCall, struct {
+		ccID string
+	}{ccID})
+	fake.recordInvocation("StopInProc", []interface{}{ccID})
+	fake.stopInProcMutex.Unlock()
+	if fake.StopInProcStub != nil {
+		return fake.StopInProcStub(ccID)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fake.stopInProcReturns.result1
+}
+
+func (fake *ChaincodeLauncher) StopInProcCallCount() int {
+	fake.stopInProcMutex.RLock()
+	defer fake.stopInProcMutex.RUnlock()
+	return len(fake.stopInProcArgsForCall)
+}
+
+func (fake *ChaincodeLauncher) StopInProcArgsForCall(i int) string {
+	fake.stopInProcMutex.RLock()
+	defer fake.stopInProcMutex.RUnlock()
+	return fake.stopInProcArgsForCall[i].ccID
+}
+
+func (fake *ChaincodeLauncher) StopInProcReturns(result1 error) {
+	fake.StopInProcStub = nil
+	fake.stopInProcReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *ChaincodeLauncher) StopInProcReturnsOnCall(i int, result1 error) {
+	fake.StopInProcStub = nil
+	if fake.stopInProcReturnsOnCall == nil {
+		fake.stopInProcReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.stopInProcReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *ChaincodeLauncher) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -161,6 +255,10 @@ func (fake *ChaincodeLauncher) Invocations() map[string][][]interface{} {
 	defer fake.launchMutex.RUnlock()
 	fake.stopMutex.RLock()
 	defer fake.stopMutex.RUnlock()
+	fake.launchInProcMutex.RLock()
+	defer fake.launchInProcMutex.RUnlock()
+	fake.stopInProcMutex.RLock()
+	defer fake.stopInProcMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
