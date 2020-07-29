@@ -102,7 +102,7 @@ func (cs *ChaincodeSupport) Launch(ccid string) (*Handler, error) {
 	cc, exists := extucc.GetUCC(name, version)
 	if exists {
 		chaincodeLogger.Infof(".. found in-process user chaincode for [%s]: [%s]. Attempting to launch...", ccid, extucc.GetID(cc))
-		cs.launchInProc(cc)
+		<-cs.LaunchInProc(ccid)
 
 		h = cs.HandlerRegistry.Handler(extucc.GetID(cc))
 	} else {
@@ -122,9 +122,24 @@ func (cs *ChaincodeSupport) Launch(ccid string) (*Handler, error) {
 
 // LaunchInProc is a stopgap solution to be called by the inproccontroller to allow system chaincodes to register
 func (cs *ChaincodeSupport) LaunchInProc(ccid string) <-chan struct{} {
+	cc, isInProcess := extucc.GetUCCByID(ccid)
+
 	launchStatus, ok := cs.HandlerRegistry.Launching(ccid)
 	if ok {
-		chaincodeLogger.Panicf("attempted to launch a system chaincode which has already been launched")
+		if !isInProcess {
+			chaincodeLogger.Panicf("attempted to launch a system chaincode which has already been launched")
+		}
+
+		chaincodeLogger.Debugf("In-process user chaincode already launched [%s]", ccid)
+
+		done := make(chan struct{}, 1)
+		done <- struct{}{}
+
+		return done
+	}
+
+	if isInProcess {
+		cs.launchInProc(cc)
 	}
 
 	return launchStatus.Done()
@@ -313,20 +328,11 @@ func (cs *ChaincodeSupport) executeTimeout(namespace string, input *pb.Chaincode
 func (cs *ChaincodeSupport) launchInProc(cc api.UserCC) {
 	ccid := extucc.GetID(cc)
 
-	launchStatus, ok := cs.HandlerRegistry.Launching(ccid)
-	if ok {
-		chaincodeLogger.Infof("In-process user chaincode already launched [%s]", ccid)
-		return
-	}
-
 	chaincodeLogger.Debugf("Launching in-process user chaincode '%s'", ccid)
-
-	done := launchStatus.Done()
 
 	peerRcvCCSend := make(chan *pb.ChaincodeMessage)
 	ccRcvPeerSend := make(chan *pb.ChaincodeMessage)
 
-	// TODO, these go routines leak in test.
 	go func() {
 		chaincodeLogger.Debugf("starting chaincode-support stream for  %s", ccid)
 		err := cs.HandleChaincodeStream(newInProcStream(peerRcvCCSend, ccRcvPeerSend))
@@ -338,7 +344,12 @@ func (cs *ChaincodeSupport) launchInProc(cc api.UserCC) {
 		err := shim.StartInProc(ccid, newInProcStream(ccRcvPeerSend, peerRcvCCSend), cc.Chaincode())
 		chaincodeLogger.Criticalf("in-process user chaincode ended with err: %v", err)
 	}(cc)
-	<-done
+}
+
+func (cs *ChaincodeSupport) StopInProc(ccID string) error {
+	chaincodeLogger.Warnf("Unable to stop in-process user chaincode [%s] - Stop not implemented", ccID)
+
+	return errors.New("stop not implemented")
 }
 
 func maxDuration(durations ...time.Duration) time.Duration {

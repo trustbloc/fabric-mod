@@ -15,6 +15,11 @@ func GetUCC(name, version string) (api.UserCC, bool) {
 	return nil, false
 }
 
+// GetUCCByID returns the in-process user chaincode for the given ID
+func GetUCCByID(string) (api.UserCC, bool) {
+	return nil, false
+}
+
 // Chaincodes returns all registered in-process chaincodes
 func Chaincodes() []api.UserCC {
 	return nil

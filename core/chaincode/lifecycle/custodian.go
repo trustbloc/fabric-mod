@@ -10,12 +10,15 @@ import (
 	"sync"
 
 	"github.com/hyperledger/fabric/core/container"
+	extchaincode "github.com/hyperledger/fabric/extensions/chaincode"
 )
 
 //go:generate counterfeiter -o mock/chaincode_launcher.go --fake-name ChaincodeLauncher . ChaincodeLauncher
 type ChaincodeLauncher interface {
 	Launch(ccid string) error
 	Stop(ccid string) error
+	LaunchInProc(ccID string) <-chan struct{}
+	StopInProc(ccID string) error
 }
 
 // ChaincodeCustodian is responsible for enqueuing builds and launches
@@ -98,17 +101,36 @@ func (cc *ChaincodeCustodian) Work(buildRegistry *container.BuildRegistry, build
 		cc.choreQueue = cc.choreQueue[1:]
 		cc.mutex.Unlock()
 
+		_, isCCInProcess := extchaincode.GetUCCByID(chore.chaincodeID)
+
 		if chore.runnable {
-			if err := launcher.Launch(chore.chaincodeID); err != nil {
-				logger.Warningf("could not launch chaincode '%s': %s", chore.chaincodeID, err)
+			if isCCInProcess {
+				logger.Infof("Launching in-process user chaincode [%s] ...", chore.chaincodeID)
+				<-launcher.LaunchInProc(chore.chaincodeID)
+			} else {
+				if err := launcher.Launch(chore.chaincodeID); err != nil {
+					logger.Warningf("could not launch chaincode '%s': %s", chore.chaincodeID, err)
+				}
 			}
 			continue
 		}
 
 		if chore.stoppable {
-			if err := launcher.Stop(chore.chaincodeID); err != nil {
-				logger.Warningf("could not stop chaincode '%s': %s", chore.chaincodeID, err)
+			if isCCInProcess {
+				logger.Infof("Stopping in-process user chaincode [%s] ...", chore.chaincodeID)
+				if err := launcher.StopInProc(chore.chaincodeID); err != nil {
+					logger.Warningf("could not stop chaincode '%s': %s", chore.chaincodeID, err)
+				}
+			} else {
+				if err := launcher.Stop(chore.chaincodeID); err != nil {
+					logger.Warningf("could not stop chaincode '%s': %s", chore.chaincodeID, err)
+				}
 			}
+			continue
+		}
+
+		if isCCInProcess {
+			logger.Debugf("skipping build of in-process chaincode '%s'", chore.chaincodeID)
 			continue
 		}
 
