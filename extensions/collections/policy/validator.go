@@ -28,3 +28,13 @@ func (v *Validator) Validate(collConfig *peer.CollectionConfig) error {
 func (v *Validator) ValidateNewCollectionConfigsAgainstOld(newCollectionConfigs []*peer.CollectionConfig, oldCollectionConfigs []*peer.CollectionConfig) error {
 	return nil
 }
+
+// ValidateCollectionConfig validates a new collection config
+func (v *Validator) ValidateCollectionConfig(*peer.StaticCollectionConfig) error {
+	return nil
+}
+
+// ValidateNewCollectionConfigAgainstCommitted validates a new collection config against a committed collection config
+func (v *Validator) ValidateNewCollectionConfigAgainstCommitted(newColl, committedColl *peer.StaticCollectionConfig) error {
+	return nil
+}

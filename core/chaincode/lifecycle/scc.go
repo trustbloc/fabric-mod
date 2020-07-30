@@ -23,6 +23,7 @@ import (
 	"github.com/hyperledger/fabric/core/dispatcher"
 	"github.com/hyperledger/fabric/core/ledger"
 	extucc "github.com/hyperledger/fabric/extensions/chaincode"
+	"github.com/hyperledger/fabric/extensions/collections/policy"
 	"github.com/hyperledger/fabric/msp"
 
 	"github.com/golang/protobuf/proto"
@@ -755,7 +756,12 @@ func validateCollectionConfigs(collConfigs []*pb.StaticCollectionConfig, mspMgr 
 		if err := validateCollectionConfigMemberOrgsPolicy(c, mspMgr); err != nil {
 			return err
 		}
+
+		if err := policy.NewValidator().ValidateCollectionConfig(c); err != nil {
+			return err
+		}
 	}
+
 	return nil
 }
 
@@ -880,6 +886,10 @@ func validateCollConfigsAgainstCommittedDef(
 
 		if newCollection.BlockToLive != committedColl.BlockToLive {
 			return errors.Errorf("the BlockToLive in an existing collection [%s] modified. Existing value [%d]", committedColl.Name, committedColl.BlockToLive)
+		}
+
+		if err := policy.NewValidator().ValidateNewCollectionConfigAgainstCommitted(newCollection, committedColl); err != nil {
+			return err
 		}
 	}
 	return nil
