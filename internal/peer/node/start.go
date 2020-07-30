@@ -818,7 +818,7 @@ func serve(args []string) error {
 				installedCCs = append(installedCCs, ccs...)
 
 				for _, cc := range extchaincode.Chaincodes() {
-					logger.Infof("... adding in-process chaincode [%s]", extchaincode.GetID(cc))
+					logger.Infof("... adding in-process chaincode [%s]", extchaincode.GetPackageID(cc))
 					installedCCs = append(installedCCs, ccdef.InstalledChaincode{
 						Name:    cc.Name(),
 						Version: cc.Version(),

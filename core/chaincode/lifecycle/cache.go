@@ -151,17 +151,17 @@ func (c *Cache) InitializeLocalChaincodes() error {
 	}
 
 	for _, cc := range extchaincode.Chaincodes() {
-		logger.Debugf("Adding in-process chaincode [%s]", extchaincode.GetID(cc))
+		logger.Debugf("Adding in-process chaincode [%s]", extchaincode.GetPackageID(cc))
 
 		ccPackages = append(ccPackages, chaincode.InstalledChaincode{
-			PackageID: extchaincode.GetID(cc),
+			PackageID: extchaincode.GetPackageID(cc),
 			Label:     cc.Name(),
 		})
 	}
 
 	for _, ccPackage := range ccPackages {
 		var parsedCCPackage *persistence.ChaincodePackage
-		if cc, ok := extchaincode.GetUCCByID(ccPackage.PackageID); ok {
+		if cc, ok := extchaincode.GetUCCByPackageID(ccPackage.PackageID); ok {
 			parsedCCPackage = &persistence.ChaincodePackage{
 				Metadata: &persistence.ChaincodePackageMetadata{
 					Type:  "golang",

@@ -29,7 +29,7 @@ func TestWaitForReady(t *testing.T) {
 	require.NotPanics(t, WaitForReady)
 }
 
-func TestGetID(t *testing.T) {
+func TestGetPackageID(t *testing.T) {
 	const cc1 = "cc1"
 	const v1 = "v1"
 
@@ -37,6 +37,6 @@ func TestGetID(t *testing.T) {
 	cc.NameReturns(cc1)
 	cc.VersionReturns(v1)
 
-	ccid := GetID(cc)
+	ccid := GetPackageID(cc)
 	require.Equal(t, "cc1:v1", ccid)
 }

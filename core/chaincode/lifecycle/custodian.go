@@ -101,7 +101,7 @@ func (cc *ChaincodeCustodian) Work(buildRegistry *container.BuildRegistry, build
 		cc.choreQueue = cc.choreQueue[1:]
 		cc.mutex.Unlock()
 
-		_, isCCInProcess := extchaincode.GetUCCByID(chore.chaincodeID)
+		_, isCCInProcess := extchaincode.GetUCCByPackageID(chore.chaincodeID)
 
 		if chore.runnable {
 			if isCCInProcess {
