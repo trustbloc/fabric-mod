@@ -15,8 +15,8 @@ func GetUCC(name, version string) (api.UserCC, bool) {
 	return nil, false
 }
 
-// GetUCCByID returns the in-process user chaincode for the given ID
-func GetUCCByID(string) (api.UserCC, bool) {
+// GetUCCByPackageID returns the in-process user chaincode for the given package ID
+func GetUCCByPackageID(string) (api.UserCC, bool) {
 	return nil, false
 }
 
@@ -29,7 +29,7 @@ func Chaincodes() []api.UserCC {
 func WaitForReady() {
 }
 
-// GetID returns the ID of the chaincode which includes the name and version
-func GetID(cc api.UserCC) string {
+// GetPackageID returns the package ID of the chaincode
+func GetPackageID(cc api.UserCC) string {
 	return cc.Name() + ":" + cc.Version()
 }

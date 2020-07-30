@@ -48,7 +48,7 @@ func (b *EventBroker) ProcessInstallEvent(localChaincode *LocalChaincode) {
 
 	var dbArtifacts []byte
 
-	if _, ok := extchaincode.GetUCCByID(localChaincode.Info.PackageID); ok {
+	if _, ok := extchaincode.GetUCCByPackageID(localChaincode.Info.PackageID); ok {
 		logger.Debugf("Not loading DB artifacts for in-process user chaincode [%s]", localChaincode.Info.PackageID)
 	} else {
 		var err error
@@ -101,7 +101,7 @@ func (b *EventBroker) ProcessApproveOrDefineEvent(channelID string, chaincodeNam
 
 	var dbArtifacts []byte
 
-	if _, ok := extchaincode.GetUCCByID(cachedChaincode.InstallInfo.PackageID); ok {
+	if _, ok := extchaincode.GetUCCByPackageID(cachedChaincode.InstallInfo.PackageID); ok {
 		logger.Debugf("[%s] Not loading DB artifacts for in-process user chaincode [%s]", channelID, cachedChaincode.InstallInfo.PackageID)
 	} else {
 		var err error

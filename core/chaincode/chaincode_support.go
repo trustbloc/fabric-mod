@@ -101,10 +101,13 @@ func (cs *ChaincodeSupport) Launch(ccid string) (*Handler, error) {
 
 	cc, exists := extucc.GetUCC(name, version)
 	if exists {
-		chaincodeLogger.Infof(".. found in-process user chaincode for [%s]: [%s]. Attempting to launch...", ccid, extucc.GetID(cc))
-		<-cs.LaunchInProc(ccid)
+		packageID := extucc.GetPackageID(cc)
 
-		h = cs.HandlerRegistry.Handler(extucc.GetID(cc))
+		chaincodeLogger.Infof(".. found in-process user chaincode for [%s]: [%s]. Attempting to launch...", ccid, packageID)
+
+		<-cs.LaunchInProc(packageID)
+
+		h = cs.HandlerRegistry.Handler(packageID)
 	} else {
 		if err := cs.Launcher.Launch(ccid, cs); err != nil {
 			return nil, errors.Wrapf(err, "could not launch chaincode %s", ccid)
@@ -122,7 +125,7 @@ func (cs *ChaincodeSupport) Launch(ccid string) (*Handler, error) {
 
 // LaunchInProc is a stopgap solution to be called by the inproccontroller to allow system chaincodes to register
 func (cs *ChaincodeSupport) LaunchInProc(ccid string) <-chan struct{} {
-	cc, isInProcess := extucc.GetUCCByID(ccid)
+	cc, isInProcess := extucc.GetUCCByPackageID(ccid)
 
 	launchStatus, ok := cs.HandlerRegistry.Launching(ccid)
 	if ok {
@@ -326,22 +329,22 @@ func (cs *ChaincodeSupport) executeTimeout(namespace string, input *pb.Chaincode
 }
 
 func (cs *ChaincodeSupport) launchInProc(cc api.UserCC) {
-	ccid := extucc.GetID(cc)
+	packageID := extucc.GetPackageID(cc)
 
-	chaincodeLogger.Debugf("Launching in-process user chaincode '%s'", ccid)
+	chaincodeLogger.Debugf("Launching in-process user chaincode '%s'", packageID)
 
 	peerRcvCCSend := make(chan *pb.ChaincodeMessage)
 	ccRcvPeerSend := make(chan *pb.ChaincodeMessage)
 
 	go func() {
-		chaincodeLogger.Debugf("starting chaincode-support stream for  %s", ccid)
+		chaincodeLogger.Debugf("starting chaincode-support stream for  %s", packageID)
 		err := cs.HandleChaincodeStream(newInProcStream(peerRcvCCSend, ccRcvPeerSend))
 		chaincodeLogger.Criticalf("shim stream ended with err: %v", err)
 	}()
 
 	go func(cc api.UserCC) {
-		chaincodeLogger.Infof("In-process user chaincode started for %s", ccid)
-		err := shim.StartInProc(ccid, newInProcStream(ccRcvPeerSend, peerRcvCCSend), cc.Chaincode())
+		chaincodeLogger.Infof("In-process user chaincode started for %s", packageID)
+		err := shim.StartInProc(packageID, newInProcStream(ccRcvPeerSend, peerRcvCCSend), cc.Chaincode())
 		chaincodeLogger.Criticalf("in-process user chaincode ended with err: %v", err)
 	}(cc)
 }
