@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/hyperledger/fabric/extensions/chaincode/mock"
+	"github.com/hyperledger/fabric/msp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,4 +40,14 @@ func TestGetPackageID(t *testing.T) {
 
 	ccid := GetPackageID(cc)
 	require.Equal(t, "cc1:v1", ccid)
+}
+
+func TestIsValidMSP(t *testing.T) {
+	const msp1 = "msp1"
+	const msp2 = "msp2"
+
+	msps := map[string]msp.MSP{msp1: nil}
+
+	require.True(t, IsValidMSP(msp1, msps))
+	require.False(t, IsValidMSP(msp2, msps))
 }

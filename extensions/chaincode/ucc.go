@@ -8,6 +8,7 @@ package chaincode
 
 import (
 	"github.com/hyperledger/fabric/extensions/chaincode/api"
+	"github.com/hyperledger/fabric/msp"
 )
 
 // GetUCC returns the in-process user chaincode for the given name and version
@@ -32,4 +33,10 @@ func WaitForReady() {
 // GetPackageID returns the package ID of the chaincode
 func GetPackageID(cc api.UserCC) string {
 	return cc.Name() + ":" + cc.Version()
+}
+
+// IsValidMSP return true if the given MSP is valid for chaincode/collection policy
+func IsValidMSP(mspID string, msps map[string]msp.MSP) bool {
+	_, ok := msps[mspID]
+	return ok
 }
