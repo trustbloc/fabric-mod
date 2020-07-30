@@ -22,6 +22,7 @@ import (
 	"github.com/hyperledger/fabric/core/chaincode/persistence"
 	"github.com/hyperledger/fabric/core/dispatcher"
 	"github.com/hyperledger/fabric/core/ledger"
+	extucc "github.com/hyperledger/fabric/extensions/chaincode"
 	"github.com/hyperledger/fabric/msp"
 
 	"github.com/golang/protobuf/proto"
@@ -799,8 +800,7 @@ func validateCollectionConfigMemberOrgsPolicy(coll *pb.StaticCollectionConfig, m
 			}
 			orgID = msprole.MspIdentifier
 			// the msp map is indexed using msp IDs - this behavior is implementation specific, making the following check a bit of a hack
-			_, ok := msps[orgID]
-			if !ok {
+			if !extucc.IsValidMSP(orgID, msps) {
 				return errors.Errorf("collection-name: %s -- collection member '%s' is not part of the channel", coll.GetName(), orgID)
 			}
 
@@ -812,8 +812,7 @@ func validateCollectionConfigMemberOrgsPolicy(coll *pb.StaticCollectionConfig, m
 			}
 			orgID = mspou.MspIdentifier
 			// the msp map is indexed using msp IDs - this behavior is implementation specific, making the following check a bit of a hack
-			_, ok := msps[orgID]
-			if !ok {
+			if !extucc.IsValidMSP(orgID, msps) {
 				return errors.Errorf("collection-name: %s -- collection member '%s' is not part of the channel", coll.GetName(), orgID)
 			}
 
