@@ -9,6 +9,7 @@ package cceventmgmt
 import (
 	"github.com/hyperledger/fabric-protos-go/ledger/rwset/kvrwset"
 	"github.com/hyperledger/fabric/core/ledger"
+	extchaincode "github.com/hyperledger/fabric/extensions/chaincode"
 )
 
 // KVLedgerLSCCStateListener listens for state changes for chaincode lifecycle
@@ -50,11 +51,16 @@ func (listener *KVLedgerLSCCStateListener) HandleStateUpdates(trigger *ledger.St
 			return err
 		}
 
-		if !deployedCCInfo.IsLegacy {
-			// chaincode defined via new lifecycle, the legacy event mgr should not try to process that
-			// event by trying to match this with a legacy package installed. So, ignoring this event
-			continue
+		// In-process user chaincode still needs to have 'HandleChaincodeDeploy' invoked in order to created CouchDB indexes
+		if _, exists := extchaincode.GetUCC(deployedCCInfo.Name, deployedCCInfo.Version); !exists {
+			if !deployedCCInfo.IsLegacy {
+				// chaincode defined via new lifecycle, the legacy event mgr should not try to process that
+				// event by trying to match this with a legacy package installed. So, ignoring this event
+				continue
+			}
 		}
+
+		logger.Debugf("Adding chaincode definition [%s:%s]", deployedCCInfo.Name, deployedCCInfo.Version)
 
 		chaincodeDefs = append(chaincodeDefs, &ChaincodeDefinition{
 			Name:              deployedCCInfo.Name,
