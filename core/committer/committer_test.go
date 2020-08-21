@@ -120,7 +120,7 @@ func (m *mockLedger) GetMissingPvtDataTracker() (ledger2.MissingPvtDataTracker, 
 	panic("implement me")
 }
 
-func (m *mockLedger) CheckpointBlock(block *common.Block) error {
+func (m *mockLedger) CheckpointBlock(*common.Block, func()) error {
 	return nil
 }
 

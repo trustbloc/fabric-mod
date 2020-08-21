@@ -92,7 +92,7 @@ func (store *BlockStore) RetrieveTxValidationCodeByTxID(txID string) (peer.TxVal
 	return store.fileMgr.retrieveTxValidationCodeByTxID(txID)
 }
 
-func (store *BlockStore) CheckpointBlock(*common.Block) error {
+func (store *BlockStore) CheckpointBlock(*common.Block, func()) error {
 	return nil
 }
 
