@@ -1358,6 +1358,6 @@ func (fake *PeerLedger) recordInvocation(key string, args []interface{}) {
 	fake.invocations[key] = append(fake.invocations[key], args)
 }
 
-func (fake *PeerLedger) CheckpointBlock(*common.Block) error {
+func (fake *PeerLedger) CheckpointBlock(*common.Block, func()) error {
 	return nil
 }

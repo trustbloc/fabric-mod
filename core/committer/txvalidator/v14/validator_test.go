@@ -1556,7 +1556,7 @@ func (m *mockLedger) DoesPvtDataInfoExist(blkNum uint64) (bool, error) {
 func (m *mockLedger) Close() {
 
 }
-func (m *mockLedger) CheckpointBlock(block *common.Block) error {
+func (m *mockLedger) CheckpointBlock(*common.Block, func()) error {
 	return nil
 }
 

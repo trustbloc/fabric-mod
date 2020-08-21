@@ -13,5 +13,6 @@ import (
 //BlockStoreExtension is an extension to blkstorage.BlockStore interface which can be used to extend existing block store features.
 type BlockStoreExtension interface {
 	//CheckpointBlock updates checkpoint info of blockstore with given block
-	CheckpointBlock(block *common.Block) error
+	// and invokes the given notifier before the checkpoint is broadcast
+	CheckpointBlock(block *common.Block, notify func()) error
 }

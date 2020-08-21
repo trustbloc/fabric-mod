@@ -30,7 +30,6 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/pvtdatapolicy"
 	storeapi "github.com/hyperledger/fabric/extensions/collections/api/store"
 	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
-	xledger "github.com/hyperledger/fabric/extensions/ledger"
 	xledgerapi "github.com/hyperledger/fabric/extensions/ledger/api"
 	xstorageapi "github.com/hyperledger/fabric/extensions/storage/api"
 	xrecover "github.com/hyperledger/fabric/extensions/storage/recover"
@@ -95,7 +94,7 @@ func newKVLedger(initializer *lgrInitializer) (*kvLedger, error) {
 		historyDB:           initializer.historyDB,
 		hashProvider:        initializer.hashProvider,
 		snapshotsConfig:     initializer.snapshotsConfig,
-		PeerLedgerExtension: xledger.NewKVLedgerExtension(initializer.blockStore),
+		PeerLedgerExtension: initializer.blockStore,
 		blockAPIsRWLock:     &sync.RWMutex{},
 	}
 

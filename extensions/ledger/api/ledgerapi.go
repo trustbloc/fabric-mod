@@ -15,8 +15,9 @@ import (
 
 //PeerLedgerExtension is an extension to PeerLedger interface which can be used to extend existing peer ledger features.
 type PeerLedgerExtension interface {
-	//CheckpointBlock updates check point info in underlying store
-	CheckpointBlock(block *common.Block) error
+	// CheckpointBlock updates checkpoint info of underlying blockstore with given block
+	// and invokes the given notifier before the checkpoint is broadcast
+	CheckpointBlock(block *common.Block, notify func()) error
 }
 
 // SnapshotInfo captures some of the details about the snapshot
