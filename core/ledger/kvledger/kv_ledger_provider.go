@@ -31,6 +31,7 @@ import (
 	xblkstorage "github.com/hyperledger/fabric/extensions/storage/blkstorage"
 	xidstore "github.com/hyperledger/fabric/extensions/storage/idstore"
 	xpvtdatastorage "github.com/hyperledger/fabric/extensions/storage/pvtdatastorage"
+	extstatedb "github.com/hyperledger/fabric/extensions/storage/statedb"
 	"github.com/hyperledger/fabric/internal/fileutil"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/pkg/errors"
@@ -397,6 +398,9 @@ func (p *Provider) open(ledgerID string) (ledger.PeerLedger, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	extstatedb.Register(ledgerID, db)
+
 	return l, nil
 }
 
