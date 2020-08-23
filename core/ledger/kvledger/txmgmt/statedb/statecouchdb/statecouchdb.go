@@ -445,11 +445,21 @@ func (vdb *VersionedDB) GetState(namespace string, key string) (*statedb.Version
 		if err != nil {
 			return nil, err
 		}
+
+		var vv *statedb.VersionedValue
 		if cv != nil {
-			vv, err := constructVersionedValue(cv)
+			vv, err = constructVersionedValue(cv)
 			if err != nil {
 				return nil, err
 			}
+		}
+
+		vv, err = vdb.ensureKeyHashVersionMatches(namespace, key, vv)
+		if err != nil {
+			return nil, err
+		}
+
+		if vv != nil {
 			return vv, nil
 		}
 	}

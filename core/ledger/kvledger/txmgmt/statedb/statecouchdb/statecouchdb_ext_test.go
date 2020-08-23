@@ -7,10 +7,13 @@ SPDX-License-Identifier: Apache-2.0
 package statecouchdb
 
 import (
+	"encoding/base64"
+	"strings"
 	"testing"
 
 	"github.com/hyperledger/fabric-protos-go/ledger/rwset/kvrwset"
 	"github.com/hyperledger/fabric/core/ledger/internal/version"
+	"github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/hyperledger/fabric/extensions/gossip/api"
 	"github.com/stretchr/testify/require"
 )
@@ -45,4 +48,94 @@ func TestDeleteCacheEntry(t *testing.T) {
 	v, err = db.GetState(ns, key)
 	require.NoError(t, err)
 	require.Nil(t, v)
+}
+
+func TestEnsureKeyHashVersionMatches(t *testing.T) {
+	const (
+		chainID        = "testensurekeyhashmatches"
+		ns1            = "ns1"
+		coll1          = "coll1"
+		block1  uint64 = 1000
+		tx1     uint64 = 0
+		tx2     uint64 = 1
+		key            = "key1"
+	)
+
+	vdbEnv.init(t, []string{"lscc", "_lifecycle"})
+	defer vdbEnv.cleanup()
+
+	db, err := vdbEnv.DBProvider.GetDBHandle(chainID, nil)
+	require.NoError(t, err)
+
+	pvtns1 := privateDataDBName(ns1, coll1)
+	hpvtns1 := privateDataHashDBName(ns1, coll1)
+
+	vdb, ok := db.(*VersionedDB)
+	require.True(t, ok)
+
+	t.Run("Both cached and versions match", func(t *testing.T) {
+		require.NoError(t, vdbEnv.cache.putState(chainID, hpvtns1, newHashKey(key), newCacheValue(block1, tx1)))
+
+		vv, err := constructVersionedValue(newCacheValue(block1, tx1))
+		require.NoError(t, err)
+
+		vv2, err := vdb.ensureKeyHashVersionMatches(pvtns1, key, vv)
+		require.NoError(t, err)
+		require.Equal(t, vv, vv2)
+	})
+
+	t.Run("Both cached but versions don't match", func(t *testing.T) {
+		require.NoError(t, vdbEnv.cache.putState(chainID, hpvtns1, newHashKey(key), newCacheValue(block1, tx2)))
+
+		vv, err := constructVersionedValue(newCacheValue(block1, tx1))
+		require.NoError(t, err)
+
+		vv2, err := vdb.ensureKeyHashVersionMatches(pvtns1, key, vv)
+		require.NoError(t, err)
+		require.Nil(t, vv2)
+	})
+
+	t.Run("Not a private collection", func(t *testing.T) {
+		vv, err := constructVersionedValue(newCacheValue(block1, tx1))
+		require.NoError(t, err)
+
+		vv2, err := vdb.ensureKeyHashVersionMatches("ns1", key, vv)
+		require.NoError(t, err)
+		require.Equal(t, vv, vv2)
+	})
+
+	t.Run("Neither key cached", func(t *testing.T) {
+		vv2, err := vdb.ensureKeyHashVersionMatches(pvtns1, key, nil)
+		require.NoError(t, err)
+		require.Nil(t, vv2)
+	})
+
+	t.Run("Key not cached but key hash cached", func(t *testing.T) {
+		require.NoError(t, vdbEnv.cache.putState(chainID, hpvtns1, newHashKey(key), newCacheValue(block1, tx1)))
+
+		vv2, err := vdb.ensureKeyHashVersionMatches(pvtns1, key, nil)
+		require.NoError(t, err)
+		require.Nil(t, vv2)
+	})
+
+	t.Run("Key cached but key hash not cached", func(t *testing.T) {
+		vv, err := constructVersionedValue(newCacheValue(block1, tx1))
+		require.NoError(t, err)
+
+		vv2, err := vdb.ensureKeyHashVersionMatches(pvtns1, key, vv)
+		require.NoError(t, err)
+		require.Equal(t, vv, vv2)
+	})
+}
+
+func privateDataDBName(namespace, collection string) string {
+	return strings.Join([]string{namespace, collection}, pvtDataDelimiter)
+}
+
+func newCacheValue(blockNum, txNum uint64) *CacheValue {
+	return &CacheValue{Version: version.NewHeight(blockNum, txNum).ToBytes()}
+}
+
+func newHashKey(key string) string {
+	return base64.StdEncoding.EncodeToString(util.ComputeStringHash(key))
 }
