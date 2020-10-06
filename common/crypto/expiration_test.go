@@ -7,9 +7,13 @@ SPDX-License-Identifier: Apache-2.0
 package crypto
 
 import (
+	"bytes"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +22,7 @@ import (
 	"github.com/hyperledger/fabric/common/crypto/tlsgen"
 	"github.com/hyperledger/fabric/protoutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestX509CertExpiresAt(t *testing.T) {
@@ -87,73 +92,90 @@ func TestTrackExpiration(t *testing.T) {
 		IdBytes: tlsCert.Cert,
 	})
 
-	shouldNotBeInvoked := func(format string, args ...interface{}) {
+	warnShouldNotBeInvoked := func(format string, args ...interface{}) {
 		t.Fatalf(format, args...)
 	}
 
 	var formattedWarning string
-	shouldBeInvoked := func(format string, args ...interface{}) {
+	warnShouldBeInvoked := func(format string, args ...interface{}) {
 		formattedWarning = fmt.Sprintf(format, args...)
 	}
 
+	var formattedInfo string
+	infoShouldBeInvoked := func(format string, args ...interface{}) {
+		formattedInfo = fmt.Sprintf(format, args...)
+	}
+
 	for _, testCase := range []struct {
-		description     string
-		tls             bool
-		serverCert      []byte
-		clientCertChain [][]byte
-		sIDBytes        []byte
-		warn            WarnFunc
-		now             time.Time
-		expectedWarn    string
+		description        string
+		tls                bool
+		serverCert         []byte
+		clientCertChain    [][]byte
+		sIDBytes           []byte
+		info               MessageFunc
+		warn               MessageFunc
+		now                time.Time
+		expectedInfoPrefix string
+		expectedWarn       string
 	}{
 		{
 			description: "No TLS, enrollment cert isn't valid logs a warning",
-			warn:        shouldNotBeInvoked,
+			warn:        warnShouldNotBeInvoked,
 			sIDBytes:    []byte{1, 2, 3},
 		},
 		{
-			description:  "No TLS, enrollment cert expires soon",
-			sIDBytes:     signingIdentity,
-			warn:         shouldBeInvoked,
-			now:          monthBeforeExpiration,
-			expectedWarn: "The enrollment certificate will expire within one week",
+			description:        "No TLS, enrollment cert expires soon",
+			sIDBytes:           signingIdentity,
+			info:               infoShouldBeInvoked,
+			warn:               warnShouldBeInvoked,
+			now:                monthBeforeExpiration,
+			expectedInfoPrefix: "The enrollment certificate will expire on",
+			expectedWarn:       "The enrollment certificate will expire within one week",
 		},
 		{
-			description:  "TLS, server cert expires soon",
-			warn:         shouldBeInvoked,
-			now:          monthBeforeExpiration,
-			tls:          true,
-			serverCert:   tlsCert.Cert,
-			expectedWarn: "The server TLS certificate will expire within one week",
+			description:        "TLS, server cert expires soon",
+			info:               infoShouldBeInvoked,
+			warn:               warnShouldBeInvoked,
+			now:                monthBeforeExpiration,
+			tls:                true,
+			serverCert:         tlsCert.Cert,
+			expectedInfoPrefix: "The server TLS certificate will expire on",
+			expectedWarn:       "The server TLS certificate will expire within one week",
 		},
 		{
-			description:  "TLS, server cert expires really soon",
-			warn:         shouldBeInvoked,
-			now:          twoDaysBeforeExpiration,
-			tls:          true,
-			serverCert:   tlsCert.Cert,
-			expectedWarn: "The server TLS certificate expires within 2 days and 12 hours",
+			description:        "TLS, server cert expires really soon",
+			info:               infoShouldBeInvoked,
+			warn:               warnShouldBeInvoked,
+			now:                twoDaysBeforeExpiration,
+			tls:                true,
+			serverCert:         tlsCert.Cert,
+			expectedInfoPrefix: "The server TLS certificate will expire on",
+			expectedWarn:       "The server TLS certificate expires within 2 days and 12 hours",
 		},
 		{
 			description:  "TLS, server cert has expired",
-			warn:         shouldBeInvoked,
+			info:         infoShouldBeInvoked,
+			warn:         warnShouldBeInvoked,
 			now:          expirationTime.Add(time.Hour),
 			tls:          true,
 			serverCert:   tlsCert.Cert,
 			expectedWarn: "The server TLS certificate has expired",
 		},
 		{
-			description:     "TLS, client cert expires soon",
-			warn:            shouldBeInvoked,
-			now:             monthBeforeExpiration,
-			tls:             true,
-			clientCertChain: [][]byte{tlsCert.Cert},
-			expectedWarn:    "The client TLS certificate will expire within one week",
+			description:        "TLS, client cert expires soon",
+			info:               infoShouldBeInvoked,
+			warn:               warnShouldBeInvoked,
+			now:                monthBeforeExpiration,
+			tls:                true,
+			clientCertChain:    [][]byte{tlsCert.Cert},
+			expectedInfoPrefix: "The client TLS certificate will expire on",
+			expectedWarn:       "The client TLS certificate will expire within one week",
 		},
 	} {
 		t.Run(testCase.description, func(t *testing.T) {
 			defer func() {
 				formattedWarning = ""
+				formattedInfo = ""
 			}()
 
 			fakeTimeAfter := func(duration time.Duration, f func()) *time.Timer {
@@ -168,15 +190,138 @@ func TestTrackExpiration(t *testing.T) {
 				testCase.serverCert,
 				testCase.clientCertChain,
 				testCase.sIDBytes,
+				testCase.info,
 				testCase.warn,
 				testCase.now,
 				fakeTimeAfter)
+
+			if testCase.expectedInfoPrefix != "" {
+				require.True(t, strings.HasPrefix(formattedInfo, testCase.expectedInfoPrefix))
+			} else {
+				require.Empty(t, formattedInfo)
+			}
 
 			if testCase.expectedWarn != "" {
 				assert.Equal(t, testCase.expectedWarn, formattedWarning)
 			} else {
 				assert.Empty(t, formattedWarning)
 			}
+
 		})
 	}
+}
+
+func TestLogNonPubKeyMismatchErr(t *testing.T) {
+	ca, err := tlsgen.NewCA()
+	require.NoError(t, err)
+
+	aliceKeyPair, err := ca.NewClientCertKeyPair()
+	require.NoError(t, err)
+
+	bobKeyPair, err := ca.NewClientCertKeyPair()
+	require.NoError(t, err)
+
+	expected := &bytes.Buffer{}
+	expected.WriteString(fmt.Sprintf("Failed determining if public key of %s matches public key of %s: foo",
+		string(aliceKeyPair.Cert),
+		string(bobKeyPair.Cert)))
+
+	b := &bytes.Buffer{}
+	f := func(template string, args ...interface{}) {
+		fmt.Fprintf(b, template, args...)
+	}
+
+	LogNonPubKeyMismatchErr(f, errors.New("foo"), aliceKeyPair.TLSCert.Raw, bobKeyPair.TLSCert.Raw)
+
+	require.Equal(t, expected.String(), b.String())
+}
+
+func TestCertificatesWithSamePublicKey(t *testing.T) {
+	ca, err := tlsgen.NewCA()
+	require.NoError(t, err)
+
+	bobKeyPair, err := ca.NewClientCertKeyPair()
+	require.NoError(t, err)
+
+	bobCert := bobKeyPair.Cert
+	bob := pem2der(bobCert)
+
+	aliceCert := `-----BEGIN CERTIFICATE-----
+MIIBNjCB3KADAgECAgELMAoGCCqGSM49BAMCMBAxDjAMBgNVBAUTBUFsaWNlMB4X
+DTIwMDgxODIxMzU1NFoXDTIwMDgyMDIxMzU1NFowEDEOMAwGA1UEBRMFQWxpY2Uw
+WTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQjZP5VD/RaczoPFbA4gkt1qb54R6SP
+J/V5oxkhDboG9xWi0wpyghaMGwwxC7Q9wegEnyOVp9nXoLrQ8LUJ5BfZoycwJTAO
+BgNVHQ8BAf8EBAMCBaAwEwYDVR0lBAwwCgYIKwYBBQUHAwIwCgYIKoZIzj0EAwID
+SQAwRgIhAK4le5XgH5edyhaQ9Sz7sFz3Zc4bbhPAzt9zQUYnoqK+AiEA5zcyLB/4
+Oqe93lroE6GF9W7UoCZFzD7lXsWku/dgFOU=
+-----END CERTIFICATE-----`
+
+	reIssuedAliceCert := `-----BEGIN CERTIFICATE-----
+MIIBNDCB3KADAgECAgELMAoGCCqGSM49BAMCMBAxDjAMBgNVBAUTBUFsaWNlMB4X
+DTIwMDgxODIxMzY1NFoXDTIwMDgyMDIxMzY1NFowEDEOMAwGA1UEBRMFQWxpY2Uw
+WTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQjZP5VD/RaczoPFbA4gkt1qb54R6SP
+J/V5oxkhDboG9xWi0wpyghaMGwwxC7Q9wegEnyOVp9nXoLrQ8LUJ5BfZoycwJTAO
+BgNVHQ8BAf8EBAMCBaAwEwYDVR0lBAwwCgYIKwYBBQUHAwIwCgYIKoZIzj0EAwID
+RwAwRAIgDc8WyXFvsxCk97KS7D/LdYJxMpDKdHNFqpzJT9LddlsCIEr8KcMd/t5p
+cRv6rqxvy5M+t0DhRtiwCen70YCUsksb
+-----END CERTIFICATE-----`
+
+	alice := pem2der([]byte(aliceCert))
+	aliceMakesComeback := pem2der([]byte(reIssuedAliceCert))
+
+	for _, test := range []struct {
+		description string
+		errContains string
+		first       []byte
+		second      []byte
+	}{
+		{
+			description: "Bad first certificate",
+			errContains: "asn1:",
+			first:       []byte{1, 2, 3},
+			second:      bob,
+		},
+
+		{
+			description: "Bad second certificate",
+			errContains: "asn1:",
+			first:       alice,
+			second:      []byte{1, 2, 3},
+		},
+
+		{
+			description: "Different certificate",
+			errContains: ErrPubKeyMismatch.Error(),
+			first:       alice,
+			second:      bob,
+		},
+
+		{
+			description: "Same certificate",
+			first:       alice,
+			second:      alice,
+		},
+
+		{
+			description: "Same certificate but different validity period",
+			first:       alice,
+			second:      aliceMakesComeback,
+		},
+	} {
+		t.Run(test.description, func(t *testing.T) {
+			err := CertificatesWithSamePublicKey(test.first, test.second)
+			if test.errContains != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), test.errContains)
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func pem2der(p []byte) []byte {
+	b, _ := pem.Decode(p)
+	return b.Bytes
 }

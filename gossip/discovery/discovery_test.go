@@ -103,6 +103,7 @@ type dummyCommModule struct {
 	shouldGossip      bool
 	disableComm       bool
 	mock              *mock.Mock
+	signCount         uint32
 }
 
 type gossipInstance struct {
@@ -139,6 +140,7 @@ func (comm *dummyCommModule) recordValidation(validatedMessages chan *protoext.S
 }
 
 func (comm *dummyCommModule) SignMessage(am *proto.GossipMessage, internalEndpoint string) *proto.Envelope {
+	atomic.AddUint32(&comm.signCount, 1)
 	protoext.NoopSign(am)
 
 	secret := &proto.Secret{
@@ -390,11 +392,11 @@ func createDiscoveryInstanceThatGossips(port int, id string, bootstrapPeers []st
 
 func createDiscoveryInstanceThatGossipsWithInterceptors(port int, id string, bootstrapPeers []string, shouldGossip bool, pol DisclosurePolicy, f func(*protoext.SignedGossipMessage), config DiscoveryConfig) *gossipInstance {
 	mockTracker := &mockAnchorPeerTracker{}
-	return createDiscoveryInstanceWithAnchorPeerTracker(port, id, bootstrapPeers, shouldGossip, pol, f, config, mockTracker)
+	return createDiscoveryInstanceWithAnchorPeerTracker(port, id, bootstrapPeers, shouldGossip, pol, f, config, mockTracker, nil)
 }
 
 func createDiscoveryInstanceWithAnchorPeerTracker(port int, id string, bootstrapPeers []string, shouldGossip bool, pol DisclosurePolicy,
-	f func(*protoext.SignedGossipMessage), config DiscoveryConfig, anchorPeerTracker AnchorPeerTracker) *gossipInstance {
+	f func(*protoext.SignedGossipMessage), config DiscoveryConfig, anchorPeerTracker AnchorPeerTracker, logger util.Logger) *gossipInstance {
 	comm := &dummyCommModule{
 		conns:          make(map[string]*grpc.ClientConn),
 		streams:        make(map[string]proto.Gossip_GossipStreamClient),
@@ -427,7 +429,10 @@ func createDiscoveryInstanceWithAnchorPeerTracker(port int, id string, bootstrap
 
 	config.BootstrapPeers = bootstrapPeers
 
-	discSvc := NewDiscoveryService(self, comm, comm, pol, config, anchorPeerTracker)
+	if logger == nil {
+		logger = util.GetLogger(util.DiscoveryLogger, self.InternalEndpoint)
+	}
+	discSvc := NewDiscoveryService(self, comm, comm, pol, config, anchorPeerTracker, logger)
 	for _, bootPeer := range bootstrapPeers {
 		bp := bootPeer
 		discSvc.Connect(NetworkMember{Endpoint: bp, InternalEndpoint: bootPeer}, func() (*PeerIdentification, error) {
@@ -580,6 +585,18 @@ func TestConnect(t *testing.T) {
 	for firstSentSelfMsg := range firstSentMemReqMsgs {
 		assert.Nil(t, firstSentSelfMsg.Envelope.SecretEnvelope)
 	}
+}
+
+func TestNoSigningIfNoMembership(t *testing.T) {
+	t.Parallel()
+
+	inst := createDiscoveryInstance(8931, "foreveralone", nil)
+	defer inst.Stop()
+	time.Sleep(defaultTestConfig.AliveTimeInterval * 10)
+	assert.Zero(t, atomic.LoadUint32(&inst.comm.signCount))
+
+	inst.InitiateSync(10000)
+	assert.Zero(t, atomic.LoadUint32(&inst.comm.signCount))
 }
 
 func TestValidation(t *testing.T) {
@@ -1583,22 +1600,27 @@ func TestAliveMsgStore(t *testing.T) {
 func TestMemRespDisclosurePol(t *testing.T) {
 	pol := func(remotePeer *NetworkMember) (Sieve, EnvelopeFilter) {
 		return func(_ *protoext.SignedGossipMessage) bool {
-				return remotePeer.Endpoint == "localhost:7880"
+				return remotePeer.Endpoint != "localhost:7879"
 			}, func(m *protoext.SignedGossipMessage) *proto.Envelope {
 				return m.Envelope
 			}
 	}
+
+	wasMembershipResponseReceived := func(msg *protoext.SignedGossipMessage) {
+		assert.Nil(t, msg.GetMemRes())
+	}
+
 	d1 := createDiscoveryInstanceThatGossips(7878, "d1", []string{}, true, pol, defaultTestConfig)
 	defer d1.Stop()
-	d2 := createDiscoveryInstanceThatGossips(7879, "d2", []string{"localhost:7878"}, true, noopPolicy, defaultTestConfig)
+	d2 := createDiscoveryInstanceThatGossipsWithInterceptors(7879, "d2", []string{"localhost:7878"}, true, noopPolicy, wasMembershipResponseReceived, defaultTestConfig)
 	defer d2.Stop()
-	d3 := createDiscoveryInstanceThatGossips(7880, "d3", []string{"localhost:7878"}, true, noopPolicy, defaultTestConfig)
+	d3 := createDiscoveryInstanceThatGossips(7880, "d3", []string{"localhost:7878"}, true, pol, defaultTestConfig)
 	defer d3.Stop()
-	// Both d1 and d3 know each other, and also about d2
-	assertMembership(t, []*gossipInstance{d1, d3}, 2)
-	// d2 doesn't know about any one because the bootstrap peer is ignoring it due to custom policy
-	assertMembership(t, []*gossipInstance{d2}, 0)
-	assert.Zero(t, d2.receivedMsgCount())
+
+	// all peers know each other
+	assertMembership(t, []*gossipInstance{d1, d2, d3}, 2)
+	// d2 received some messages, but we asserted that none of them are membership responses.
+	assert.NotZero(t, d2.receivedMsgCount())
 	assert.NotZero(t, d2.sentMsgCount())
 }
 
@@ -1723,39 +1745,50 @@ func TestMembershipAfterExpiration(t *testing.T) {
 	var inst *gossipInstance
 	mockTracker := &mockAnchorPeerTracker{[]string{anchorPeer}}
 
-	// use a custom logger to verify messages from expiration callback
-	expectedMsgs := []string{
-		"Do not remove bootstrap or anchor peer endpoint localhost:9120 from membership",
-		"Removing member: Endpoint: localhost:9121",
-	}
-	numMsgsFound := 0
 	l, err := zap.NewDevelopment()
 	assert.NoError(t, err)
-	expired := make(chan struct{})
-	logger := flogging.NewFabricLogger(l, zap.Hooks(func(entry zapcore.Entry) error {
-		// do nothing if we already found all the expectedMsgs
-		if numMsgsFound == len(expectedMsgs) {
-			return nil
+	expired := make(chan struct{}, 1)
+
+	// use a custom logger to verify messages from expiration callback
+	loggerThatTracksCustomMessage := func() util.Logger {
+		var lock sync.RWMutex
+		expectedMsgs := map[string]struct{}{
+			"Do not remove bootstrap or anchor peer endpoint localhost:9120 from membership":                                   {},
+			"Removing member: Endpoint: localhost:9121, InternalEndpoint: localhost:9121, PKIID: 6c6f63616c686f73743a39313231": {},
 		}
-		for _, msg := range expectedMsgs {
-			if strings.Contains(entry.Message, msg) {
-				numMsgsFound++
-				if numMsgsFound == len(expectedMsgs) {
-					expired <- struct{}{}
+
+		return flogging.NewFabricLogger(l, zap.Hooks(func(entry zapcore.Entry) error {
+			// do nothing if we already found all the expectedMsgs
+			lock.RLock()
+			expectedMsgSize := len(expectedMsgs)
+			lock.RUnlock()
+
+			if expectedMsgSize == 0 {
+				select {
+				case expired <- struct{}{}:
+				default:
+					// no room is fine, continue
 				}
-				break
+				return nil
 			}
-		}
-		return nil
-	}))
+
+			lock.Lock()
+			defer lock.Unlock()
+
+			if _, matched := expectedMsgs[entry.Message]; matched {
+				delete(expectedMsgs, entry.Message)
+			}
+			return nil
+		}))
+	}
 
 	// Start all peers, connect to the anchor peer and verify full membership
 	for i := 0; i < peersNum; i++ {
 		id := fmt.Sprintf("d%d", i)
-		inst = createDiscoveryInstanceWithAnchorPeerTracker(ports[i], id, bootPeers, true, noopPolicy, func(_ *protoext.SignedGossipMessage) {}, config, mockTracker)
+		logger := loggerThatTracksCustomMessage()
+		inst = createDiscoveryInstanceWithAnchorPeerTracker(ports[i], id, bootPeers, true, noopPolicy, func(_ *protoext.SignedGossipMessage) {}, config, mockTracker, logger)
 		instances = append(instances, inst)
 	}
-	instances[peersNum-1].Discovery.(*gossipDiscoveryImpl).logger = logger
 	for i := 1; i < peersNum; i++ {
 		connect(instances[i], anchorPeer)
 	}
@@ -1781,7 +1814,7 @@ func TestMembershipAfterExpiration(t *testing.T) {
 	// Especially, we want to test that peer2 won't be isolated
 	for i := 0; i < peersNum-1; i++ {
 		id := fmt.Sprintf("d%d", i)
-		inst = createDiscoveryInstanceWithAnchorPeerTracker(ports[i], id, bootPeers, true, noopPolicy, func(_ *protoext.SignedGossipMessage) {}, config, mockTracker)
+		inst = createDiscoveryInstanceWithAnchorPeerTracker(ports[i], id, bootPeers, true, noopPolicy, func(_ *protoext.SignedGossipMessage) {}, config, mockTracker, nil)
 		instances[i] = inst
 	}
 	connect(instances[1], anchorPeer)

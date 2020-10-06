@@ -330,6 +330,7 @@ func serve(args []string) error {
 		serverConfig.SecOpts.Certificate,
 		cs.GetClientCertificate().Certificate,
 		signingIdentityBytes,
+		expirationLogger.Infof,
 		expirationLogger.Warnf, // This can be used to piggyback a metric event in the future
 		time.Now(),
 		time.AfterFunc,
@@ -381,6 +382,10 @@ func serve(args []string) error {
 		Resources:                    lifecycleResources,
 		LegacyDeployedCCInfoProvider: &lscc.DeployedCCInfoProvider{},
 	}
+
+	// Configure CC package storage before ccInfoFSImpl.ListInstalledChaincodes() gets called
+	lsccInstallPath := filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "chaincodes")
+	ccprovider.SetChaincodesPath(lsccInstallPath)
 
 	ccInfoFSImpl := &ccprovider.CCInfoFSImpl{GetHasher: factory.GetDefault()}
 
@@ -471,10 +476,6 @@ func serve(args []string) error {
 	defer gossipService.Stop()
 
 	peerInstance.GossipService = gossipService
-
-	// Configure CC package storage
-	lsccInstallPath := filepath.Join(coreconfig.GetPath("peer.fileSystemPath"), "chaincodes")
-	ccprovider.SetChaincodesPath(lsccInstallPath)
 
 	// NOTE: InitializeLocalChaincodes is called after the resource.Initialize below
 	// so that in-process user chaincodes are added to the cache.
@@ -626,6 +627,7 @@ func serve(args []string) error {
 		Resources:   lifecycleResources,
 		Cache:       lifecycleCache,
 		BuiltinSCCs: builtinSCCs,
+		UserRunsCC:  userRunsCC,
 	}
 
 	containerRuntime := &chaincode.ContainerRuntime{

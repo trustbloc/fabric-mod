@@ -108,7 +108,7 @@ type PrivateDataStore interface {
 	// of updated blocks. This list would be used during recovery process. Once the stateDB is updated with
 	// these pvtData, the `lastUpdatedOldBlocksList` must be removed. During the peer startup,
 	// if the `lastUpdatedOldBlocksList` exists, stateDB needs to be updated with the appropriate pvtData.
-	CommitPvtDataOfOldBlocks(blocksPvtData map[uint64][]*ledger.TxPvtData) error
+	CommitPvtDataOfOldBlocks(blocksPvtData map[uint64][]*ledger.TxPvtData, unreconciledMissingData ledger.MissingPvtDataInfo) error
 	// GetLastUpdatedOldBlocksPvtData returns the pvtdata of blocks listed in `lastUpdatedOldBlocksList`
 	GetLastUpdatedOldBlocksPvtData() (map[uint64][]*ledger.TxPvtData, error)
 	// ResetLastUpdatedOldBlocksList removes the `lastUpdatedOldBlocksList` entry from the store

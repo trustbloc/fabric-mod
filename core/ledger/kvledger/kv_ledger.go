@@ -321,9 +321,7 @@ func (l *kvLedger) syncStateDBWithOldBlkPvtdata() error {
 		return err
 	}
 
-	l.pvtdataStore.ResetLastUpdatedOldBlocksList()
-
-	return nil
+	return l.pvtdataStore.ResetLastUpdatedOldBlocksList()
 }
 
 func (l *kvLedger) filterYetToCommitBlocks(blocksPvtData map[uint64][]*ledger.TxPvtData) error {
@@ -680,7 +678,7 @@ func (l *kvLedger) GetConfigHistoryRetriever() (ledger.ConfigHistoryRetriever, e
 	return l.configHistoryRetriever, nil
 }
 
-func (l *kvLedger) CommitPvtDataOfOldBlocks(reconciledPvtdata []*ledger.ReconciledPvtdata) ([]*ledger.PvtdataHashMismatch, error) {
+func (l *kvLedger) CommitPvtDataOfOldBlocks(reconciledPvtdata []*ledger.ReconciledPvtdata, unreconciled ledger.MissingPvtDataInfo) ([]*ledger.PvtdataHashMismatch, error) {
 	logger.Debugf("[%s:] Comparing pvtData of [%d] old blocks against the hashes in transaction's rwset to find valid and invalid data",
 		l.ledgerID, len(reconciledPvtdata))
 
@@ -696,7 +694,7 @@ func (l *kvLedger) CommitPvtDataOfOldBlocks(reconciledPvtdata []*ledger.Reconcil
 
 	logger.Debugf("[%s:] Committing pvtData of [%d] old blocks to the pvtdatastore", l.ledgerID, len(reconciledPvtdata))
 
-	err = l.pvtdataStore.CommitPvtDataOfOldBlocks(hashVerifiedPvtData)
+	err = l.pvtdataStore.CommitPvtDataOfOldBlocks(hashVerifiedPvtData, unreconciled)
 	if err != nil {
 		return nil, err
 	}
