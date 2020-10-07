@@ -15,10 +15,13 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/ledgermgmt"
 	"github.com/hyperledger/fabric/extensions/ledger/kvledger"
+	"github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGetMissingPvtData(t *testing.T) {
+	testutil.Skip(t, "re-enable after CouchDB private store supports this feature")
+
 	setup := func(h *testhelper) (*ledger.BlockAndPvtData, ledger.MissingPvtDataInfo) {
 		collConf := []*collConf{{
 			name: "coll1",
