@@ -48,9 +48,21 @@ type PeerLedger struct {
 		result1 commonledger.ResultsIterator
 		result2 error
 	}
-	CloseStub                     func()
-	closeMutex                    sync.RWMutex
-	closeArgsForCall              []struct{}
+	CloseStub                  func()
+	closeMutex                 sync.RWMutex
+	closeArgsForCall           []struct{}
+	CheckpointBlockStub        func(block *common.Block, notify func()) error
+	checkpointBlockMutex       sync.RWMutex
+	checkpointBlockArgsForCall []struct {
+		block  *common.Block
+		notify func()
+	}
+	checkpointBlockReturns struct {
+		result1 error
+	}
+	checkpointBlockReturnsOnCall map[int]struct {
+		result1 error
+	}
 	GetTransactionByIDStub        func(txID string) (*peerfabric_protos_go.ProcessedTransaction, error)
 	getTransactionByIDMutex       sync.RWMutex
 	getTransactionByIDArgsForCall []struct {
@@ -189,10 +201,11 @@ type PeerLedger struct {
 		result1 ledger.ConfigHistoryRetriever
 		result2 error
 	}
-	CommitPvtDataOfOldBlocksStub        func(reconciledPvtdata []*ledger.ReconciledPvtdata) ([]*ledger.PvtdataHashMismatch, error)
+	CommitPvtDataOfOldBlocksStub        func(reconciledPvtdata []*ledger.ReconciledPvtdata, unreconciled ledger.MissingPvtDataInfo) ([]*ledger.PvtdataHashMismatch, error)
 	commitPvtDataOfOldBlocksMutex       sync.RWMutex
 	commitPvtDataOfOldBlocksArgsForCall []struct {
 		reconciledPvtdata []*ledger.ReconciledPvtdata
+		unreconciled      ledger.MissingPvtDataInfo
 	}
 	commitPvtDataOfOldBlocksReturns struct {
 		result1 []*ledger.PvtdataHashMismatch
@@ -389,6 +402,55 @@ func (fake *PeerLedger) CloseCallCount() int {
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
 	return len(fake.closeArgsForCall)
+}
+
+func (fake *PeerLedger) CheckpointBlock(block *common.Block, notify func()) error {
+	fake.checkpointBlockMutex.Lock()
+	ret, specificReturn := fake.checkpointBlockReturnsOnCall[len(fake.checkpointBlockArgsForCall)]
+	fake.checkpointBlockArgsForCall = append(fake.checkpointBlockArgsForCall, struct {
+		block  *common.Block
+		notify func()
+	}{block, notify})
+	fake.recordInvocation("CheckpointBlock", []interface{}{block, notify})
+	fake.checkpointBlockMutex.Unlock()
+	if fake.CheckpointBlockStub != nil {
+		return fake.CheckpointBlockStub(block, notify)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fake.checkpointBlockReturns.result1
+}
+
+func (fake *PeerLedger) CheckpointBlockCallCount() int {
+	fake.checkpointBlockMutex.RLock()
+	defer fake.checkpointBlockMutex.RUnlock()
+	return len(fake.checkpointBlockArgsForCall)
+}
+
+func (fake *PeerLedger) CheckpointBlockArgsForCall(i int) (*common.Block, func()) {
+	fake.checkpointBlockMutex.RLock()
+	defer fake.checkpointBlockMutex.RUnlock()
+	return fake.checkpointBlockArgsForCall[i].block, fake.checkpointBlockArgsForCall[i].notify
+}
+
+func (fake *PeerLedger) CheckpointBlockReturns(result1 error) {
+	fake.CheckpointBlockStub = nil
+	fake.checkpointBlockReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *PeerLedger) CheckpointBlockReturnsOnCall(i int, result1 error) {
+	fake.CheckpointBlockStub = nil
+	if fake.checkpointBlockReturnsOnCall == nil {
+		fake.checkpointBlockReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.checkpointBlockReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *PeerLedger) GetTransactionByID(txID string) (*peerfabric_protos_go.ProcessedTransaction, error) {
@@ -933,7 +995,7 @@ func (fake *PeerLedger) GetConfigHistoryRetrieverReturnsOnCall(i int, result1 le
 	}{result1, result2}
 }
 
-func (fake *PeerLedger) CommitPvtDataOfOldBlocks(reconciledPvtdata []*ledger.ReconciledPvtdata) ([]*ledger.PvtdataHashMismatch, error) {
+func (fake *PeerLedger) CommitPvtDataOfOldBlocks(reconciledPvtdata []*ledger.ReconciledPvtdata, unreconciled ledger.MissingPvtDataInfo) ([]*ledger.PvtdataHashMismatch, error) {
 	var reconciledPvtdataCopy []*ledger.ReconciledPvtdata
 	if reconciledPvtdata != nil {
 		reconciledPvtdataCopy = make([]*ledger.ReconciledPvtdata, len(reconciledPvtdata))
@@ -943,11 +1005,12 @@ func (fake *PeerLedger) CommitPvtDataOfOldBlocks(reconciledPvtdata []*ledger.Rec
 	ret, specificReturn := fake.commitPvtDataOfOldBlocksReturnsOnCall[len(fake.commitPvtDataOfOldBlocksArgsForCall)]
 	fake.commitPvtDataOfOldBlocksArgsForCall = append(fake.commitPvtDataOfOldBlocksArgsForCall, struct {
 		reconciledPvtdata []*ledger.ReconciledPvtdata
-	}{reconciledPvtdataCopy})
-	fake.recordInvocation("CommitPvtDataOfOldBlocks", []interface{}{reconciledPvtdataCopy})
+		unreconciled      ledger.MissingPvtDataInfo
+	}{reconciledPvtdataCopy, unreconciled})
+	fake.recordInvocation("CommitPvtDataOfOldBlocks", []interface{}{reconciledPvtdataCopy, unreconciled})
 	fake.commitPvtDataOfOldBlocksMutex.Unlock()
 	if fake.CommitPvtDataOfOldBlocksStub != nil {
-		return fake.CommitPvtDataOfOldBlocksStub(reconciledPvtdata)
+		return fake.CommitPvtDataOfOldBlocksStub(reconciledPvtdata, unreconciled)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2
@@ -961,10 +1024,10 @@ func (fake *PeerLedger) CommitPvtDataOfOldBlocksCallCount() int {
 	return len(fake.commitPvtDataOfOldBlocksArgsForCall)
 }
 
-func (fake *PeerLedger) CommitPvtDataOfOldBlocksArgsForCall(i int) []*ledger.ReconciledPvtdata {
+func (fake *PeerLedger) CommitPvtDataOfOldBlocksArgsForCall(i int) ([]*ledger.ReconciledPvtdata, ledger.MissingPvtDataInfo) {
 	fake.commitPvtDataOfOldBlocksMutex.RLock()
 	defer fake.commitPvtDataOfOldBlocksMutex.RUnlock()
-	return fake.commitPvtDataOfOldBlocksArgsForCall[i].reconciledPvtdata
+	return fake.commitPvtDataOfOldBlocksArgsForCall[i].reconciledPvtdata, fake.commitPvtDataOfOldBlocksArgsForCall[i].unreconciled
 }
 
 func (fake *PeerLedger) CommitPvtDataOfOldBlocksReturns(result1 []*ledger.PvtdataHashMismatch, result2 error) {
@@ -1094,6 +1157,8 @@ func (fake *PeerLedger) Invocations() map[string][][]interface{} {
 	defer fake.getBlocksIteratorMutex.RUnlock()
 	fake.closeMutex.RLock()
 	defer fake.closeMutex.RUnlock()
+	fake.checkpointBlockMutex.RLock()
+	defer fake.checkpointBlockMutex.RUnlock()
 	fake.getTransactionByIDMutex.RLock()
 	defer fake.getTransactionByIDMutex.RUnlock()
 	fake.getBlockByHashMutex.RLock()
@@ -1139,8 +1204,4 @@ func (fake *PeerLedger) recordInvocation(key string, args []interface{}) {
 		fake.invocations[key] = [][]interface{}{}
 	}
 	fake.invocations[key] = append(fake.invocations[key], args)
-}
-
-func (fake *PeerLedger) CheckpointBlock(*common.Block, func()) error {
-	return nil
 }

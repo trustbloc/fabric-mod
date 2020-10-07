@@ -6,10 +6,14 @@ SPDX-License-Identifier: Apache-2.0
 
 package commands
 
-import "strconv"
+import (
+	"strconv"
+	"time"
+)
 
 type NodeStart struct {
-	PeerID string
+	PeerID  string
+	DevMode bool
 }
 
 func (n NodeStart) SessionName() string {
@@ -17,9 +21,11 @@ func (n NodeStart) SessionName() string {
 }
 
 func (n NodeStart) Args() []string {
-	return []string{
-		"node", "start",
+	args := []string{"node", "start"}
+	if n.DevMode {
+		args = append(args, "--peer-chaincodedev")
 	}
+	return args
 }
 
 type NodeReset struct {
@@ -130,11 +136,12 @@ func (c ChannelJoin) Args() []string {
 }
 
 type ChannelFetch struct {
-	ChannelID  string
-	Block      string
-	Orderer    string
-	OutputFile string
-	ClientAuth bool
+	ChannelID             string
+	Block                 string
+	Orderer               string
+	OutputFile            string
+	ClientAuth            bool
+	TLSHandshakeTimeShift time.Duration
 }
 
 func (c ChannelFetch) SessionName() string {
@@ -144,15 +151,10 @@ func (c ChannelFetch) SessionName() string {
 func (c ChannelFetch) Args() []string {
 	args := []string{
 		"channel", "fetch", c.Block,
-	}
-	if c.ChannelID != "" {
-		args = append(args, "--channelID", c.ChannelID)
-	}
-	if c.Orderer != "" {
-		args = append(args, "--orderer", c.Orderer)
-	}
-	if c.OutputFile != "" {
-		args = append(args, c.OutputFile)
+		"--channelID", c.ChannelID,
+		"--orderer", c.Orderer,
+		"--tlsHandshakeTimeShift", c.TLSHandshakeTimeShift.String(),
+		c.OutputFile,
 	}
 	if c.ClientAuth {
 		args = append(args, "--clientauth")
@@ -742,10 +744,11 @@ func (s SignConfigTx) Args() []string {
 }
 
 type ChannelUpdate struct {
-	ChannelID  string
-	Orderer    string
-	File       string
-	ClientAuth bool
+	ChannelID             string
+	Orderer               string
+	File                  string
+	ClientAuth            bool
+	TLSHandshakeTimeShift time.Duration
 }
 
 func (c ChannelUpdate) SessionName() string {
@@ -758,6 +761,7 @@ func (c ChannelUpdate) Args() []string {
 		"--channelID", c.ChannelID,
 		"--orderer", c.Orderer,
 		"--file", c.File,
+		"--tlsHandshakeTimeShift", c.TLSHandshakeTimeShift.String(),
 	}
 	if c.ClientAuth {
 		args = append(args, "--clientauth")

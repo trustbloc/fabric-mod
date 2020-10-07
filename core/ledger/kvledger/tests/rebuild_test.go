@@ -30,7 +30,7 @@ func TestRebuildComponents(t *testing.T) {
 
 	t.Run("rebuild only statedb",
 		func(t *testing.T) {
-			env.closeAllLedgersAndDrop(rebuildableStatedb)
+			env.closeAllLedgersAndRemoveDirContents(rebuildableStatedb)
 			h1, h2 := env.newTestHelperOpenLgr("ledger1", t), env.newTestHelperOpenLgr("ledger2", t)
 			dataHelper.verifyLedgerContent(h1)
 			dataHelper.verifyLedgerContent(h2)
@@ -39,7 +39,7 @@ func TestRebuildComponents(t *testing.T) {
 
 	t.Run("rebuild statedb and config history",
 		func(t *testing.T) {
-			env.closeAllLedgersAndDrop(rebuildableStatedb | rebuildableConfigHistory)
+			env.closeAllLedgersAndRemoveDirContents(rebuildableStatedb | rebuildableConfigHistory)
 			h1, h2 := env.newTestHelperOpenLgr("ledger1", t), env.newTestHelperOpenLgr("ledger2", t)
 			dataHelper.verifyLedgerContent(h1)
 			dataHelper.verifyLedgerContent(h2)
@@ -54,7 +54,7 @@ func TestRebuildComponents(t *testing.T) {
 				//couch db index, no need to attempt to delete index file
 				flag = rebuildableStatedb
 			}
-			env.closeAllLedgersAndDrop(flag)
+			env.closeAllLedgersAndRemoveDirContents(flag)
 			h1, h2 := env.newTestHelperOpenLgr("ledger1", t), env.newTestHelperOpenLgr("ledger2", t)
 			dataHelper.verifyLedgerContent(h1)
 			dataHelper.verifyLedgerContent(h2)
@@ -63,7 +63,7 @@ func TestRebuildComponents(t *testing.T) {
 
 	t.Run("rebuild statedb and historydb",
 		func(t *testing.T) {
-			env.closeAllLedgersAndDrop(rebuildableStatedb | rebuildableHistoryDB)
+			env.closeAllLedgersAndRemoveDirContents(rebuildableStatedb | rebuildableHistoryDB)
 			h1, h2 := env.newTestHelperOpenLgr("ledger1", t), env.newTestHelperOpenLgr("ledger2", t)
 			dataHelper.verifyLedgerContent(h1)
 			dataHelper.verifyLedgerContent(h2)
@@ -113,7 +113,7 @@ func TestRebuildComponentsWithBTL(t *testing.T) {
 	})
 
 	// rebuild statedb and bookkeeper
-	env.closeAllLedgersAndDrop(rebuildableStatedb | rebuildableBookkeeper)
+	env.closeAllLedgersAndRemoveDirContents(rebuildableStatedb | rebuildableBookkeeper)
 
 	h = env.newTestHelperOpenLgr("ledger1", t)
 	h.verifyPvtState("cc1", "coll1", "key1", "value1")                  // key1 should still exist in the state

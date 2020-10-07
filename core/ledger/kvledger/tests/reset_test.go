@@ -47,7 +47,7 @@ func TestResetAllLedgers(t *testing.T) {
 	err := extkvledger.ResetAllKVLedgers(env.initializer.Config)
 	require.NoError(t, err)
 	rebuildable := rebuildableStatedb | rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB | rebuildableBlockIndex
-	env.verifyRebuilableDoesNotExist(rebuildable)
+	env.verifyRebuilableDirEmpty(rebuildable)
 	env.initLedgerMgmt()
 	preResetHt, err := extkvledger.LoadPreResetHeight(env.initializer.Config, ledgerIDs)
 	require.NoError(t, err)
@@ -153,7 +153,7 @@ func TestResetAllLedgersWithBTL(t *testing.T) {
 	err := extkvledger.ResetAllKVLedgers(env.initializer.Config)
 	require.NoError(t, err)
 	rebuildable := rebuildableStatedb | rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB | rebuildableBlockIndex
-	env.verifyRebuilableDoesNotExist(rebuildable)
+	env.verifyRebuilableDirEmpty(rebuildable)
 	env.initLedgerMgmt()
 
 	// ensure that the reset is executed correctly
@@ -201,7 +201,7 @@ func TestResetLedgerWithoutDroppingDBs(t *testing.T) {
 	rebuildable := rebuildableStatedb | rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB
 	env.verifyRebuilablesExist(rebuildable)
 	rebuildable = rebuildableBlockIndex
-	env.verifyRebuilableDoesNotExist(rebuildable)
+	env.verifyRebuilableDirEmpty(rebuildable)
 	env.initLedgerMgmt()
 	preResetHt, err := extkvledger.LoadPreResetHeight(env.initializer.Config, []string{"ledger-1"})
 	t.Logf("preResetHt = %#v", preResetHt)
