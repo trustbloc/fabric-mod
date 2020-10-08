@@ -116,3 +116,10 @@ func TestLedgerConf() *ledger.Config {
 // Skip skips the unit test for extensions
 func Skip(t *testing.T, msg string) {
 }
+
+// InvokeOrSkip is used by unit tests to decide whether or not to invoke a given function.
+// Extensions may choose not to invoke the function since the function does not apply to the
+// extended unit test.
+func InvokeOrSkip(invoke func()) {
+	invoke()
+}

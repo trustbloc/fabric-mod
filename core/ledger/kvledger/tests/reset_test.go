@@ -13,6 +13,7 @@ import (
 	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/core/ledger"
 	extkvledger "github.com/hyperledger/fabric/extensions/ledger/kvledger"
+	"github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,7 +48,7 @@ func TestResetAllLedgers(t *testing.T) {
 	err := extkvledger.ResetAllKVLedgers(env.initializer.Config)
 	require.NoError(t, err)
 	rebuildable := rebuildableStatedb | rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB | rebuildableBlockIndex
-	env.verifyRebuilableDirEmpty(rebuildable)
+	testutil.InvokeOrSkip(func() { env.verifyRebuilableDirEmpty(rebuildable) })
 	env.initLedgerMgmt()
 	preResetHt, err := extkvledger.LoadPreResetHeight(env.initializer.Config, ledgerIDs)
 	require.NoError(t, err)
@@ -153,7 +154,7 @@ func TestResetAllLedgersWithBTL(t *testing.T) {
 	err := extkvledger.ResetAllKVLedgers(env.initializer.Config)
 	require.NoError(t, err)
 	rebuildable := rebuildableStatedb | rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB | rebuildableBlockIndex
-	env.verifyRebuilableDirEmpty(rebuildable)
+	testutil.InvokeOrSkip(func() { env.verifyRebuilableDirEmpty(rebuildable) })
 	env.initLedgerMgmt()
 
 	// ensure that the reset is executed correctly
@@ -201,7 +202,7 @@ func TestResetLedgerWithoutDroppingDBs(t *testing.T) {
 	rebuildable := rebuildableStatedb | rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB
 	env.verifyRebuilablesExist(rebuildable)
 	rebuildable = rebuildableBlockIndex
-	env.verifyRebuilableDirEmpty(rebuildable)
+	testutil.InvokeOrSkip(func() { env.verifyRebuilableDirEmpty(rebuildable) })
 	env.initLedgerMgmt()
 	preResetHt, err := extkvledger.LoadPreResetHeight(env.initializer.Config, []string{"ledger-1"})
 	t.Logf("preResetHt = %#v", preResetHt)
