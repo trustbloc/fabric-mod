@@ -12,6 +12,7 @@ import (
 
 	"github.com/hyperledger/fabric/core/ledger"
 	extkvledger "github.com/hyperledger/fabric/extensions/ledger/kvledger"
+	"github.com/hyperledger/fabric/extensions/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -43,7 +44,7 @@ func TestRollbackKVLedger(t *testing.T) {
 	err = extkvledger.RollbackKVLedger(env.initializer.Config, "testLedger", targetBlockNum)
 	assert.NoError(t, err)
 	rebuildable := rebuildableStatedb + rebuildableBookkeeper + rebuildableConfigHistory + rebuildableHistoryDB
-	env.verifyRebuilableDirEmpty(rebuildable)
+	testutil.InvokeOrSkip(func() { env.verifyRebuilableDirEmpty(rebuildable) })
 	env.initLedgerMgmt()
 	preResetHt, err := extkvledger.LoadPreResetHeight(env.initializer.Config, []string{"testLedger"})
 	assert.NoError(t, err)
@@ -116,7 +117,7 @@ func TestRollbackKVLedgerWithBTL(t *testing.T) {
 	err := extkvledger.RollbackKVLedger(env.initializer.Config, "ledger1", 4)
 	assert.NoError(t, err)
 	rebuildable := rebuildableStatedb | rebuildableBookkeeper | rebuildableConfigHistory | rebuildableHistoryDB
-	env.verifyRebuilableDirEmpty(rebuildable)
+	testutil.InvokeOrSkip(func() { env.verifyRebuilableDirEmpty(rebuildable) })
 
 	env.initLedgerMgmt()
 	h = env.newTestHelperOpenLgr("ledger1", t)

@@ -44,7 +44,9 @@ func TestResetCmd(t *testing.T) {
 	_, err := os.Stat(historyDBPath)
 	require.False(t, os.IsNotExist(err))
 	require.NoError(t, cmd.Execute())
-	empty, err := fileutil.DirEmpty(historyDBPath)
-	require.NoError(t, err)
-	require.True(t, empty)
+	xtestutil.InvokeOrSkip(func() {
+		empty, err := fileutil.DirEmpty(historyDBPath)
+		require.NoError(t, err)
+		require.True(t, empty)
+	})
 }
