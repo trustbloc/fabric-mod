@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric-protos-go/common"
 	"github.com/hyperledger/fabric/core/ledger"
 	extkvledger "github.com/hyperledger/fabric/extensions/ledger/kvledger"
@@ -65,7 +66,7 @@ func TestResetAllLedgers(t *testing.T) {
 		require.Equal(t, blockchainsInfo[i].Height, preResetHt[ledgerID])
 		gb, err := h.lgr.GetBlockByNumber(0)
 		require.NoError(t, err)
-		require.Equal(t, genesisBlocks[i], gb)
+		require.True(t, proto.Equal(genesisBlocks[i], gb))
 		for _, b := range dataHelper.submittedData[ledgerID].Blocks {
 			require.NoError(t, h.lgr.CommitLegacy(b, &ledger.CommitOptions{}))
 		}
