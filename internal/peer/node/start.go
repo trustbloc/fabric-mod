@@ -81,6 +81,7 @@ import (
 	"github.com/hyperledger/fabric/discovery/support/gossip"
 	extchaincode "github.com/hyperledger/fabric/extensions/chaincode"
 	collretriever "github.com/hyperledger/fabric/extensions/collections/retriever"
+	extconfig "github.com/hyperledger/fabric/extensions/config"
 	extcscc "github.com/hyperledger/fabric/extensions/cscc"
 	extkvledger "github.com/hyperledger/fabric/extensions/ledger/kvledger"
 	"github.com/hyperledger/fabric/extensions/resource"
@@ -748,12 +749,19 @@ func serve(args []string) error {
 	channelFetcher := endorserChannelAdapter{
 		peer: peerInstance,
 	}
+
+	skipCheckForDupTxnID := extconfig.IsSkipCheckForDupTxnID()
+	if skipCheckForDupTxnID {
+		logger.Infof("Check for duplicate transactions during endorsements is disabled")
+	}
+
 	serverEndorser := &endorser.Endorser{
 		PrivateDataDistributor: gossipService,
 		ChannelFetcher:         channelFetcher,
 		LocalMSP:               localMSP,
 		Support:                endorserSupport,
 		Metrics:                endorser.NewMetrics(metricsProvider),
+		SkipCheckForDupTxnID:   skipCheckForDupTxnID,
 	}
 
 	// Initialize all of the registered resources
