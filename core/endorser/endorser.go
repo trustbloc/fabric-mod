@@ -101,6 +101,7 @@ type Endorser struct {
 	Support                Support
 	PvtRWSetAssembler      PvtRWSetAssembler
 	Metrics                *Metrics
+	SkipCheckForDupTxnID   bool
 }
 
 var rwSetFilter = xendorser.NewCollRWSetFilter()
@@ -277,13 +278,15 @@ func (e *Endorser) preProcess(up *UnpackedProposal, channel *Channel) error {
 		"chaincode", up.ChaincodeName,
 	}
 
-	// Here we handle uniqueness check and ACLs for proposals targeting a chain
-	// Notice that ValidateProposalMessage has already verified that TxID is computed properly
-	if _, err = e.Support.GetTransactionByID(up.ChannelHeader.ChannelId, up.ChannelHeader.TxId); err == nil {
-		// increment failure due to duplicate transactions. Useful for catching replay attacks in
-		// addition to benign retries
-		e.Metrics.DuplicateTxsFailure.With(meterLabels...).Add(1)
-		return errors.Errorf("duplicate transaction found [%s]. Creator [%x]", up.ChannelHeader.TxId, up.SignatureHeader.Creator)
+	if !e.SkipCheckForDupTxnID {
+		// Here we handle uniqueness check and ACLs for proposals targeting a chain
+		// Notice that ValidateProposalMessage has already verified that TxID is computed properly
+		if _, err = e.Support.GetTransactionByID(up.ChannelHeader.ChannelId, up.ChannelHeader.TxId); err == nil {
+			// increment failure due to duplicate transactions. Useful for catching replay attacks in
+			// addition to benign retries
+			e.Metrics.DuplicateTxsFailure.With(meterLabels...).Add(1)
+			return errors.Errorf("duplicate transaction found [%s]. Creator [%x]", up.ChannelHeader.TxId, up.SignatureHeader.Creator)
+		}
 	}
 
 	// check ACL only for application chaincodes; ACLs
