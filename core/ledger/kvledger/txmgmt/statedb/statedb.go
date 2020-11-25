@@ -81,6 +81,8 @@ type VersionedDB interface {
 	Open() error
 	// Close closes the db
 	Close()
+	// UpdateCache updates the state cache with the given updates. The format of the updates depends on the database implementation.
+	UpdateCache(blockNum uint64, updates interface{}) error
 }
 
 // NamespaceProvider provides a mean for statedb to get all the possible namespaces for a channel.

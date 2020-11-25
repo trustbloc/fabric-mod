@@ -87,3 +87,8 @@ func (s *gossipStateProviderExtension) LedgerHeight(handle func() (uint64, error
 func (s *gossipStateProviderExtension) RequestBlocksInRange(handle func(start uint64, end uint64), addPayload func(payload *proto.Payload, blockingMode bool) error) func(start uint64, end uint64) {
 	return handle
 }
+
+// SaveCacheUpdates is a hook used by extensions to save the given state updates for the given block
+func SaveCacheUpdates(channelID string, blockNum uint64, updates interface{}) {
+	// Nothing to do
+}

@@ -9,6 +9,8 @@ package statecouchdb
 import (
 	"github.com/VictoriaMetrics/fastcache"
 	"github.com/golang/protobuf/proto"
+
+	"github.com/hyperledger/fabric/extensions/config"
 )
 
 var (
@@ -20,6 +22,7 @@ type cache struct {
 	sysCache      *fastcache.Cache
 	usrCache      *fastcache.Cache
 	sysNamespaces []string
+	prePopulate   bool
 }
 
 // newCache creates a Cache. The cache consists of both system state cache (for lscc, _lifecycle)
@@ -40,6 +43,7 @@ func newCache(usrCacheSizeMBs int, sysNamespaces []string) *cache {
 		return cache
 	}
 	cache.usrCache = fastcache.New(usrCacheSizeMBs * 1024 * 1024)
+	cache.prePopulate = config.IsPrePopulateStateCache()
 	return cache
 }
 
@@ -110,16 +114,16 @@ func (c *cache) DelState(chainID, namespace, key string) error {
 }
 
 // CacheUpdates is a map from a namespace to a set of cache KV updates
-type cacheUpdates map[string]cacheKVs
+type CacheUpdates map[string]CacheKVs
 
 // CacheKVs is a map from a Key to a cache Value
-type cacheKVs map[string]*CacheValue
+type CacheKVs map[string]*CacheValue
 
-// Add adds the given cacheKVs to the CacheUpdates
-func (u cacheUpdates) add(namespace string, ckvs cacheKVs) {
+// Add adds the given CacheKVs to the CacheUpdates
+func (u CacheUpdates) add(namespace string, ckvs CacheKVs) {
 	nsu, ok := u[namespace]
 	if !ok {
-		nsu = cacheKVs{}
+		nsu = CacheKVs{}
 		u[namespace] = nsu
 	}
 
@@ -130,7 +134,7 @@ func (u cacheUpdates) add(namespace string, ckvs cacheKVs) {
 
 // UpdateStates updates only the existing entries in the cache associated with
 // the chainID.
-func (c *cache) UpdateStates(chainID string, updates cacheUpdates) error {
+func (c *cache) UpdateStates(chainID string, updates CacheUpdates) error {
 	for ns, kvs := range updates {
 		cache := c.getCache(ns)
 		if cache == nil {
@@ -140,10 +144,15 @@ func (c *cache) UpdateStates(chainID string, updates cacheUpdates) error {
 		for key, newVal := range kvs {
 			cacheKey := constructCacheKey(chainID, ns, key)
 			if newVal == nil {
+				logger.Debugf("[%s] Deleting key from cache [%s:%s]", chainID, ns, key)
+
 				cache.Del(cacheKey)
 				continue
 			}
-			if cache.Has(cacheKey) {
+
+			if c.prePopulate || cache.Has(cacheKey) {
+				logger.Debugf("[%s] Updating cache [%s:%s] - Cache Key [%s]", chainID, ns, key, cacheKey)
+
 				newValBytes, err := proto.Marshal(newVal)
 				if err != nil {
 					return err
