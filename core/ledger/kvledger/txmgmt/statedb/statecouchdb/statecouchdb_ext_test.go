@@ -18,13 +18,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDeleteCacheEntry(t *testing.T) {
+func TestDeleteCacheEntryIfStale(t *testing.T) {
 	vdbEnv.init(t, []string{"lscc", "_lifecycle"})
 	defer vdbEnv.cleanup()
 
 	const chainID = "testgetstatefromcache"
 	const key = "key1"
 	const ns = "ns1"
+	const coll = "coll1"
 
 	db, err := vdbEnv.DBProvider.GetDBHandle(chainID, nil)
 	require.NoError(t, err)
@@ -37,15 +38,37 @@ func TestDeleteCacheEntry(t *testing.T) {
 	}
 	require.NoError(t, vdbEnv.cache.putState(chainID, ns, key, cacheValue))
 
+	collNs := privateDataHashDBName(ns, coll)
+	keyHash := []byte("coll key hash")
+	collKey := base64.StdEncoding.EncodeToString(keyHash)
+	require.NoError(t, vdbEnv.cache.putState(chainID, collNs, collKey, cacheValue))
+
 	vdb, ok := db.(*VersionedDB)
 	require.True(t, ok)
 
 	v, err := db.GetState(ns, key)
 	require.NoError(t, err)
 	require.Equal(t, cacheValue.Value, v.Value)
-	require.NoError(t, vdb.deleteCacheEntry(api.TxMetadata{}, ns, &kvrwset.KVWrite{Key: key}))
+
+	require.NoError(t, vdb.deleteCacheEntryIfStale(api.TxMetadata{BlockNum: 1, TxNum: 1}, ns, &kvrwset.KVWrite{Key: key}))
+	require.NoError(t, vdb.deleteCollHashCacheEntryIfStale(api.TxMetadata{BlockNum: 1, TxNum: 1}, ns, coll, &kvrwset.KVWriteHash{KeyHash: keyHash}))
 
 	v, err = db.GetState(ns, key)
+	require.NoError(t, err)
+	require.NotNil(t, v)
+
+	v, err = db.GetState(collNs, collKey)
+	require.NoError(t, err)
+	require.NotNil(t, v)
+
+	require.NoError(t, vdb.deleteCacheEntryIfStale(api.TxMetadata{BlockNum: 2, TxNum: 1}, ns, &kvrwset.KVWrite{Key: key}))
+	require.NoError(t, vdb.deleteCollHashCacheEntryIfStale(api.TxMetadata{BlockNum: 1, TxNum: 2}, ns, coll, &kvrwset.KVWriteHash{KeyHash: keyHash}))
+
+	v, err = db.GetState(ns, key)
+	require.NoError(t, err)
+	require.Nil(t, v)
+
+	v, err = db.GetState(collNs, collKey)
 	require.NoError(t, err)
 	require.Nil(t, v)
 }

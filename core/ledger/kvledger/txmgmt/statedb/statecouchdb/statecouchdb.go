@@ -20,6 +20,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/internal/version"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
+	"github.com/hyperledger/fabric/extensions/gossip/state"
 	"github.com/hyperledger/fabric/extensions/roles"
 	xstorageapi "github.com/hyperledger/fabric/extensions/storage/api"
 	xcouchdb "github.com/hyperledger/fabric/extensions/storage/couchdb"
@@ -228,8 +229,8 @@ func newVersionedDB(couchInstance *CouchInstance, redoLogger *redoLogger, dbName
 		logger.Debugf("[%s] Registering for KV write events", chainName)
 
 		bp := blockpublisher.ForChannel(chainName)
-		bp.AddWriteHandler(vdb.deleteCacheEntry)
-		bp.AddCollHashWriteHandler(vdb.deleteCollHashCacheEntry)
+		bp.AddWriteHandler(vdb.deleteCacheEntryIfStale)
+		bp.AddCollHashWriteHandler(vdb.deleteCollHashCacheEntryIfStale)
 	}
 
 	// in normal circumstances, redolog is expected to be either equal to the last block
@@ -464,17 +465,23 @@ func (vdb *VersionedDB) GetState(namespace string, key string) (*statedb.Version
 		}
 	}
 
+	logger.Debugf("[%s] Cache miss for [%s:%s] - Cache enabled: %t", vdb.chainName, namespace, key, cacheEnabled)
+
 	// (2) read from the database if cache miss occurs
 	kv, err := vdb.readFromDB(namespace, key)
 	if err != nil {
 		return nil, err
 	}
 	if kv == nil {
+		logger.Debugf("[%s] Key not found in database [%s:%s]", vdb.chainName, namespace, key)
+
 		return nil, nil
 	}
 
 	// (3) if the value is not nil, store in the cache
 	if cacheEnabled {
+		logger.Debugf("[%s] Caching key [%s:%s]", vdb.chainName, namespace, key)
+
 		cacheValue := constructCacheValue(kv.VersionedValue, kv.revision)
 		if err := vdb.cache.putState(vdb.chainName, namespace, key, cacheValue); err != nil {
 			return nil, err
@@ -703,7 +710,7 @@ func (vdb *VersionedDB) postCommitProcessing(committers []*committer, namespaces
 	go func() {
 		defer wg.Done()
 
-		cacheUpdates := make(cacheUpdates)
+		cacheUpdates := make(CacheUpdates)
 		for _, c := range committers {
 			if !c.cacheEnabled {
 				continue
@@ -719,8 +726,9 @@ func (vdb *VersionedDB) postCommitProcessing(committers []*committer, namespaces
 		if err := vdb.cache.UpdateStates(vdb.chainName, cacheUpdates); err != nil {
 			vdb.cache.Reset()
 			errChan <- err
+		} else if height != nil {
+			state.SaveCacheUpdates(vdb.chainName, height.BlockNum, cacheUpdates)
 		}
-
 	}()
 
 	for _, ns := range namespaces {

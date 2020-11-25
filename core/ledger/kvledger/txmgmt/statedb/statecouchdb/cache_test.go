@@ -108,8 +108,8 @@ func TestUpdateStatesWithSingleSmallAndSingleBigPayloads(t *testing.T) {
 	expectedValue3 := &CacheValue{Value: []byte("value3")}
 	expectedValue4 := &CacheValue{Value: token}
 
-	updates := cacheUpdates{
-		"ns1": cacheKVs{
+	updates := CacheUpdates{
+		"ns1": CacheKVs{
 			"k1": expectedValue3,
 			"k2": expectedValue4,
 		},
@@ -170,16 +170,16 @@ func TestUpdateStates(t *testing.T) {
 	expectedValue8 := &CacheValue{Value: []byte("value8")}
 	expectedValue9 := &CacheValue{Value: []byte("value9")}
 	expectedValue10 := &CacheValue{Value: []byte("value10")}
-	updates := cacheUpdates{
-		"ns1": cacheKVs{
+	updates := CacheUpdates{
+		"ns1": CacheKVs{
 			"k1": expectedValue7,
 			"k2": expectedValue8,
 		},
-		"ns2": cacheKVs{
+		"ns2": CacheKVs{
 			"k1": nil,
 			"k2": expectedValue9,
 		},
-		"ns3": cacheKVs{
+		"ns3": CacheKVs{
 			"k1": nil,
 			"k2": nil,
 			"k3": expectedValue10,
@@ -256,31 +256,31 @@ func TestCacheReset(t *testing.T) {
 }
 
 func TestCacheUpdates(t *testing.T) {
-	u := make(cacheUpdates)
-	u.add("ns1", cacheKVs{
+	u := make(CacheUpdates)
+	u.add("ns1", CacheKVs{
 		"k1": &CacheValue{Value: []byte("v1")},
 		"k2": &CacheValue{Value: []byte("v2")},
 	})
 
-	u.add("ns1", cacheKVs{
+	u.add("ns1", CacheKVs{
 		"k3": &CacheValue{Value: []byte("v1")},
 		"k4": &CacheValue{Value: []byte("v2")},
 	})
 
-	u.add("ns2", cacheKVs{
+	u.add("ns2", CacheKVs{
 		"k1": &CacheValue{Value: []byte("v1")},
 		"k2": &CacheValue{Value: []byte("v2")},
 	})
 
-	expectedCacheUpdates := cacheUpdates{
-		"ns1": cacheKVs{
+	expectedCacheUpdates := CacheUpdates{
+		"ns1": CacheKVs{
 			"k1": &CacheValue{Value: []byte("v1")},
 			"k2": &CacheValue{Value: []byte("v2")},
 			"k3": &CacheValue{Value: []byte("v1")},
 			"k4": &CacheValue{Value: []byte("v2")},
 		},
 
-		"ns2": cacheKVs{
+		"ns2": CacheKVs{
 			"k1": &CacheValue{Value: []byte("v1")},
 			"k2": &CacheValue{Value: []byte("v2")},
 		},

@@ -22,21 +22,70 @@ const (
 	pvtDataHashDelimiter = "$$h"
 )
 
-// deleteCacheEntry deletes the cache entry for the given KV write so that it may be refreshed from the database
-func (vdb *VersionedDB) deleteCacheEntry(metadata api.TxMetadata, namespace string, write *kvrwset.KVWrite) error {
-	logger.Debugf("[%s] Deleting cache entry for [%s:%s] in block [%d] and TxID [%s]", vdb.chainName, namespace, write.Key, metadata.BlockNum, metadata.TxID)
+// deleteCacheEntryIfStale deletes the cache entry for the given KV write if it is determined to be stale (i.e. the cached
+// version is less than the current version) so that it may be refreshed from the database
+func (vdb *VersionedDB) deleteCacheEntryIfStale(metadata api.TxMetadata, namespace string, write *kvrwset.KVWrite) error {
+	logger.Debugf("[%s] Checking cache entry for [%s:%s] in block [%d] and TxID [%s]", vdb.chainName, namespace, write.Key, metadata.BlockNum, metadata.TxID)
 
-	return vdb.cache.DelState(vdb.chainName, namespace, write.Key)
+	return vdb.checkCacheEntry(metadata, namespace, write.Key, write.IsDelete)
 }
 
-// deleteCollHashCacheEntry deletes the cache entry for the given collection hash write so that it may be refreshed from the database
-func (vdb *VersionedDB) deleteCollHashCacheEntry(metadata api.TxMetadata, namespace string, collection string, write *kvrwset.KVWriteHash) error {
+// deleteCollHashCacheEntryIfStale deletes the cache entry for the given collection hash write if it is determined to be stale
+// (i.e. the cached version is less than the current version)so that it may be refreshed from the database
+func (vdb *VersionedDB) deleteCollHashCacheEntryIfStale(metadata api.TxMetadata, namespace string, collection string, write *kvrwset.KVWriteHash) error {
 	ns := privateDataHashDBName(namespace, collection)
 	key := base64.StdEncoding.EncodeToString(write.KeyHash)
 
-	logger.Debugf("[%s] Deleting cache entry for hashed key [%s:%s] in block [%d] and TxID [%s]", vdb.chainName, ns, key, metadata.BlockNum, metadata.TxID)
+	logger.Debugf("[%s] Checking cache entry for hashed key [%s:%s] in block [%d] and TxID [%s]", vdb.chainName, ns, key, metadata.BlockNum, metadata.TxID)
 
-	return vdb.cache.DelState(vdb.chainName, ns, key)
+	return vdb.checkCacheEntry(metadata, ns, key, write.IsDelete)
+}
+
+func (vdb *VersionedDB) checkCacheEntry(metadata api.TxMetadata, namespace, key string, isDelete bool) error {
+	cacheEnabled := vdb.cache.enabled(namespace)
+	if !cacheEnabled {
+		return nil
+	}
+
+	if isDelete {
+		logger.Debugf("[%s] Deleting cache entry for [%s:%s] since it has been deleted from the ledger at [%d:%d]",
+			vdb.chainName, namespace, key, metadata.BlockNum, metadata.TxNum)
+
+		return vdb.cache.DelState(vdb.chainName, namespace, key)
+	}
+
+	cv, err := vdb.cache.getState(vdb.chainName, namespace, key)
+	if err != nil {
+		logger.Errorf("[%s] Error getting cache entry for [%s:%s] in block [%d] and TxID [%s]: %s", vdb.chainName, namespace, key, metadata.BlockNum, metadata.TxID, err)
+
+		return err
+	}
+
+	if cv == nil {
+		logger.Debugf("[%s] Key not cached for [%s:%s] in block [%d] and TxID [%s]", vdb.chainName, namespace, key, metadata.BlockNum, metadata.TxID)
+
+		return nil
+	}
+
+	var vv *statedb.VersionedValue
+	vv, err = constructVersionedValue(cv)
+	if err != nil {
+		logger.Errorf("[%s] Error constructing versioned value for [%s:%s] in block [%d] and TxID [%s]: %s", vdb.chainName, namespace, key, metadata.BlockNum, metadata.TxID, err)
+
+		return err
+	}
+
+	if vv.Version.BlockNum < metadata.BlockNum || vv.Version.TxNum < metadata.TxNum {
+		logger.Debugf("[%s] Deleting cache entry for [%s:%s] since its version [%d:%d] is less than the current version [%d:%d]",
+			vdb.chainName, namespace, key, vv.Version.BlockNum, vv.Version.TxNum, metadata.BlockNum, metadata.TxNum)
+
+		return vdb.cache.DelState(vdb.chainName, namespace, key)
+	}
+
+	logger.Debugf("[%s] Not deleting cache entry [%s:%s] since its version [%d:%d] is greater than or equal to the current version [%d:%d]",
+		vdb.chainName, namespace, key, vv.Version.BlockNum, vv.Version.TxNum, metadata.BlockNum, metadata.TxNum)
+
+	return nil
 }
 
 // ensureKeyHashVersionMatches checks the version on the given private data key and ensures the version of the
@@ -108,7 +157,16 @@ func (vdb *VersionedDB) ensureKeyHashVersionMatches(namespace, key string, vv *s
 		return nil, vdb.cache.DelState(vdb.chainName, ns, keyHash)
 	}
 
+	logger.Debugf("[%s] Key hash version %s for [%s:%s] matches the key version in cache %s.", vdb.chainName, hvv.Version, ns, key, vv.Version)
+
 	return vv, nil
+}
+
+// UpdateCache updates the state cache with the given cache updates
+func (vdb *VersionedDB) UpdateCache(blockNum uint64, updates interface{}) error {
+	logger.Infof("[%s] Updating state cache for block [%d]", vdb.chainName, blockNum)
+
+	return vdb.cache.UpdateStates(vdb.chainName, updates.(CacheUpdates))
 }
 
 func privateDataHashDBName(namespace, collection string) string {
