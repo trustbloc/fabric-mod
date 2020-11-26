@@ -16,3 +16,11 @@ message CacheValue {
     bytes metadata = 3;
     bytes additional_info = 4;
 }
+
+message CacheUpdatesEnvelope {
+    map<string, CacheKeyValues> updates = 1;
+}
+
+message CacheKeyValues {
+    map<string, CacheValue> values = 1;
+}

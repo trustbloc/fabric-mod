@@ -113,17 +113,17 @@ func (c *cache) DelState(chainID, namespace, key string) error {
 	return nil
 }
 
-// CacheUpdates is a map from a namespace to a set of cache KV updates
-type CacheUpdates map[string]CacheKVs
+// cacheUpdates is a map from a namespace to a set of cache KV updates
+type cacheUpdates map[string]cacheKVs
 
-// CacheKVs is a map from a Key to a cache Value
-type CacheKVs map[string]*CacheValue
+// cacheKVs is a map from a Key to a cache Value
+type cacheKVs map[string]*CacheValue
 
-// Add adds the given CacheKVs to the CacheUpdates
-func (u CacheUpdates) add(namespace string, ckvs CacheKVs) {
+// Add adds the given cacheKVs to the cacheUpdates
+func (u cacheUpdates) add(namespace string, ckvs cacheKVs) {
 	nsu, ok := u[namespace]
 	if !ok {
-		nsu = CacheKVs{}
+		nsu = cacheKVs{}
 		u[namespace] = nsu
 	}
 
@@ -134,7 +134,7 @@ func (u CacheUpdates) add(namespace string, ckvs CacheKVs) {
 
 // UpdateStates updates only the existing entries in the cache associated with
 // the chainID.
-func (c *cache) UpdateStates(chainID string, updates CacheUpdates) error {
+func (c *cache) UpdateStates(chainID string, updates cacheUpdates) error {
 	for ns, kvs := range updates {
 		cache := c.getCache(ns)
 		if cache == nil {

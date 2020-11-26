@@ -19,7 +19,7 @@ type committer struct {
 	db             *CouchDatabase
 	batchUpdateMap map[string]*batchableDocument
 	namespace      string
-	cacheKVs       CacheKVs
+	cacheKVs       cacheKVs
 	cacheEnabled   bool
 }
 
@@ -118,7 +118,7 @@ func (vdb *VersionedDB) buildCommittersForNs(ns string, nsUpdates map[string]*st
 			db:             db,
 			batchUpdateMap: make(map[string]*batchableDocument),
 			namespace:      ns,
-			cacheKVs:       make(CacheKVs),
+			cacheKVs:       make(cacheKVs),
 			cacheEnabled:   cacheEnabled,
 		}
 	}

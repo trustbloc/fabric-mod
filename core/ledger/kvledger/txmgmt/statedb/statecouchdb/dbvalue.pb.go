@@ -21,7 +21,7 @@ var _ = math.Inf
 const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
 type ValueVersionMetadata struct {
-	Value                []byte   `protobuf:"bytes,1,opt,name=Value,proto3" json:"Value,omitempty"`
+	Value                []byte   `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
 	VersionAndMetadata   []byte   `protobuf:"bytes,2,opt,name=version_and_metadata,json=versionAndMetadata,proto3" json:"version_and_metadata,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`

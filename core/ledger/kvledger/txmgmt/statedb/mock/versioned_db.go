@@ -206,11 +206,11 @@ type VersionedDB struct {
 	CloseStub              func()
 	closeMutex             sync.RWMutex
 	closeArgsForCall       []struct{}
-	UpdateCacheStub        func(blockNum uint64, updates interface{}) error
+	UpdateCacheStub        func(blockNum uint64, updates []byte) error
 	updateCacheMutex       sync.RWMutex
 	updateCacheArgsForCall []struct {
 		blockNum uint64
-		updates  interface{}
+		updates  []byte
 	}
 	updateCacheReturns struct {
 		result1 error
@@ -984,14 +984,19 @@ func (fake *VersionedDB) CloseCallCount() int {
 	return len(fake.closeArgsForCall)
 }
 
-func (fake *VersionedDB) UpdateCache(blockNum uint64, updates interface{}) error {
+func (fake *VersionedDB) UpdateCache(blockNum uint64, updates []byte) error {
+	var updatesCopy []byte
+	if updates != nil {
+		updatesCopy = make([]byte, len(updates))
+		copy(updatesCopy, updates)
+	}
 	fake.updateCacheMutex.Lock()
 	ret, specificReturn := fake.updateCacheReturnsOnCall[len(fake.updateCacheArgsForCall)]
 	fake.updateCacheArgsForCall = append(fake.updateCacheArgsForCall, struct {
 		blockNum uint64
-		updates  interface{}
-	}{blockNum, updates})
-	fake.recordInvocation("UpdateCache", []interface{}{blockNum, updates})
+		updates  []byte
+	}{blockNum, updatesCopy})
+	fake.recordInvocation("UpdateCache", []interface{}{blockNum, updatesCopy})
 	fake.updateCacheMutex.Unlock()
 	if fake.UpdateCacheStub != nil {
 		return fake.UpdateCacheStub(blockNum, updates)
@@ -1008,7 +1013,7 @@ func (fake *VersionedDB) UpdateCacheCallCount() int {
 	return len(fake.updateCacheArgsForCall)
 }
 
-func (fake *VersionedDB) UpdateCacheArgsForCall(i int) (uint64, interface{}) {
+func (fake *VersionedDB) UpdateCacheArgsForCall(i int) (uint64, []byte) {
 	fake.updateCacheMutex.RLock()
 	defer fake.updateCacheMutex.RUnlock()
 	return fake.updateCacheArgsForCall[i].blockNum, fake.updateCacheArgsForCall[i].updates
