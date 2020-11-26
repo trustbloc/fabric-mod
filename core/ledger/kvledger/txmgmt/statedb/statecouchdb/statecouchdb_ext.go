@@ -10,11 +10,15 @@ import (
 	"encoding/base64"
 	"strings"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric-protos-go/ledger/rwset/kvrwset"
+	"github.com/pkg/errors"
+
 	"github.com/hyperledger/fabric/core/ledger/internal/version"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
 	"github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/hyperledger/fabric/extensions/gossip/api"
+	"github.com/hyperledger/fabric/extensions/gossip/state"
 )
 
 const (
@@ -163,12 +167,53 @@ func (vdb *VersionedDB) ensureKeyHashVersionMatches(namespace, key string, vv *s
 }
 
 // UpdateCache updates the state cache with the given cache updates
-func (vdb *VersionedDB) UpdateCache(blockNum uint64, updates interface{}) error {
+func (vdb *VersionedDB) UpdateCache(blockNum uint64, updates []byte) error {
 	logger.Infof("[%s] Updating state cache for block [%d]", vdb.chainName, blockNum)
 
-	return vdb.cache.UpdateStates(vdb.chainName, updates.(CacheUpdates))
+	envelope := &CacheUpdatesEnvelope{}
+	if err := proto.Unmarshal(updates, envelope); err != nil {
+		return errors.WithMessagef(err, "unable to unmarshal cache-updates")
+	}
+
+	return vdb.cache.UpdateStates(vdb.chainName, fromCacheUpdatesEnvelope(envelope))
+}
+
+func (vdb *VersionedDB) saveCacheUpdates(height *version.Height, updates cacheUpdates) {
+	if height == nil || !vdb.storeCacheUpdates {
+		// Nothing to do
+		return
+	}
+
+	if updateBytes, err := proto.Marshal(toCacheUpdatesEnvelope(updates)); err != nil {
+		logger.Errorf("[%s] Error marshalling cache updates for block %d: %s", vdb.chainName, height.BlockNum, err)
+	} else {
+		state.SaveCacheUpdates(vdb.chainName, height.BlockNum, updateBytes)
+	}
 }
 
 func privateDataHashDBName(namespace, collection string) string {
 	return strings.Join([]string{namespace, collection}, pvtDataHashDelimiter)
+}
+
+func toCacheUpdatesEnvelope(updates cacheUpdates) *CacheUpdatesEnvelope {
+	envelope := &CacheUpdatesEnvelope{
+		Updates: make(map[string]*CacheKeyValues),
+	}
+
+	for key, values := range updates {
+		envelope.Updates[key] = &CacheKeyValues{
+			Values: values,
+		}
+	}
+
+	return envelope
+}
+
+func fromCacheUpdatesEnvelope(envelope *CacheUpdatesEnvelope) cacheUpdates {
+	updates := make(cacheUpdates)
+	for key, values := range envelope.Updates {
+		updates[key] = values.Values
+	}
+
+	return updates
 }

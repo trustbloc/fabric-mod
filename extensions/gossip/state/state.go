@@ -89,6 +89,6 @@ func (s *gossipStateProviderExtension) RequestBlocksInRange(handle func(start ui
 }
 
 // SaveCacheUpdates is a hook used by extensions to save the given state updates for the given block
-func SaveCacheUpdates(channelID string, blockNum uint64, updates interface{}) {
+func SaveCacheUpdates(channelID string, blockNum uint64, updates []byte) {
 	// Nothing to do
 }

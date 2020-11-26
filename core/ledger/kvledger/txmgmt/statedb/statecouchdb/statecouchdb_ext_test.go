@@ -11,11 +11,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric-protos-go/ledger/rwset/kvrwset"
+	"github.com/stretchr/testify/require"
+
 	"github.com/hyperledger/fabric/core/ledger/internal/version"
 	"github.com/hyperledger/fabric/core/ledger/util"
 	"github.com/hyperledger/fabric/extensions/gossip/api"
-	"github.com/stretchr/testify/require"
 )
 
 func TestDeleteCacheEntryIfStale(t *testing.T) {
@@ -148,6 +150,32 @@ func TestEnsureKeyHashVersionMatches(t *testing.T) {
 		vv2, err := vdb.ensureKeyHashVersionMatches(pvtns1, key, vv)
 		require.NoError(t, err)
 		require.Equal(t, vv, vv2)
+	})
+}
+
+func TestVersionedDB_UpdateCache(t *testing.T) {
+	const (
+		ns1 = "ns1"
+		key = "key1"
+	)
+
+	vdb := &VersionedDB{
+		cache:             newCache(10, nil),
+		storeCacheUpdates: true,
+	}
+
+	t.Run("UpdateCache", func(t *testing.T) {
+		updates := cacheUpdates{ns1: cacheKVs{key: &CacheValue{}}}
+		updateBytes, err := proto.Marshal(toCacheUpdatesEnvelope(updates))
+		require.NoError(t, err)
+
+		require.NoError(t, vdb.UpdateCache(1001, updateBytes))
+	})
+
+	t.Run("SaveCacheUpdates", func(t *testing.T) {
+		updates := cacheUpdates{ns1: cacheKVs{key: &CacheValue{}}}
+		require.NotPanics(t, func() { vdb.saveCacheUpdates(&version.Height{BlockNum: 1001}, updates) })
+		require.NotPanics(t, func() { vdb.saveCacheUpdates(nil, updates) })
 	})
 }
 

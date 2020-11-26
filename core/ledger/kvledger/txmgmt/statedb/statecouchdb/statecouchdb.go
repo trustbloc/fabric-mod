@@ -19,8 +19,8 @@ import (
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/ledger/internal/version"
 	"github.com/hyperledger/fabric/core/ledger/kvledger/txmgmt/statedb"
+	extconfig "github.com/hyperledger/fabric/extensions/config"
 	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
-	"github.com/hyperledger/fabric/extensions/gossip/state"
 	"github.com/hyperledger/fabric/extensions/roles"
 	xstorageapi "github.com/hyperledger/fabric/extensions/storage/api"
 	xcouchdb "github.com/hyperledger/fabric/extensions/storage/couchdb"
@@ -180,6 +180,7 @@ type VersionedDB struct {
 	mux                sync.RWMutex
 	redoLogger         *redoLogger
 	cache              *cache
+	storeCacheUpdates  bool
 }
 
 func createCouchDB(ci xstorageapi.CouchInstance, dbName string) (xstorageapi.CouchDatabase, error) {
@@ -206,6 +207,7 @@ func newVersionedDB(couchInstance *CouchInstance, redoLogger *redoLogger, dbName
 		committedDataCache: newVersionCache(),
 		redoLogger:         redoLogger,
 		cache:              cache,
+		storeCacheUpdates:  extconfig.IsSaveCacheUpdates(),
 	}
 
 	xstatedb.AddCCUpgradeHandler(chainName, getCCUpgradeHandler(vdb))
@@ -710,7 +712,7 @@ func (vdb *VersionedDB) postCommitProcessing(committers []*committer, namespaces
 	go func() {
 		defer wg.Done()
 
-		cacheUpdates := make(CacheUpdates)
+		cacheUpdates := make(cacheUpdates)
 		for _, c := range committers {
 			if !c.cacheEnabled {
 				continue
@@ -726,8 +728,8 @@ func (vdb *VersionedDB) postCommitProcessing(committers []*committer, namespaces
 		if err := vdb.cache.UpdateStates(vdb.chainName, cacheUpdates); err != nil {
 			vdb.cache.Reset()
 			errChan <- err
-		} else if height != nil {
-			state.SaveCacheUpdates(vdb.chainName, height.BlockNum, cacheUpdates)
+		} else {
+			vdb.saveCacheUpdates(height, cacheUpdates)
 		}
 	}()
 

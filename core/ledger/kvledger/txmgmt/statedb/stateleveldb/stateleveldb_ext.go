@@ -7,6 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package stateleveldb
 
 // UpdateCache is not implemented
-func (vdb *versionedDB) UpdateCache(uint64, interface{}) error {
+func (vdb *versionedDB) UpdateCache(uint64, []byte) error {
 	return nil
 }

@@ -12,6 +12,11 @@ func IsPrePopulateStateCache() bool {
 	return false
 }
 
+// IsSaveCacheUpdates indicates whether or not state updates should be saved on the committing peer.
+func IsSaveCacheUpdates() bool {
+	return false
+}
+
 // IsSkipCheckForDupTxnID indicates whether or not endorsers should skip the check for duplicate transactions IDs. The check
 // would still be performed during validation.
 func IsSkipCheckForDupTxnID() bool {
