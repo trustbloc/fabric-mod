@@ -160,8 +160,7 @@ func TestVersionedDB_UpdateCache(t *testing.T) {
 	)
 
 	vdb := &VersionedDB{
-		cache:             newCache(10, nil),
-		storeCacheUpdates: true,
+		cache: newCache(10, nil),
 	}
 
 	t.Run("UpdateCache", func(t *testing.T) {
