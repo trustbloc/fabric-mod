@@ -115,17 +115,19 @@ type TxValidator struct {
 
 var logger = flogging.MustGetLogger("committer.txvalidator")
 
-type blockValidationRequest struct {
-	block *common.Block
-	d     []byte
-	tIdx  int
+// BlockValidationRequest is a request to validate a single transaction in a block
+type BlockValidationRequest struct {
+	Block *common.Block
+	D     []byte
+	TIdx  int
 }
 
-type blockValidationResult struct {
-	tIdx           int
-	validationCode peer.TxValidationCode
-	err            error
-	txid           string
+// BlockValidationResult contains the validation result for a single transaction in a block
+type BlockValidationResult struct {
+	TIdx           int
+	ValidationCode peer.TxValidationCode
+	Err            error
+	Txid           string
 }
 
 // NewTxValidator creates new transactions validator
@@ -189,7 +191,7 @@ func (v *TxValidator) Validate(block *common.Block) error {
 	// array of txids
 	txidArray := make([]string, len(block.Data.Data))
 
-	results := make(chan *blockValidationResult)
+	results := make(chan *BlockValidationResult)
 	go func() {
 		for tIdx, d := range block.Data.Data {
 			// ensure that we don't have too many concurrent validation workers
@@ -198,10 +200,10 @@ func (v *TxValidator) Validate(block *common.Block) error {
 			go func(index int, data []byte) {
 				defer v.Semaphore.Release()
 
-				v.validateTx(&blockValidationRequest{
-					d:     data,
-					block: block,
-					tIdx:  index,
+				v.ValidateTx(&BlockValidationRequest{
+					D:     data,
+					Block: block,
+					TIdx:  index,
 				}, results)
 			}(tIdx, d)
 		}
@@ -213,25 +215,25 @@ func (v *TxValidator) Validate(block *common.Block) error {
 	for i := 0; i < len(block.Data.Data); i++ {
 		res := <-results
 
-		if res.err != nil {
+		if res.Err != nil {
 			// if there is an error, we buffer its value, wait for
 			// all workers to complete validation and then return
 			// the error from the first tx in this block that returned an error
-			logger.Debugf("got terminal error %s for idx %d", res.err, res.tIdx)
+			logger.Debugf("got terminal error %s for idx %d", res.Err, res.TIdx)
 
-			if err == nil || res.tIdx < errPos {
-				err = res.err
-				errPos = res.tIdx
+			if err == nil || res.TIdx < errPos {
+				err = res.Err
+				errPos = res.TIdx
 			}
 		} else {
 			// if there was no error, we set the txsfltr and we set the
 			// txsChaincodeNames and txsUpgradedChaincodes maps
-			logger.Debugf("got result for idx %d, code %d", res.tIdx, res.validationCode)
+			logger.Debugf("got result for idx %d, code %d", res.TIdx, res.ValidationCode)
 
-			txsfltr.SetFlag(res.tIdx, res.validationCode)
+			txsfltr.SetFlag(res.TIdx, res.ValidationCode)
 
-			if res.validationCode == peer.TxValidationCode_VALID {
-				txidArray[res.tIdx] = res.txid
+			if res.ValidationCode == peer.TxValidationCode_VALID {
+				txidArray[res.TIdx] = res.Txid
 			}
 		}
 	}
@@ -294,24 +296,25 @@ func markTXIdDuplicates(txids []string, txsfltr txflags.ValidationFlags) {
 	}
 }
 
-func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *blockValidationResult) {
-	block := req.block
-	d := req.d
-	tIdx := req.tIdx
+// ValidateTx validates a single transaction in a block and sends the results to the provided channel
+func (v *TxValidator) ValidateTx(req *BlockValidationRequest, results chan<- *BlockValidationResult) {
+	block := req.Block
+	d := req.D
+	tIdx := req.TIdx
 	txID := ""
 
 	if d == nil {
-		results <- &blockValidationResult{
-			tIdx: tIdx,
+		results <- &BlockValidationResult{
+			TIdx: tIdx,
 		}
 		return
 	}
 
 	if env, err := protoutil.GetEnvelopeFromBlock(d); err != nil {
 		logger.Warningf("Error getting tx from block: %+v", err)
-		results <- &blockValidationResult{
-			tIdx:           tIdx,
-			validationCode: peer.TxValidationCode_INVALID_OTHER_REASON,
+		results <- &BlockValidationResult{
+			TIdx:           tIdx,
+			ValidationCode: peer.TxValidationCode_INVALID_OTHER_REASON,
 		}
 		return
 	} else if env != nil {
@@ -320,17 +323,17 @@ func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *bl
 		// chain binding proposal to endorsements to tx holds. We do
 		// NOT check the validity of endorsements, though. That's a
 		// job for the validation plugins
-		logger.Debugf("[%s] validateTx starts for block %p env %p txn %d", v.ChannelID, block, env, tIdx)
-		defer logger.Debugf("[%s] validateTx completes for block %p env %p txn %d", v.ChannelID, block, env, tIdx)
+		logger.Debugf("[%s] ValidateTx starts for block %p env %p txn %d", v.ChannelID, block, env, tIdx)
+		defer logger.Debugf("[%s] ValidateTx completes for block %p env %p txn %d", v.ChannelID, block, env, tIdx)
 		var payload *common.Payload
 		var err error
 		var txResult peer.TxValidationCode
 
 		if payload, txResult = validation.ValidateTransaction(env, v.CryptoProvider); txResult != peer.TxValidationCode_VALID {
 			logger.Errorf("Invalid transaction with index %d", tIdx)
-			results <- &blockValidationResult{
-				tIdx:           tIdx,
-				validationCode: txResult,
+			results <- &BlockValidationResult{
+				TIdx:           tIdx,
+				ValidationCode: txResult,
 			}
 			return
 		}
@@ -338,9 +341,9 @@ func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *bl
 		chdr, err := protoutil.UnmarshalChannelHeader(payload.Header.ChannelHeader)
 		if err != nil {
 			logger.Warningf("Could not unmarshal channel header, err %s, skipping", err)
-			results <- &blockValidationResult{
-				tIdx:           tIdx,
-				validationCode: peer.TxValidationCode_INVALID_OTHER_REASON,
+			results <- &BlockValidationResult{
+				TIdx:           tIdx,
+				ValidationCode: peer.TxValidationCode_INVALID_OTHER_REASON,
 			}
 			return
 		}
@@ -350,9 +353,9 @@ func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *bl
 
 		if !v.chainExists(channel) {
 			logger.Errorf("Dropping transaction for non-existent channel %s", channel)
-			results <- &blockValidationResult{
-				tIdx:           tIdx,
-				validationCode: peer.TxValidationCode_TARGET_CHAIN_NOT_FOUND,
+			results <- &BlockValidationResult{
+				TIdx:           tIdx,
+				ValidationCode: peer.TxValidationCode_TARGET_CHAIN_NOT_FOUND,
 			}
 			return
 		}
@@ -375,21 +378,21 @@ func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *bl
 				logger.Errorf("Dispatch for transaction txId = %s returned error: %s", txID, err)
 				switch err.(type) {
 				case *commonerrors.VSCCExecutionFailureError:
-					results <- &blockValidationResult{
-						tIdx: tIdx,
-						err:  err,
+					results <- &BlockValidationResult{
+						TIdx: tIdx,
+						Err:  err,
 					}
 					return
 				case *commonerrors.VSCCInfoLookupFailureError:
-					results <- &blockValidationResult{
-						tIdx: tIdx,
-						err:  err,
+					results <- &BlockValidationResult{
+						TIdx: tIdx,
+						Err:  err,
 					}
 					return
 				default:
-					results <- &blockValidationResult{
-						tIdx:           tIdx,
-						validationCode: cde,
+					results <- &BlockValidationResult{
+						TIdx:           tIdx,
+						ValidationCode: cde,
 					}
 					return
 				}
@@ -399,9 +402,9 @@ func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *bl
 			if err != nil {
 				err = errors.WithMessage(err, "error unmarshalling config which passed initial validity checks")
 				logger.Criticalf("%+v", err)
-				results <- &blockValidationResult{
-					tIdx: tIdx,
-					err:  err,
+				results <- &BlockValidationResult{
+					TIdx: tIdx,
+					Err:  err,
 				}
 				return
 			}
@@ -409,9 +412,9 @@ func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *bl
 			if err := v.ChannelResources.Apply(configEnvelope); err != nil {
 				err = errors.WithMessage(err, "error validating config which passed initial validity checks")
 				logger.Criticalf("%+v", err)
-				results <- &blockValidationResult{
-					tIdx: tIdx,
-					err:  err,
+				results <- &BlockValidationResult{
+					TIdx: tIdx,
+					Err:  err,
 				}
 				return
 			}
@@ -419,33 +422,33 @@ func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *bl
 		} else {
 			logger.Warningf("Unknown transaction type [%s] in block number [%d] transaction index [%d]",
 				common.HeaderType(chdr.Type), block.Header.Number, tIdx)
-			results <- &blockValidationResult{
-				tIdx:           tIdx,
-				validationCode: peer.TxValidationCode_UNKNOWN_TX_TYPE,
+			results <- &BlockValidationResult{
+				TIdx:           tIdx,
+				ValidationCode: peer.TxValidationCode_UNKNOWN_TX_TYPE,
 			}
 			return
 		}
 
 		if _, err := proto.Marshal(env); err != nil {
 			logger.Warningf("Cannot marshal transaction: %s", err)
-			results <- &blockValidationResult{
-				tIdx:           tIdx,
-				validationCode: peer.TxValidationCode_MARSHAL_TX_ERROR,
+			results <- &BlockValidationResult{
+				TIdx:           tIdx,
+				ValidationCode: peer.TxValidationCode_MARSHAL_TX_ERROR,
 			}
 			return
 		}
 		// Succeeded to pass down here, transaction is valid
-		results <- &blockValidationResult{
-			tIdx:           tIdx,
-			validationCode: peer.TxValidationCode_VALID,
-			txid:           txID,
+		results <- &BlockValidationResult{
+			TIdx:           tIdx,
+			ValidationCode: peer.TxValidationCode_VALID,
+			Txid:           txID,
 		}
 		return
 	} else {
 		logger.Warning("Nil tx from block")
-		results <- &blockValidationResult{
-			tIdx:           tIdx,
-			validationCode: peer.TxValidationCode_NIL_ENVELOPE,
+		results <- &BlockValidationResult{
+			TIdx:           tIdx,
+			ValidationCode: peer.TxValidationCode_NIL_ENVELOPE,
 		}
 		return
 	}
@@ -456,7 +459,7 @@ func (v *TxValidator) validateTx(req *blockValidationRequest, results chan<- *bl
 // in the ledger or no decision can be made for whether such transaction exists;
 // the function returns nil if it has ensured that there is no such duplicate, such
 // that its consumer can proceed with the transaction processing
-func (v *TxValidator) checkTxIdDupsLedger(tIdx int, chdr *common.ChannelHeader, ldgr LedgerResources) *blockValidationResult {
+func (v *TxValidator) checkTxIdDupsLedger(tIdx int, chdr *common.ChannelHeader, ldgr LedgerResources) *BlockValidationResult {
 
 	// Retrieve the transaction identifier of the input header
 	txID := chdr.TxId
@@ -468,9 +471,9 @@ func (v *TxValidator) checkTxIdDupsLedger(tIdx int, chdr *common.ChannelHeader, 
 	case nil:
 		// invalid case, returned error is nil. It means that there is already a tx in the ledger with the same id
 		logger.Error("Duplicate transaction found, ", txID, ", skipping")
-		return &blockValidationResult{
-			tIdx:           tIdx,
-			validationCode: peer.TxValidationCode_DUPLICATE_TXID,
+		return &BlockValidationResult{
+			TIdx:           tIdx,
+			ValidationCode: peer.TxValidationCode_DUPLICATE_TXID,
 		}
 	case ledger.NotFoundInIndexErr:
 		// valid case, returned error is of type NotFoundInIndexErr.
@@ -480,9 +483,9 @@ func (v *TxValidator) checkTxIdDupsLedger(tIdx int, chdr *common.ChannelHeader, 
 		// invalid case, returned error is not of type NotFoundInIndexErr.
 		// It means that we could not verify whether a tx with the supplied id is in the ledger
 		logger.Errorf("Ledger failure while attempting to detect duplicate status for txid %s: %s", txID, err)
-		return &blockValidationResult{
-			tIdx: tIdx,
-			err:  err,
+		return &BlockValidationResult{
+			TIdx: tIdx,
+			Err:  err,
 		}
 	}
 }
