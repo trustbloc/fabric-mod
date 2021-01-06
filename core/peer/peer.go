@@ -22,10 +22,7 @@ import (
 	"github.com/hyperledger/fabric/common/policies"
 	"github.com/hyperledger/fabric/common/semaphore"
 	"github.com/hyperledger/fabric/core/committer"
-	"github.com/hyperledger/fabric/core/committer/txvalidator"
 	"github.com/hyperledger/fabric/core/committer/txvalidator/plugin"
-	validatorv14 "github.com/hyperledger/fabric/core/committer/txvalidator/v14"
-	validatorv20 "github.com/hyperledger/fabric/core/committer/txvalidator/v20"
 	"github.com/hyperledger/fabric/core/committer/txvalidator/v20/plugindispatcher"
 	vir "github.com/hyperledger/fabric/core/committer/txvalidator/v20/valinforetriever"
 	"github.com/hyperledger/fabric/core/common/privdata"
@@ -37,6 +34,7 @@ import (
 	"github.com/hyperledger/fabric/extensions/gossip/blockpublisher"
 	"github.com/hyperledger/fabric/extensions/resource"
 	storageapi "github.com/hyperledger/fabric/extensions/storage/api"
+	extvalidation "github.com/hyperledger/fabric/extensions/validation"
 	"github.com/hyperledger/fabric/gossip/api"
 	gossipprivdata "github.com/hyperledger/fabric/gossip/privdata"
 	gossipservice "github.com/hyperledger/fabric/gossip/service"
@@ -337,33 +335,24 @@ func (p *Peer) createChannel(
 	)
 
 	committer := committer.NewLedgerCommitter(l)
-	validator := &txvalidator.ValidationRouter{
-		CapabilityProvider: channel,
-		V14Validator: validatorv14.NewTxValidator(
-			cid,
-			p.validationWorkersSemaphore,
-			channel,
-			p.pluginMapper,
-			p.CryptoProvider,
-		),
-		V20Validator: validatorv20.NewTxValidator(
-			cid,
-			p.validationWorkersSemaphore,
-			channel,
-			channel.Ledger(),
-			&vir.ValidationInfoRetrieveShim{
-				New:    newLifecycleValidation,
-				Legacy: legacyLifecycleValidation,
-			},
-			&CollectionInfoShim{
-				CollectionAndLifecycleResources: newLifecycleValidation,
-				ChannelID:                       bundle.ConfigtxValidator().ChannelID(),
-			},
-			p.pluginMapper,
-			policies.PolicyManagerGetterFunc(p.GetPolicyManager),
-			p.CryptoProvider,
-		),
-	}
+
+	validator := extvalidation.NewTxValidator(
+		cid,
+		p.validationWorkersSemaphore,
+		channel,
+		channel.Ledger(),
+		&vir.ValidationInfoRetrieveShim{
+			New:    newLifecycleValidation,
+			Legacy: legacyLifecycleValidation,
+		},
+		&CollectionInfoShim{
+			CollectionAndLifecycleResources: newLifecycleValidation,
+			ChannelID:                       bundle.ConfigtxValidator().ChannelID(),
+		},
+		p.pluginMapper,
+		policies.PolicyManagerGetterFunc(p.GetPolicyManager),
+		p.CryptoProvider,
+	)
 
 	// TODO: does someone need to call Close() on the transientStoreFactory at shutdown of the peer?
 	store, err := p.openStore(bundle.ConfigtxValidator().ChannelID())
