@@ -399,7 +399,7 @@ func (p *Provider) open(ledgerID string) (ledger.PeerLedger, error) {
 		return nil, err
 	}
 
-	extstatedb.Register(ledgerID, db)
+	extstatedb.Register(ledgerID, db, l)
 
 	return l, nil
 }
