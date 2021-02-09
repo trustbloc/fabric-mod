@@ -152,6 +152,11 @@ func (txmgr *LockBasedTxMgr) NewQueryExecutor(txid string) (ledger.QueryExecutor
 	return qe, nil
 }
 
+// NewQueryExecutorNoLock returns a query executor without acquiring a commit read lock
+func (txmgr *LockBasedTxMgr) NewQueryExecutorNoLock(txid string) (ledger.QueryExecutor, error) {
+	return newQueryExecutor(txmgr, txid, nil, true, txmgr.hashFunc), nil
+}
+
 // NewQueryExecutorNoCollChecks is a workaround to make the initilization of lifecycle cache
 // work. The issue is that in the current lifecycle code the cache is initialized via Initialize
 // function of a statelistener which gets invoked during ledger opening. This invovation eventually

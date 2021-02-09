@@ -437,6 +437,11 @@ func (l *kvLedger) NewQueryExecutor() (ledger.QueryExecutor, error) {
 	return l.txmgr.NewQueryExecutor(util.GenerateUUID())
 }
 
+// NewQueryExecutorNoLock returns a query executor without acquiring a commit read lock
+func (l *kvLedger) NewQueryExecutorNoLock() (ledger.QueryExecutor, error) {
+	return l.txmgr.NewQueryExecutorNoLock(util.GenerateUUID())
+}
+
 // NewHistoryQueryExecutor gives handle to a history query executor.
 // A client can obtain more than one 'HistoryQueryExecutor's for parallel execution.
 // Any synchronization should be performed at the implementation level if required
